@@ -1,0 +1,58 @@
+---
+# SecretManagerConfig for SAM Activity Service - Custom Environment Names
+#
+# This example shows how to configure the controller for a service with
+# custom environment naming (dev-cf, pp-cf, prod-cf) as used by Skaffold.
+#
+# Prerequisites:
+# 1. A Flux GitRepository resource named "sam-activity-repo" in the "flux-system" namespace
+# 2. The GitRepository should point to the SAM Activity repository
+# 3. GCP project with Secret Manager API enabled
+# 4. Service account with Secret Manager Admin role
+#
+# Directory structure expected:
+# sam-activity/deployment-configuration/profiles/
+#   ├── dev-cf/
+#   │   ├── application.properties
+#   │   └── application.secrets.env
+#   ├── pp-cf/
+#   │   ├── application.properties
+#   │   └── application.secrets.env
+#   └── prod-cf/
+#       ├── application.properties
+#       └── application.secrets.env
+#
+# Note: You need separate SecretManagerConfig resources for each environment:
+# - One for dev-cf
+# - One for pp-cf
+# - One for prod-cf
+#
+# This example is for the dev-cf environment.
+
+apiVersion: secret-management.microscaler.io/v1
+kind: SecretManagerConfig
+metadata:
+  name: sam-activity-dev-cf-secrets
+  namespace: default
+spec:
+  # Source reference - supports FluxCD GitRepository and ArgoCD Application
+  # This example uses FluxCD GitRepository
+  sourceRef:
+    kind: GitRepository  # FluxCD GitRepository
+    name: sam-activity-repo
+    namespace: flux-system
+  
+  # GCP project ID where secrets will be stored
+  gcpProjectId: sam-activity-dev
+  
+  # Environment/profile name - must exactly match the directory name under profiles/
+  # This is a custom environment name (dev-cf) as used by Skaffold
+  environment: dev-cf
+  
+  # Base path: "." for single service (root of repository)
+  # For monolith, this would be the path to the service (e.g., "services/sam-activity")
+  basePath: "."
+  
+  # Service name prefix for secret names in GCP Secret Manager
+  secretPrefix: sam-activity-dev-cf
+

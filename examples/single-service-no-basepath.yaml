@@ -1,0 +1,50 @@
+---
+# SecretManagerConfig for Single Service - No Base Path (Repository Root)
+#
+# This example shows a single service configuration WITHOUT specifying basePath.
+# When basePath is omitted, the controller searches from the repository root.
+#
+# Prerequisites:
+# 1. A Flux GitRepository resource named "my-service-repo" in the "flux-system" namespace
+# 2. The GitRepository should point to your single service repository
+# 3. GCP project with Secret Manager API enabled
+# 4. Service account with Secret Manager Admin role
+#
+# Directory structure expected (at repository root):
+# deployment-configuration/
+#   profiles/
+#     dev/
+#       ├── application.properties
+#       └── application.secrets.env
+#
+# Secrets will be synced to GCP Secret Manager with names:
+# - my-service-database-url
+# - my-service-api-key
+# - my-service-properties (all properties as JSON)
+
+apiVersion: secret-management.microscaler.io/v1
+kind: SecretManagerConfig
+metadata:
+  name: my-service-secrets
+  namespace: default
+spec:
+  # Source reference - supports FluxCD GitRepository and ArgoCD Application
+  # This example uses FluxCD GitRepository
+  sourceRef:
+    kind: GitRepository  # FluxCD GitRepository (default, can be omitted)
+    name: my-service-repo
+    namespace: flux-system
+  
+  # GCP project ID where secrets will be stored
+  gcpProjectId: my-gcp-project-dev
+  
+  # Environment/profile name to sync (must match directory name under profiles/)
+  environment: dev
+  
+  # basePath is omitted - controller searches from repository root
+  # This is the recommended approach for single service repositories
+  
+  # Required for single service: specify the service name prefix
+  # This will be used as the secret prefix in GCP Secret Manager
+  secretPrefix: my-service
+

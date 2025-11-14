@@ -1,0 +1,53 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: secret-manager-controller
+rules:
+# Watch SecretManagerConfig resources in all namespaces
+- apiGroups:
+  - secret-management.microscaler.io
+  resources:
+  - secretmanagerconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - secret-management.microscaler.io
+  resources:
+  - secretmanagerconfigs/status
+  verbs:
+  - update
+  - patch
+# Watch FluxCD GitRepository resources
+- apiGroups:
+  - source.toolkit.fluxcd.io
+  resources:
+  - gitrepositories
+  verbs:
+  - get
+  - list
+  - watch
+# Watch ArgoCD Application resources
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applications
+  verbs:
+  - get
+  - list
+  - watch
+# Access SOPS private key secrets in flux-system namespace
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  resourceNames:
+  - sops-private-key
+  - sops-gpg-key
+  - gpg-key
+  # Restrict to flux-system namespace for SOPS secrets
+  # Note: This requires a RoleBinding in flux-system namespace
+

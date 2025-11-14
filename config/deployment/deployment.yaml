@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-manager-controller
+  namespace: flux-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-manager-controller
+  template:
+    metadata:
+      labels:
+        app: secret-manager-controller
+    spec:
+      serviceAccountName: secret-manager-controller
+      containers:
+      - name: controller
+        image: localhost:5001/pricewhisperer-secret-manager-controller:tilt
+        imagePullPolicy: Never
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /var/secrets/google/key.json
+        - name: METRICS_PORT
+          value: "8080"
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: metrics
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: gcp-credentials
+          mountPath: /var/secrets/google
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: gcp-credentials
+        secret:
+          secretName: gcp-secret-manager-credentials
+

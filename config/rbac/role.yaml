@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-manager-controller
+  namespace: flux-system
+rules:
+# This Role is only needed for namespace-specific permissions
+# SecretManagerConfig watching is handled by ClusterRole
+# This Role allows access to SOPS secrets in flux-system namespace
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  resourceNames:
+  - sops-private-key
+  - sops-gpg-key
+  - gpg-key
+
+

@@ -1,0 +1,71 @@
+[package]
+name = "secret-manager-controller"
+version = "0.1.0"
+edition = "2021"
+authors = ["Microscaler <info@microscaler.io>"]
+description = "Kubernetes controller that syncs secrets from GitOps repositories (FluxCD/ArgoCD) to Google Cloud Secret Manager"
+license = "BSL-1.1"
+repository = "https://github.com/microscaler/PriceWhisperer"
+homepage = "https://github.com/microscaler/PriceWhisperer/tree/main/hack/controllers/secret-manager-controller"
+documentation = "https://docs.rs/secret-manager-controller"
+keywords = ["kubernetes", "controller", "secrets", "gitops", "fluxcd", "argocd", "gcp", "secret-manager", "sops"]
+categories = ["development-tools", "web-programming", "authentication"]
+readme = "README.md"
+
+[[bin]]
+name = "secret-manager-controller"
+path = "src/main.rs"
+
+[[bin]]
+name = "crdgen"
+path = "src/crdgen.rs"
+
+[dependencies]
+# Kubernetes client
+kube = { version = "0.88", features = ["runtime", "derive"] }
+kube-runtime = "0.88"
+k8s-openapi = { version = "0.21", default-features = false, features = ["v1_28"] }
+tokio = { version = "1", features = ["full"] }
+
+# GCP Secret Manager - using official Google Cloud Rust SDK
+# Note: cargo zigbuild handles OpenSSL cross-compilation automatically
+google-cloud-secretmanager-v1 = "1.1"
+google-cloud-auth = "1.1"
+
+# SOPS decryption
+rops = "0.1"
+
+# File parsing
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+dotenv = "0.15"
+schemars = "0.8"
+base64 = "0.21"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# File system operations
+walkdir = "2.4"
+regex = "1.10"
+
+# Async runtime
+futures = "0.3"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# HTTP server for metrics and probes
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Prometheus metrics
+prometheus = "0.13"
+
