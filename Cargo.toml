@@ -40,6 +40,20 @@ tokio = { version = "1", features = ["full"] }
 google-cloud-secretmanager-v1 = "1.1"
 google-cloud-auth = "1.1"
 
+# AWS Secrets Manager - using official AWS Rust SDK
+aws-sdk-secretsmanager = "1.0"
+aws-config = "1.0"
+aws-sdk-sts = "1.0"  # For IRSA role assumption
+aws-credential-types = "1.0"  # For credentials handling
+
+# Azure Key Vault - using official Azure SDK for Rust
+azure_core = "0.25"
+azure_identity = "0.25"
+azure_security_keyvault_secrets = "0.4"
+
+# Async trait support
+async-trait = "0.1"
+
 # SOPS decryption
 rops = "0.1"
 
@@ -89,4 +103,8 @@ reqwest = { version = "0.12", features = ["json"] }
 # Git operations for ArgoCD support
 tempfile = "3.10"
 md5 = "0.7"
+
+[dev-dependencies]
+# Pact contract testing
+pact_consumer = "1.4"
 

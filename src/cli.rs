@@ -320,7 +320,7 @@ async fn reconcile_command(
     if force {
         println!();
         println!("📊 Watching reconciliation logs...");
-        println!("   (Use 'kubectl logs -n flux-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)");
+        println!("   (Use 'kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)");
     } else {
         println!("\nThe controller will reconcile this resource shortly.");
     }

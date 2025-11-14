@@ -1,6 +1,41 @@
-# Minimal runtime-only Dockerfile for Secret Manager Controller (Tilt development)
-# Binary is cross-compiled on host (Apple Silicon -> x86_64 Linux) and copied in
+# Production Dockerfile for Secret Manager Controller
+# Multi-stage build that compiles the Rust binary inside Docker
+# This is used for production builds with docker buildx
 
+# Stage 1: Build the Rust binary
+ARG BUILDPLATFORM=linux/amd64
+FROM --platform=$BUILDPLATFORM rust:1.75-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    musl-gcc \
+    git \
+    curl \
+    openssl-dev \
+    openssl-libs-static \
+    pkgconfig
+
+# Install cargo-zigbuild for cross-compilation
+RUN cargo install cargo-zigbuild
+
+# Install musl target
+RUN rustup target add x86_64-unknown-linux-musl
+
+WORKDIR /build
+
+# Copy Cargo files first for better layer caching
+COPY Cargo.toml Cargo.lock ./
+
+# Copy source code
+COPY src ./src
+COPY config ./config
+
+# Build the binary in release mode
+# Use zigbuild for cross-compilation (works on any platform)
+RUN cargo zigbuild --release --target x86_64-unknown-linux-musl
+
+# Stage 2: Runtime image
 ARG TARGETPLATFORM=linux/amd64
 FROM --platform=${TARGETPLATFORM} alpine:3.19
 
@@ -17,17 +52,11 @@ RUN apk add --no-cache \
     mv kustomize /usr/local/bin/ && \
     chmod +x /usr/local/bin/kustomize
 
-# Create app directory with proper permissions for live updates
 WORKDIR /app
 
-# Copy pre-built binary from staging directory (x86_64 Linux musl target)
-# Note: Binary must exist before Docker build (ensured by Tilt resource_deps)
-# Build context is the controller directory, so path is relative to that
-COPY ./target/x86_64-unknown-linux-musl/debug/secret-manager-controller /app/secret-manager-controller
+# Copy binary from builder stage
+COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/secret-manager-controller /app/secret-manager-controller
 RUN chmod +x /app/secret-manager-controller
-
-# Create directories with write permissions for live updates
-RUN chmod -R 777 /app
 
 # Expose metrics port
 EXPOSE 8080

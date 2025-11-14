@@ -20,7 +20,11 @@
 //! 5. Sync secrets to GCP Secret Manager
 //! 6. Update status
 
-use crate::{gcp::SecretManagerClient, parser, metrics, SecretManagerConfig, SourceRef, SecretManagerConfigStatus, Condition};
+use crate::{parser, metrics, SecretManagerConfig, SourceRef, SecretManagerConfigStatus, Condition, ProviderConfig};
+use crate::provider::SecretManagerProvider;
+use crate::gcp::SecretManagerClient as GcpSecretManagerClient;
+use crate::aws::AwsSecretManager;
+use crate::azure::AzureKeyVault;
 use kube_runtime::controller::Action;
 use anyhow::{Context, Result};
 use kube::Client;
@@ -138,9 +142,8 @@ pub struct Reconciler {
 
 impl Reconciler {
     pub async fn new(client: Client) -> Result<Self> {
-        // Create secret manager with default authentication (will use GOOGLE_APPLICATION_CREDENTIALS or ADC)
+        // Provider is created per-reconciliation based on provider config
         // Per-resource auth config is handled in reconcile()
-        let secret_manager = SecretManagerClient::new(None, None).await?;
         
         // Load SOPS private key from Kubernetes secret
         let sops_private_key = Self::load_sops_private_key(&client).await?;
@@ -151,13 +154,19 @@ impl Reconciler {
         })
     }
 
-    /// Load SOPS private key from Kubernetes secret in flux-system namespace
+    /// Load SOPS private key from Kubernetes secret in controller namespace
+    /// Defaults to microscaler-system namespace
     async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
         use kube::Api;
         use kube::core::ObjectMeta;
         use k8s_openapi::api::core::v1::Secret;
         
-        let secrets: Api<Secret> = Api::namespaced(client.clone(), "flux-system");
+        // Use controller namespace (defaults to microscaler-system)
+        // Can be overridden via POD_NAMESPACE environment variable
+        let namespace = std::env::var("POD_NAMESPACE")
+            .unwrap_or_else(|_| "microscaler-system".to_string());
+        
+        let secrets: Api<Secret> = Api::namespaced(client.clone(), &namespace);
         
         // Try to get the SOPS private key secret
         // Expected secret name: sops-private-key (or similar)
@@ -189,7 +198,7 @@ impl Reconciler {
             }
         }
         
-        warn!("SOPS private key not found in flux-system namespace, SOPS decryption will be disabled");
+        warn!("SOPS private key not found in {} namespace, SOPS decryption will be disabled", namespace);
         Ok(None)
     }
 
@@ -277,35 +286,54 @@ impl Reconciler {
             }
         };
 
-        // Determine authentication method from config
-        // Note: We need to serialize to JSON and parse back to determine the type
-        // since GcpAuthConfig enum is defined in main.rs and not accessible here
-        let (auth_type, service_account_email_owned) = if let Some(ref auth_config) = config.spec.gcp.auth {
-            let auth_json = serde_json::to_value(auth_config)
-                .context("Failed to serialize gcpAuth config")?;
-            let auth_type_str = auth_json.get("type").and_then(|t| t.as_str());
-            match auth_type_str {
-                Some("WorkloadIdentity") => {
-                    let email = auth_json.get("serviceAccountEmail")
-                        .and_then(|e| e.as_str())
-                        .context("WorkloadIdentity requires serviceAccountEmail")?
-                        .to_string();
-                    (Some("WorkloadIdentity"), Some(email))
-                }
-                Some("JsonCredentials") => {
-                    (Some("JsonCredentials"), None)
-                }
-                _ => (None, None),
+        // Create provider based on provider config
+        let provider: Box<dyn SecretManagerProvider> = match &config.spec.provider {
+            ProviderConfig::Gcp(gcp_config) => {
+                // Determine authentication method from config
+                // Default to Workload Identity when auth is not specified
+                let (auth_type, service_account_email_owned) = if let Some(ref auth_config) = gcp_config.auth {
+                    let auth_json = serde_json::to_value(auth_config)
+                        .context("Failed to serialize gcpAuth config")?;
+                    let auth_type_str = auth_json.get("authType").and_then(|t| t.as_str());
+                    match auth_type_str {
+                        Some("WorkloadIdentity") => {
+                            let email = auth_json.get("serviceAccountEmail")
+                                .and_then(|e| e.as_str())
+                                .context("WorkloadIdentity requires serviceAccountEmail")?
+                                .to_string();
+                            (Some("WorkloadIdentity"), Some(email))
+                        }
+                        Some("JsonCredentials") => {
+                            warn!("⚠️  DEPRECATED: JSON credentials are available but will be deprecated once GCP deprecates them. Please migrate to Workload Identity.");
+                            (Some("JsonCredentials"), None)
+                        }
+                        _ => {
+                            // Default to Workload Identity
+                            info!("No auth type specified, defaulting to Workload Identity");
+                            (Some("WorkloadIdentity"), None)
+                        }
+                    }
+                } else {
+                    // Default to Workload Identity when auth is not specified
+                    info!("No auth configuration specified, defaulting to Workload Identity");
+                    (Some("WorkloadIdentity"), None)
+                };
+                
+                let service_account_email = service_account_email_owned.as_deref();
+                let gcp_client = GcpSecretManagerClient::new(gcp_config.project_id.clone(), auth_type, service_account_email).await?;
+                Box::new(gcp_client)
             }
-        } else {
-            (None, None)
+            ProviderConfig::Aws(aws_config) => {
+                let aws_provider = AwsSecretManager::new(aws_config, &ctx.client).await
+                    .context("Failed to create AWS Secrets Manager client")?;
+                Box::new(aws_provider)
+            }
+            ProviderConfig::Azure(azure_config) => {
+                let azure_provider = AzureKeyVault::new(azure_config, &ctx.client).await
+                    .context("Failed to create Azure Key Vault client")?;
+                Box::new(azure_provider)
+            }
         };
-        
-        let service_account_email = service_account_email_owned.as_deref();
-
-        // Create secret manager client with appropriate authentication
-        // Note: In a real implementation, we might want to cache clients per auth config
-        let secret_manager = SecretManagerClient::new(auth_type, service_account_email).await?;
 
         let mut secrets_synced = 0;
 
@@ -318,7 +346,7 @@ impl Reconciler {
             match crate::kustomize::extract_secrets_from_kustomize(&artifact_path, kustomize_path).await {
                 Ok(secrets) => {
                     let secret_prefix = config.spec.secrets.prefix.as_deref().unwrap_or("default");
-                    match ctx.process_kustomize_secrets(&secret_manager, &config, &secrets, secret_prefix).await {
+                    match ctx.process_kustomize_secrets(&*provider, &config, &secrets, secret_prefix).await {
                         Ok(count) => {
                             secrets_synced += count;
                             info!("Synced {} secrets from kustomize build", count);
@@ -367,7 +395,7 @@ impl Reconciler {
 
             // Process each application file set
             for app_files in application_files {
-                match ctx.process_application_files(&secret_manager, &config, &app_files).await {
+                match ctx.process_application_files(&*provider, &config, &app_files).await {
                     Ok(count) => {
                         secrets_synced += count;
                         info!("Synced {} secrets for {}", count, app_files.service_name);
@@ -637,7 +665,7 @@ impl Reconciler {
 
     async fn process_application_files(
         &self,
-        secret_manager: &SecretManagerClient,
+        provider: &dyn SecretManagerProvider,
         config: &SecretManagerConfig,
         app_files: &parser::ApplicationFiles,
     ) -> Result<i32> {
@@ -652,7 +680,7 @@ impl Reconciler {
         let secrets = parser::parse_secrets(&app_files, self.sops_private_key.as_deref()).await?;
         let properties = parser::parse_properties(&app_files).await?;
 
-        // Store secrets in GCP Secret Manager (GitOps: Git is source of truth)
+        // Store secrets in cloud provider (GitOps: Git is source of truth)
         let mut count = 0;
         let mut updated_count = 0;
         
@@ -662,9 +690,8 @@ impl Reconciler {
                 key.as_str(),
                 config.spec.secrets.suffix.as_deref(),
             );
-            match secret_manager
+            match provider
                 .create_or_update_secret(
-                    &config.spec.gcp.project_id,
                     &secret_name,
                     &value,
                 )
@@ -687,7 +714,7 @@ impl Reconciler {
         if updated_count > 0 {
             metrics::increment_secrets_updated(updated_count as i64);
             warn!(
-                "Updated {} secrets from git (GitOps source of truth). Manual changes in GCP Secret Manager were overwritten.",
+                "Updated {} secrets from git (GitOps source of truth). Manual changes in cloud provider were overwritten.",
                 updated_count
             );
         }
@@ -700,9 +727,8 @@ impl Reconciler {
                 "properties",
                 config.spec.secrets.suffix.as_deref(),
             );
-            match secret_manager
+            match provider
                 .create_or_update_secret(
-                    &config.spec.gcp.project_id,
                     &secret_name,
                     &properties_json,
                 )
@@ -728,12 +754,12 @@ impl Reconciler {
 
     async fn process_kustomize_secrets(
         &self,
-        secret_manager: &SecretManagerClient,
+        provider: &dyn SecretManagerProvider,
         config: &SecretManagerConfig,
         secrets: &std::collections::HashMap<String, String>,
         secret_prefix: &str,
     ) -> Result<i32> {
-        // Store secrets in GCP Secret Manager (GitOps: Git is source of truth)
+        // Store secrets in cloud provider (GitOps: Git is source of truth)
         let mut count = 0;
         let mut updated_count = 0;
         
@@ -743,9 +769,8 @@ impl Reconciler {
                 key.as_str(),
                 config.spec.secrets.suffix.as_deref(),
             );
-            match secret_manager
+            match provider
                 .create_or_update_secret(
-                    &config.spec.gcp.project_id,
                     &secret_name,
                     value,
                 )
@@ -768,7 +793,7 @@ impl Reconciler {
         if updated_count > 0 {
             metrics::increment_secrets_updated(updated_count as i64);
             warn!(
-                "Updated {} secrets from kustomize build (GitOps source of truth). Manual changes in GCP Secret Manager were overwritten.",
+                "Updated {} secrets from kustomize build (GitOps source of truth). Manual changes in cloud provider were overwritten.",
                 updated_count
             );
         }

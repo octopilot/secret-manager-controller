@@ -37,7 +37,9 @@ rules:
   - get
   - list
   - watch
-# Access SOPS private key secrets in flux-system namespace
+# Access SOPS private key secrets in microscaler-system namespace
+# Note: ClusterRole grants cluster-wide access, but actual access is restricted
+# to microscaler-system namespace via RoleBinding
 - apiGroups:
   - ""
   resources:
@@ -48,6 +50,4 @@ rules:
   - sops-private-key
   - sops-gpg-key
   - gpg-key
-  # Restrict to flux-system namespace for SOPS secrets
-  # Note: This requires a RoleBinding in flux-system namespace
 

@@ -27,7 +27,7 @@
 
 use kube::{core::CustomResourceExt, CustomResource};
 use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
+use schemars::{JsonSchema, gen::SchemaGenerator, schema::{Schema, SchemaObject, InstanceType, Metadata, SubschemaValidation}};
 
 // Re-define the types needed for CRD generation
 // This matches the types in main.rs
@@ -43,16 +43,225 @@ use schemars::JsonSchema;
 #[serde(rename_all = "camelCase")]
 pub struct SecretManagerConfigSpec {
     pub source_ref: SourceRef,
-    pub gcp_project_id: String,
+    pub provider: ProviderConfig,
+    pub secrets: SecretsConfig,
+    // Temporarily commented out to avoid schema generation issues with nested discriminated unions
+    // The otel field will be added back once we resolve the schema conflict
+    // #[serde(default)]
+    // pub otel: Option<OtelConfig>,
+}
+
+/// Cloud provider configuration
+/// NOTE: Due to kube-rs limitations with nested discriminated unions, the provider field
+/// uses x-kubernetes-preserve-unknown-fields: true to allow the discriminated union structure.
+/// Validation is performed at runtime by the controller.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum ProviderConfig {
+    Gcp(GcpConfig),
+    Aws(AwsConfig),
+    Azure(AzureConfig),
+}
+
+impl JsonSchema for ProviderConfig {
+    fn schema_name() -> String {
+        "ProviderConfig".to_string()
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+        // Use x-kubernetes-preserve-unknown-fields to allow discriminated union structure
+        // kube-rs cannot generate proper oneOf schemas for nested discriminated unions
+        // Validation is performed at runtime by the controller
+        let mut schema_obj = SchemaObject::default();
+        schema_obj.metadata = Some(Box::new(Metadata {
+            description: Some("Cloud provider configuration. Supports GCP, AWS, and Azure. Must have a 'type' field set to 'gcp', 'aws', or 'azure'.".to_string()),
+            ..Default::default()
+        }));
+        schema_obj.instance_type = Some(InstanceType::Object.into());
+        schema_obj.extensions.insert("x-kubernetes-preserve-unknown-fields".to_string(), serde_json::json!(true));
+        Schema::Object(schema_obj)
+    }
+}
+
+fn auth_config_schema(_gen: &mut SchemaGenerator) -> Schema {
+    let mut schema_obj = SchemaObject::default();
+    // Use generic metadata to ensure all auth fields have identical schemas
+    // This is required for Kubernetes structural schemas with oneOf
+    schema_obj.metadata = Some(Box::new(Metadata {
+        description: Some("Authentication configuration. Supports multiple auth types via discriminated union.".to_string()),
+        ..Default::default()
+    }));
+    schema_obj.instance_type = Some(InstanceType::Object.into());
+    // Use x-kubernetes-preserve-unknown-fields to avoid schema conflicts with nested discriminated unions
+    schema_obj.extensions.insert("x-kubernetes-preserve-unknown-fields".to_string(), serde_json::json!(true));
+    Schema::Object(schema_obj)
+}
+
+
+/// GCP configuration for Secret Manager
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GcpConfig {
+    pub project_id: String,
+    #[serde(default)]
+    #[schemars(schema_with = "auth_config_schema")]
+    pub auth: Option<GcpAuthConfig>,
+}
+
+/// AWS configuration for Secrets Manager
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AwsConfig {
+    pub region: String,
+    #[serde(default)]
+    #[schemars(schema_with = "auth_config_schema")]
+    pub auth: Option<AwsAuthConfig>,
+}
+
+/// Azure configuration for Key Vault
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AzureConfig {
+    pub vault_name: String,
+    #[serde(default)]
+    #[schemars(schema_with = "auth_config_schema")]
+    pub auth: Option<AzureAuthConfig>,
+}
+
+/// Secrets sync configuration
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretsConfig {
     pub environment: String,
     #[serde(default)]
     pub kustomize_path: Option<String>,
     #[serde(default)]
     pub base_path: Option<String>,
     #[serde(default)]
-    pub secret_prefix: Option<String>,
+    pub prefix: Option<String>,
     #[serde(default)]
-    pub secret_suffix: Option<String>,
+    pub suffix: Option<String>,
+}
+
+/// GCP authentication configuration
+/// If not specified, defaults to Workload Identity (recommended).
+/// JSON credentials are available but will be deprecated once GCP deprecates them.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum GcpAuthConfig {
+    /// Use JSON credentials from a Kubernetes secret (DEPRECATED)
+    /// ⚠️ DEPRECATED: JSON credentials are available but will be deprecated once GCP deprecates them.
+    /// Workload Identity is the recommended and default authentication method.
+    JsonCredentials {
+        #[serde(default = "default_json_secret_name")]
+        secret_name: String,
+        #[serde(default)]
+        secret_namespace: Option<String>,
+        #[serde(default = "default_json_secret_key")]
+        secret_key: String,
+    },
+    /// Use Workload Identity for authentication (DEFAULT)
+    /// Requires GKE cluster with Workload Identity enabled
+    /// This is the recommended authentication method and is used by default when auth is not specified
+    WorkloadIdentity {
+        service_account_email: String,
+    },
+}
+
+/// AWS authentication configuration
+/// If not specified, defaults to IRSA (IAM Roles for Service Accounts) - recommended.
+/// Access Keys are available but will be deprecated once AWS deprecates them.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum AwsAuthConfig {
+    /// Use Access Keys from a Kubernetes secret (DEPRECATED)
+    /// ⚠️ DEPRECATED: Access Keys are available but will be deprecated once AWS deprecates them.
+    /// IRSA (IAM Roles for Service Accounts) is the recommended and default authentication method.
+    AccessKeys {
+        #[serde(default = "default_aws_secret_name")]
+        secret_name: String,
+        #[serde(default)]
+        secret_namespace: Option<String>,
+        #[serde(default = "default_aws_access_key_id_key")]
+        access_key_id_key: String,
+        #[serde(default = "default_aws_secret_access_key_key")]
+        secret_access_key_key: String,
+    },
+    /// Use IRSA (IAM Roles for Service Accounts) for authentication (DEFAULT)
+    /// Requires EKS cluster with IRSA enabled and service account annotation
+    /// This is the recommended authentication method and is used by default when auth is not specified
+    Irsa {
+        role_arn: String,
+    },
+}
+
+/// Azure authentication configuration
+/// If not specified, defaults to Workload Identity (recommended).
+/// Service Principal credentials are available but will be deprecated once Azure deprecates them.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum AzureAuthConfig {
+    /// Use Service Principal from a Kubernetes secret (DEPRECATED)
+    /// ⚠️ DEPRECATED: Service Principal credentials are available but will be deprecated once Azure deprecates them.
+    /// Workload Identity is the recommended and default authentication method.
+    ServicePrincipal {
+        secret_name: String,
+        #[serde(default)]
+        secret_namespace: Option<String>,
+    },
+    /// Use Workload Identity for authentication (DEFAULT)
+    /// Requires AKS cluster with Workload Identity enabled
+    /// This is the recommended authentication method and is used by default when auth is not specified
+    WorkloadIdentity {
+        client_id: String,
+    },
+}
+
+/// OpenTelemetry configuration
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "otelType")]
+pub enum OtelConfig {
+    Otlp {
+        endpoint: String,
+        #[serde(default)]
+        service_name: Option<String>,
+        #[serde(default)]
+        service_version: Option<String>,
+        #[serde(default)]
+        environment: Option<String>,
+    },
+    Datadog {
+        #[serde(default)]
+        service_name: Option<String>,
+        #[serde(default)]
+        service_version: Option<String>,
+        #[serde(default)]
+        environment: Option<String>,
+        #[serde(default)]
+        site: Option<String>,
+        #[serde(default)]
+        api_key: Option<String>,
+    },
+}
+
+fn default_json_secret_name() -> String {
+    "gcp-secret-manager-credentials".to_string()
+}
+
+fn default_json_secret_key() -> String {
+    "key.json".to_string()
+}
+
+fn default_aws_secret_name() -> String {
+    "aws-secret-manager-credentials".to_string()
+}
+
+fn default_aws_access_key_id_key() -> String {
+    "access-key-id".to_string()
+}
+
+fn default_aws_secret_access_key_key() -> String {
+    "secret-access-key".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

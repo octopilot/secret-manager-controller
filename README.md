@@ -1,6 +1,6 @@
 # Secret Manager Controller
 
-Kubernetes controller that syncs secrets from GitOps repositories (FluxCD/ArgoCD) to Google Cloud Secret Manager.
+Kubernetes controller that syncs secrets from GitOps repositories (FluxCD/ArgoCD) to cloud secret managers (GCP Secret Manager, AWS Secrets Manager, Azure Key Vault).
 
 ## Overview
 
@@ -12,7 +12,11 @@ This controller:
    - **Raw File Mode**: Reads `application.secrets.env`, `application.secrets.yaml`, and `application.properties` directly
 3. **Decrypts SOPS files** - Automatically decrypts SOPS-encrypted secret files using GPG private key from Kubernetes secret
 4. **GitOps-agnostic** - Works with FluxCD, ArgoCD, or any GitOps tool that provides GitRepository artifacts
-5. **Stores in GCP Secret Manager** - Syncs secrets to Google Cloud Secret Manager for CloudRun consumption
+5. **Multi-Cloud Support** - Syncs secrets to:
+   - **Google Cloud Secret Manager** (GCP) - Default and recommended for GKE
+   - **AWS Secrets Manager** - For EKS clusters
+   - **Azure Key Vault** - For AKS clusters
+6. **Workload Identity Support** - Uses Workload Identity/IRSA by default for secure authentication without storing credentials
 
 ## Architecture
 
@@ -45,18 +49,26 @@ flowchart TB
         RECON --> HTTP
     end
     
-    subgraph GCP["Google Cloud"]
-        GSM[Secret Manager<br/>Git is source of truth]
-        CR[CloudRun Services/Jobs<br/>via Upbound Provider]
-        GSM --> CR
+    subgraph Cloud["Cloud Providers"]
+        GCP[GCP Secret Manager<br/>Git is source of truth]
+        AWS[AWS Secrets Manager<br/>Git is source of truth]
+        Azure[Azure Key Vault<br/>Git is source of truth]
+        Services[Cloud Services<br/>GKE/EKS/AKS]
+        GCP --> Services
+        AWS --> Services
+        Azure --> Services
     end
     
     AC --> CRD
     GC --> CRD
-    RECON --> GSM
+    RECON --> GCP
+    RECON --> AWS
+    RECON --> Azure
     
     style CRD fill:#e1f5ff
-    style GSM fill:#fff4e1
+    style GCP fill:#fff4e1
+    style AWS fill:#fff4e1
+    style Azure fill:#fff4e1
     style RECON fill:#e8f5e9
 ```
 
@@ -139,6 +151,10 @@ sequenceDiagram
 
 ## CRD Definition
 
+### Multi-Cloud Provider Support
+
+The controller supports three cloud providers: GCP, AWS, and Azure. Configure the `provider` field with the appropriate provider type:
+
 ```yaml
 apiVersion: secret-management.microscaler.io/v1
 kind: SecretManagerConfig
@@ -149,18 +165,55 @@ spec:
   sourceRef:
     kind: GitRepository  # FluxCD GitRepository (default) or "Application" for ArgoCD
     name: my-repo
-    namespace: flux-system
-  gcp:
-    projectId: my-gcp-project
-    # Optional: GCP authentication configuration
-    # If not specified, defaults to JSON credentials from GOOGLE_APPLICATION_CREDENTIALS
-    auth:
-      type: WorkloadIdentity  # or "JsonCredentials"
-      serviceAccountEmail: secret-manager-controller@my-project.iam.gserviceaccount.com  # For Workload Identity
-      # OR for JSON credentials:
-      # secretName: gcp-secret-manager-credentials
-      # secretNamespace: flux-system
-      # secretKey: key.json
+    namespace: microscaler-system
+  
+  # Cloud provider configuration - choose one:
+  provider:
+    # Option 1: Google Cloud Platform (GCP)
+    type: gcp
+    gcp:
+      projectId: my-gcp-project
+      # Optional: GCP authentication configuration
+      # Defaults to Workload Identity when not specified (recommended for GKE)
+      auth:
+        authType: WorkloadIdentity  # or "JsonCredentials" (deprecated)
+        serviceAccountEmail: secret-manager-controller@my-project.iam.gserviceaccount.com
+        # OR for JSON credentials (deprecated):
+        # authType: JsonCredentials
+        # secretName: gcp-secret-manager-credentials
+        # secretNamespace: microscaler-system
+        # secretKey: key.json
+    
+    # Option 2: Amazon Web Services (AWS)
+    # type: aws
+    # aws:
+    #   region: us-east-1
+    #   # Optional: AWS authentication configuration
+    #   # Defaults to IRSA (IAM Roles for Service Accounts) when not specified (recommended for EKS)
+    #   auth:
+    #     authType: Irsa  # or "AccessKeys" (deprecated)
+    #     roleArn: arn:aws:iam::123456789012:role/secret-manager-role
+    #     # OR for Access Keys (deprecated):
+    #     # authType: AccessKeys
+    #     # secretName: aws-secret-manager-credentials
+    #     # secretNamespace: flux-system
+    #     # accessKeyIdKey: access-key-id
+    #     # secretAccessKeyKey: secret-access-key
+    
+    # Option 3: Microsoft Azure
+    # type: azure
+    # azure:
+    #   vaultName: my-key-vault
+    #   # Optional: Azure authentication configuration
+    #   # Defaults to Workload Identity when not specified (recommended for AKS)
+    #   auth:
+    #     authType: WorkloadIdentity  # or "ServicePrincipal" (deprecated)
+    #     clientId: 12345678-1234-1234-1234-123456789012
+    #     # OR for Service Principal (deprecated):
+    #     # authType: ServicePrincipal
+    #     # secretName: azure-credentials
+    #     # secretNamespace: flux-system
+  
   secrets:
     # Environment/profile name to sync (required - must match directory name under profiles/)
     environment: dev
@@ -217,23 +270,32 @@ graph TD
 
 ## Secret Naming
 
-Secrets in GCP Secret Manager are named using the same convention as `kustomize-google-secret-manager` for drop-in replacement compatibility:
+Secrets in cloud secret managers are named using the same convention as `kustomize-google-secret-manager` for drop-in replacement compatibility:
 
 - `{secretPrefix}-{key}-{secretSuffix}` if both prefix and suffix are specified
 - `{secretPrefix}-{key}` if only prefix is specified
 - `{key}-{secretSuffix}` if only suffix is specified
 - `{key}` if neither is specified
 
-Invalid characters (`.`, `/`, spaces) are automatically replaced with `_` to comply with GCP Secret Manager naming requirements.
+Invalid characters (`.`, `/`, spaces) are automatically sanitized to `_` to comply with cloud provider naming requirements:
+- **GCP Secret Manager**: Names must be 1-255 characters, can contain letters, numbers, hyphens, and underscores
+- **AWS Secrets Manager**: Names must be 1-512 characters, can contain letters, numbers, `/`, `_`, `+`, `=`, `.`, `@`, `-`
+- **Azure Key Vault**: Names must be 1-127 characters, can contain letters, numbers, and hyphens
+
+The controller automatically sanitizes secret names to ensure compliance with all providers.
 
 Examples:
 - With prefix only: `my-service-database-url`, `my-service-api-key`
 - With prefix and suffix: `my-service-database-url-prod`, `my-service-api-key-prod`
 - Properties secret: `my-service-properties` or `my-service-properties-prod`
 
-## Usage with CloudRun
+## Usage with Cloud Services
 
-After secrets are synced to GCP Secret Manager, use the [Upbound GCP CloudRun Provider](https://marketplace.upbound.io/providers/upbound/provider-gcp-cloudrun/v2.2.0) to reference them:
+After secrets are synced to cloud secret managers, reference them in your cloud services:
+
+### Google Cloud Platform (GCP) - CloudRun
+
+Use the [Upbound GCP CloudRun Provider](https://marketplace.upbound.io/providers/upbound/provider-gcp-cloudrun/v2.2.0) to reference secrets:
 
 ```yaml
 apiVersion: cloudrun.gcp.upbound.io/v1beta1
@@ -253,6 +315,56 @@ spec:
                 name: my-service-database-url
                 key: latest
 ```
+
+### Amazon Web Services (AWS) - ECS/EKS
+
+Reference secrets from AWS Secrets Manager in your ECS tasks or EKS pods:
+
+```yaml
+# ECS Task Definition
+apiVersion: ecs.aws.upbound.io/v1beta1
+kind: TaskDefinition
+metadata:
+  name: my-service
+spec:
+  forProvider:
+    containerDefinitions: |
+      [
+        {
+          "name": "my-service",
+          "image": "my-registry/my-service:latest",
+          "secrets": [
+            {
+              "name": "DATABASE_URL",
+              "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-service-database-url"
+            }
+          ]
+        }
+      ]
+```
+
+### Microsoft Azure - AKS/Container Apps
+
+Reference secrets from Azure Key Vault in your AKS pods or Container Apps:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-service
+spec:
+  containers:
+  - name: my-service
+    image: my-registry/my-service:latest
+    env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: azure-keyvault-secret-my-service-database-url
+          key: value
+```
+
+**Note:** For Azure, you'll typically use the [External Secrets Operator](https://external-secrets.io/) or [Secrets Store CSI Driver](https://secrets-store-csi-driver.sigs.k8s.io/) to sync Azure Key Vault secrets to Kubernetes secrets.
 
 ## Development
 
@@ -274,8 +386,18 @@ cargo build --release
 ### Run Locally
 
 ```bash
-# Set GCP credentials
+# For GCP:
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+
+# For AWS:
+export AWS_ACCESS_KEY_ID=your-access-key
+export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_DEFAULT_REGION=us-east-1
+
+# For Azure:
+export AZURE_CLIENT_ID=your-client-id
+export AZURE_CLIENT_SECRET=your-client-secret
+export AZURE_TENANT_ID=your-tenant-id
 
 # Run controller
 cargo run
@@ -283,14 +405,14 @@ cargo run
 
 ### Deploy to Kubernetes
 
-The controller deploys to the `flux-system` namespace (same as FluxCD) but works with both FluxCD and ArgoCD.
+The controller deploys to the `microscaler-system` namespace (GitOps provider agnostic) and works with both FluxCD and ArgoCD.
 
 ```bash
 # Apply CRD
 kubectl apply -f config/crd/
 
-# Deploy controller to flux-system namespace
-kubectl apply -f config/deployment/
+# Deploy controller to microscaler-system namespace
+kubectl apply -k config/
 ```
 
 **Note:** The controller watches `SecretManagerConfig` resources in **all namespaces**, so you can deploy your `SecretManagerConfig` resources in any namespace where your services are deployed.
@@ -300,12 +422,22 @@ kubectl apply -f config/deployment/
 ### Environment Variables
 
 - `GOOGLE_APPLICATION_CREDENTIALS` - Path to GCP service account JSON (only needed for JSON credentials, not Workload Identity)
+- `AWS_ACCESS_KEY_ID` - AWS access key (only needed for Access Keys, not IRSA)
+- `AWS_SECRET_ACCESS_KEY` - AWS secret access key (only needed for Access Keys, not IRSA)
+- `AWS_DEFAULT_REGION` - AWS region (default: `us-east-1`)
+- `AZURE_CLIENT_ID` - Azure client ID (only needed for Service Principal, not Workload Identity)
+- `AZURE_CLIENT_SECRET` - Azure client secret (only needed for Service Principal, not Workload Identity)
+- `AZURE_TENANT_ID` - Azure tenant ID (only needed for Service Principal, not Workload Identity)
 - `RUST_LOG` - Logging level (default: `info`)
 - `METRICS_PORT` - Port for metrics and probe endpoints (default: `8080`)
 
-### GCP Authentication
+### Cloud Provider Authentication
 
-The controller supports two authentication methods:
+The controller supports multiple authentication methods for each cloud provider. **Workload Identity (or equivalent) is the default and recommended method** for all providers, as it eliminates the need to manage credentials.
+
+#### GCP Authentication
+
+The controller supports two authentication methods for GCP:
 
 #### 1. Workload Identity (Recommended for GKE)
 
@@ -332,7 +464,7 @@ Workload Identity is the recommended authentication method for GKE clusters. It 
    gcloud iam service-accounts add-iam-policy-binding \
      secret-manager-controller@YOUR_PROJECT_ID.iam.gserviceaccount.com \
      --role roles/iam.workloadIdentityUser \
-     --member "serviceAccount:YOUR_PROJECT_ID.svc.id.goog[flux-system/secret-manager-controller]"
+     --member "serviceAccount:YOUR_PROJECT_ID.svc.id.goog[microscaler-system/secret-manager-controller]"
    ```
 
 4. **Annotate Kubernetes Service Account:**
@@ -419,7 +551,7 @@ The controller exposes the following metrics:
 
 ### SOPS Private Key
 
-The controller automatically loads the SOPS private key from a Kubernetes secret in the `flux-system` namespace. It looks for secrets named:
+The controller automatically loads the SOPS private key from a Kubernetes secret in the `microscaler-system` namespace (or the namespace specified by `POD_NAMESPACE` environment variable). It looks for secrets named:
 - `sops-private-key`
 - `sops-gpg-key`
 - `gpg-key`
@@ -483,10 +615,10 @@ The controller uses a `ClusterRole` to watch resources across all namespaces:
 - `update`, `patch` on `secretmanagerconfigs.secret-management.microscaler.io/status` (all namespaces)
 - `get`, `list`, `watch` on `gitrepositories.source.toolkit.fluxcd.io` (all namespaces) - FluxCD
 - `get`, `list`, `watch` on `applications.argoproj.io` (all namespaces) - ArgoCD
-- `get` on `secrets` in `flux-system` namespace (for SOPS private key)
+- `get` on `secrets` in `microscaler-system` namespace (for SOPS private key)
 
 **Namespace Flexibility:**
-- Controller deploys to `flux-system` namespace
+- Controller deploys to `microscaler-system` namespace
 - `SecretManagerConfig` resources can be deployed in **any namespace**
 - Controller automatically watches and reconciles resources in all namespaces
 
@@ -580,7 +712,7 @@ msmctl reconcile --name idam-dev-secrets --namespace pricewhisperer --force
    Timestamp: 1702567890
 
 📊 Watching reconciliation logs...
-   (Use 'kubectl logs -n flux-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)
+   (Use 'kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)
 ```
 
 #### `msmctl list`

@@ -2,11 +2,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: secret-manager-controller
-  namespace: flux-system
+  namespace: microscaler-system
 rules:
 # This Role is only needed for namespace-specific permissions
 # SecretManagerConfig watching is handled by ClusterRole
-# This Role allows access to SOPS secrets in flux-system namespace
+# This Role allows access to SOPS secrets in microscaler-system namespace
 - apiGroups:
   - ""
   resources:

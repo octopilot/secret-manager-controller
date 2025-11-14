@@ -8,10 +8,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // Re-export modules so they can be tested
+pub mod aws;
+pub mod azure;
 pub mod gcp;
 pub mod kustomize;
 pub mod metrics;
+pub mod otel;
 pub mod parser;
+pub mod provider;
 pub mod reconciler;
 
 // Note: GcpAuthConfig is defined in main.rs since main.rs has its own CRD definition
@@ -32,10 +36,82 @@ pub mod reconciler;
 #[serde(rename_all = "camelCase")]
 pub struct SecretManagerConfigSpec {
     pub source_ref: SourceRef,
-    pub gcp: GcpConfig,
+    pub provider: ProviderConfig,
     pub secrets: SecretsConfig,
     #[serde(default)]
     pub otel: Option<OtelConfig>,
+}
+
+/// Cloud provider configuration
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum ProviderConfig {
+    Gcp(GcpConfig),
+    Aws(AwsConfig),
+    Azure(AzureConfig),
+}
+
+/// AWS configuration for Secrets Manager
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AwsConfig {
+    pub region: String,
+    #[serde(default)]
+    pub auth: Option<AwsAuthConfig>,
+}
+
+/// Azure configuration for Key Vault (stub)
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AzureConfig {
+    pub vault_name: String,
+    #[serde(default)]
+    pub auth: Option<AzureAuthConfig>,
+}
+
+/// AWS authentication configuration
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum AwsAuthConfig {
+    AccessKeys {
+        #[serde(default = "default_aws_secret_name")]
+        secret_name: String,
+        #[serde(default)]
+        secret_namespace: Option<String>,
+        #[serde(default = "default_aws_access_key_id_key")]
+        access_key_id_key: String,
+        #[serde(default = "default_aws_secret_access_key_key")]
+        secret_access_key_key: String,
+    },
+    Irsa {
+        role_arn: String,
+    },
+}
+
+/// Azure authentication configuration (stub)
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum AzureAuthConfig {
+    ServicePrincipal {
+        secret_name: String,
+        #[serde(default)]
+        secret_namespace: Option<String>,
+    },
+    WorkloadIdentity {
+        client_id: String,
+    },
+}
+
+fn default_aws_secret_name() -> String {
+    "aws-secret-manager-credentials".to_string()
+}
+
+fn default_aws_access_key_id_key() -> String {
+    "access-key-id".to_string()
+}
+
+fn default_aws_secret_access_key_key() -> String {
+    "secret-access-key".to_string()
 }
 
 /// GCP configuration for Secret Manager
@@ -78,7 +154,7 @@ fn default_source_kind() -> String {
 /// GCP authentication configuration
 /// Supports both JSON credentials and Workload Identity
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase", tag = "authType")]
 pub enum GcpAuthConfig {
     JsonCredentials {
         #[serde(default = "default_json_secret_name")]
@@ -103,7 +179,7 @@ fn default_json_secret_key() -> String {
 
 /// OpenTelemetry configuration
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase", tag = "otelType")]
 pub enum OtelConfig {
     Otlp {
         endpoint: String,

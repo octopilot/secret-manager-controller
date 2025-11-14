@@ -135,4 +135,12 @@ pub fn observe_gcp_operation_duration(duration: f64) {
     GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
 }
 
+// Generic secret operation metrics for multi-provider support
+pub fn record_secret_operation(_provider: &str, _operation: &str, duration: f64) {
+    // For now, we'll use the GCP metrics as a generic metric
+    // In the future, we might want provider-specific metrics
+    GCP_SECRET_MANAGER_OPERATIONS_TOTAL.inc();
+    GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
+}
+
 

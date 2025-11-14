@@ -69,7 +69,7 @@ local_resource(
 
 custom_build(
     IMAGE_NAME,
-    'docker build -f %s/Dockerfile -t %s:tilt %s && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
+    'docker build -f %s/Dockerfile.dev -t %s:tilt %s && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
         CONTROLLER_DIR,
         IMAGE_NAME,
         CONTROLLER_DIR,
@@ -77,7 +77,7 @@ custom_build(
     ),
     deps=[
         BINARY_PATH,
-        '%s/Dockerfile' % CONTROLLER_DIR,
+        '%s/Dockerfile.dev' % CONTROLLER_DIR,
     ],
     tag='tilt',
     live_update=[

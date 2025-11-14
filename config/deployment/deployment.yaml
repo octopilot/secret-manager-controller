@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: secret-manager-controller
-  namespace: flux-system
+  namespace: microscaler-system
 spec:
   replicas: 1
   selector:
@@ -21,6 +21,10 @@ spec:
         env:
         - name: RUST_LOG
           value: "info"
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         # GOOGLE_APPLICATION_CREDENTIALS is only needed for JSON credentials
         # If using Workload Identity, this can be omitted
         # Uncomment the following line if using JSON credentials:

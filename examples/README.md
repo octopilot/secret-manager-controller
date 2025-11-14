@@ -1,6 +1,6 @@
 # Secret Manager Controller Examples
 
-This directory contains example `SecretManagerConfig` resources for configuring the Secret Manager Controller to sync secrets from Flux GitRepositories to Google Cloud Secret Manager.
+This directory contains example `SecretManagerConfig` resources for configuring the Secret Manager Controller to sync secrets from Flux GitRepositories to cloud secret managers (GCP Secret Manager, AWS Secrets Manager, Azure Key Vault).
 
 ## Project Structure Support
 
@@ -50,13 +50,61 @@ The controller also supports legacy structures without the `profiles/` directory
 
 However, the `profiles/` structure is recommended for Skaffold compatibility.
 
+## Cloud Provider Examples
+
+### Google Cloud Platform (GCP)
+
+**Files:**
+- `idam-dev-secret-manager-config.yaml` - GCP with default authentication
+- `idam-dev-workload-identity-secret-manager-config.yaml` - GCP with Workload Identity
+
+### Amazon Web Services (AWS)
+
+**File:** `idam-dev-aws-secret-manager-config.yaml`
+
+This example syncs secrets to AWS Secrets Manager using IRSA (IAM Roles for Service Accounts):
+
+```bash
+# Apply the configuration
+kubectl apply -f examples/idam-dev-aws-secret-manager-config.yaml
+
+# Check the status
+kubectl get secretmanagerconfig idam-dev-secrets-aws -n pricewhisperer
+```
+
+**Expected Secrets in AWS Secrets Manager:**
+- `idam-dev-supabase-anon-key`
+- `idam-dev-jwt-secret`
+- `idam-dev-supabase-service-role-key`
+- `idam-dev-properties`
+
+### Microsoft Azure
+
+**File:** `idam-dev-azure-secret-manager-config.yaml`
+
+This example syncs secrets to Azure Key Vault using Workload Identity:
+
+```bash
+# Apply the configuration
+kubectl apply -f examples/idam-dev-azure-secret-manager-config.yaml
+
+# Check the status
+kubectl get secretmanagerconfig idam-dev-secrets-azure -n pricewhisperer
+```
+
+**Expected Secrets in Azure Key Vault:**
+- `idam-dev-supabase-anon-key`
+- `idam-dev-jwt-secret`
+- `idam-dev-supabase-service-role-key`
+- `idam-dev-properties`
+
 ## IDAM Service Examples (Monolith Structure)
 
 ### Development Environment
 
 **File:** `idam-dev-secret-manager-config.yaml`
 
-This example syncs secrets from the IDAM service's development deployment configuration:
+This example syncs secrets from the IDAM service's development deployment configuration to GCP Secret Manager:
 
 ```bash
 # Apply the configuration
@@ -130,7 +178,7 @@ The controller supports two operation modes:
 
 ## Namespace Flexibility
 
-**Important:** The controller watches `SecretManagerConfig` resources in **all namespaces**. You can deploy your `SecretManagerConfig` resources in any namespace where your services are deployed. The controller itself runs in the `flux-system` namespace.
+**Important:** The controller watches `SecretManagerConfig` resources in **all namespaces**. You can deploy your `SecretManagerConfig` resources in any namespace where your services are deployed. The controller itself runs in the `microscaler-system` namespace (GitOps provider agnostic).
 
 Examples show different namespaces:
 - `pricewhisperer` - For PriceWhisperer services
@@ -199,14 +247,26 @@ Before applying these examples, ensure:
    
    Ensure your ArgoCD Application references a Git repository with the deployment configuration.
 
-2. **GCP Project Configuration:**
+2. **Cloud Provider Configuration:**
+   
+   **For GCP:**
    - Replace `pricewhisperer-dev` and `pricewhisperer-prd` with your actual GCP project IDs
    - Ensure Secret Manager API is enabled in both projects
    - Ensure the controller's service account has `roles/secretmanager.admin` role
+   
+   **For AWS:**
+   - Replace `us-east-1` with your AWS region
+   - Ensure Secrets Manager API is enabled in your AWS account
+   - Ensure the IAM role has `SecretsManagerReadWrite` policy attached
+   
+   **For Azure:**
+   - Replace `my-key-vault` with your Azure Key Vault name
+   - Ensure Key Vault exists and has appropriate access policies
+   - Ensure the Azure AD application has "Key Vault Secrets Officer" role
 
 3. **SOPS Private Key:**
    - The controller needs access to the SOPS private key to decrypt `application.secrets.env` files
-   - The key should be stored in a Kubernetes secret in the `flux-system` namespace
+   - The key should be stored in a Kubernetes secret in the `microscaler-system` namespace
    - See the main [README.md](../README.md) for details on SOPS key configuration
 
 ## Single Service Example
@@ -281,7 +341,10 @@ Secrets in GCP Secret Manager follow the same naming pattern as `kustomize-googl
 - `{key}-{suffix}` if only suffix is specified
 - `{key}` if neither is specified
 
-Invalid characters (`.`, `/`, spaces) are automatically sanitized to `_` to comply with GCP Secret Manager requirements.
+Invalid characters (`.`, `/`, spaces) are automatically sanitized to `_` to comply with cloud provider naming requirements:
+- **GCP Secret Manager**: Names must be 1-255 characters, can contain letters, numbers, hyphens, and underscores
+- **AWS Secrets Manager**: Names must be 1-512 characters, can contain letters, numbers, `/`, `_`, `+`, `=`, `.`, `@`, `-`
+- **Azure Key Vault**: Names must be 1-127 characters, can contain letters, numbers, and hyphens
 
 Where `prefix` is either:
 - The value specified in `spec.secrets.prefix`
