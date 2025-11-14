@@ -1,5 +1,6 @@
 # Rust build artifacts
 target/
+target-crdgen/  # Separate target directory for CRD generation to avoid Cargo lock conflicts
 Cargo.lock
 
 # IDE

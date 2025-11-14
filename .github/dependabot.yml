@@ -1,0 +1,62 @@
+version: 2
+updates:
+  # Rust dependencies for secret-manager-controller
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+      - "secret-manager-controller"
+      - "automerge"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    # Group updates for cloud provider SDKs together
+    # This reduces PR noise by grouping related updates
+    groups:
+      gcp-dependencies:
+        patterns:
+          - "google-cloud-*"
+        update-types:
+          - "minor"
+          - "patch"
+      aws-dependencies:
+        patterns:
+          - "aws-sdk-*"
+          - "aws-config"
+          - "aws-credential-types"
+        update-types:
+          - "minor"
+          - "patch"
+      azure-dependencies:
+        patterns:
+          - "azure_*"
+        update-types:
+          - "minor"
+          - "patch"
+      kube-dependencies:
+        patterns:
+          - "kube*"
+          - "k8s-openapi"
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore major version updates (require manual review)
+    ignore:
+      # Major version updates require manual review
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    # Pull request configuration
+    pull-request-branch-name:
+      separator: "/"
+    reviewers:
+      - "casibbald"  # Add your GitHub username or team
+    assignees:
+      - "casibbald"
+

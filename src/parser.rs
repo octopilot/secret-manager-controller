@@ -419,7 +419,7 @@ fn is_sops_encrypted(content: &str) -> bool {
 /// Decrypt SOPS-encrypted content using rops
 /// Note: This is a placeholder implementation. rops crate API may need adjustment.
 async fn decrypt_sops_content(
-    content: &str,
+    _content: &str,
     sops_private_key: Option<&str>,
 ) -> Result<String> {
     // For now, we'll use a simplified approach:

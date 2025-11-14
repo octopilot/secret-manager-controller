@@ -16,7 +16,7 @@ spec:
       serviceAccountName: secret-manager-controller
       containers:
       - name: controller
-        image: localhost:5001/pricewhisperer-secret-manager-controller:tilt
+        image: localhost:5002/secret-manager-controller:tilt
         imagePullPolicy: Never
         env:
         - name: RUST_LOG
@@ -31,10 +31,10 @@ spec:
         # - name: GOOGLE_APPLICATION_CREDENTIALS
         #   value: /var/secrets/google/key.json
         - name: METRICS_PORT
-          value: "8080"
+          value: "5000"
         ports:
         - name: metrics
-          containerPort: 8080
+          containerPort: 5000
           protocol: TCP
         livenessProbe:
           httpGet:

@@ -1,0 +1,28 @@
+# Kind cluster configuration for Secret Manager Controller
+# Independent cluster configuration for standalone development and testing
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: secret-manager-controller
+# Configure pod and service IP ranges
+# Each pod gets its own IP address, eliminating port conflicts
+networking:
+  # Pod IP range - each pod gets its own IP from this range
+  podSubnet: "10.244.0.0/16"
+  # Service IP range - ClusterIP services use IPs from this range
+  serviceSubnet: "10.96.0.0/12"
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"
+  # No host port mappings needed - pods get their own IPs
+  # Access via: kubectl port-forward or Service (ClusterIP/NodePort/LoadBalancer)
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5002"]
+    endpoint = ["http://secret-manager-controller-registry:5000"]
+

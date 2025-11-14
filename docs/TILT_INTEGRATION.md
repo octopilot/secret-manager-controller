@@ -33,7 +33,7 @@ The Secret Manager Controller is now fully integrated into Tilt for local develo
 
 **Trigger:** Changes to binary or Dockerfile
 
-**Action:** Builds Docker image `localhost:5001/pricewhisperer-secret-manager-controller:tilt`
+**Action:** Builds Docker image `localhost:5002/secret-manager-controller:tilt`
 
 **Live Updates:** When binary changes, Tilt syncs it into the running container and sends SIGHUP to restart the controller
 
@@ -80,10 +80,10 @@ kubectl logs -n flux-system -l app=secret-manager-controller -f
 ### Port Forwarding
 
 Metrics endpoint is automatically forwarded:
-- **Local:** `http://localhost:8080`
-- **Metrics:** `http://localhost:8080/metrics`
-- **Health:** `http://localhost:8080/healthz`
-- **Ready:** `http://localhost:8080/readyz`
+- **Local:** `http://localhost:5000`
+- **Metrics:** `http://localhost:5000/metrics`
+- **Health:** `http://localhost:5000/healthz`
+- **Ready:** `http://localhost:5000/readyz`
 
 ## File Structure
 
@@ -124,7 +124,7 @@ load('./hack/controllers/secret-manager-controller/Tiltfile')
 The deployment manifest uses the Tilt-built image:
 
 ```yaml
-image: localhost:5001/pricewhisperer-secret-manager-controller:tilt
+image: localhost:5002/secret-manager-controller:tilt
 imagePullPolicy: Never
 ```
 
@@ -156,7 +156,7 @@ imagePullPolicy: Never
 ### Docker Image Not Building
 
 - Ensure Docker is running
-- Check that `localhost:5001` registry is accessible (Kind cluster)
+- Check that `localhost:5002` registry is accessible (Kind cluster)
 - Verify Dockerfile syntax
 
 ### Controller Not Deploying

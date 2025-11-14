@@ -47,9 +47,10 @@ RUN apk add --no-cache \
     libgcc \
     git \
     curl && \
-    # Install kustomize
-    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash && \
-    mv kustomize /usr/local/bin/ && \
+    # Install kustomize directly (no bash needed - download binary instead of install script)
+    KUSTOMIZE_VERSION=5.8.0 && \
+    curl -L "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | \
+    tar -xz -C /usr/local/bin && \
     chmod +x /usr/local/bin/kustomize
 
 WORKDIR /app
@@ -59,7 +60,7 @@ COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/secret-manag
 RUN chmod +x /app/secret-manager-controller
 
 # Expose metrics port
-EXPOSE 8080
+EXPOSE 5000
 
 # Set runtime environment
 ENV RUST_BACKTRACE=1

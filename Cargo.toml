@@ -2,6 +2,7 @@
 name = "secret-manager-controller"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 authors = ["Microscaler <info@microscaler.io>"]
 description = "Kubernetes controller that syncs secrets from GitOps repositories (FluxCD/ArgoCD) to Google Cloud Secret Manager"
 license = "BSL-1.1"
@@ -30,26 +31,31 @@ path = "src/cli.rs"
 
 [dependencies]
 # Kubernetes client
-kube = { version = "0.88", features = ["runtime", "derive"] }
-kube-runtime = "0.88"
-k8s-openapi = { version = "0.21", default-features = false, features = ["v1_28"] }
+kube = { version = "2.0", features = ["runtime", "derive"] }
+kube-runtime = "2.0"
+k8s-openapi = { version = "0.26", default-features = false, features = ["v1_30"] }
 tokio = { version = "1", features = ["full"] }
 
-# GCP Secret Manager - using official Google Cloud Rust SDK
-# Note: cargo zigbuild handles OpenSSL cross-compilation automatically
-google-cloud-secretmanager-v1 = "1.1"
-google-cloud-auth = "1.1"
+# GCP Secret Manager - using forked Google Cloud Rust SDK with rustls support
+# Fork: https://github.com/microscaler/google-cloud-rust/tree/fix/openssl-tls-issue
+# This fork uses rustls instead of OpenSSL, enabling musl cross-compilation without
+# vendored OpenSSL or cargo-zigbuild complexity.
+google-cloud-gax-internal = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-gax-internal" }
+google-cloud-secretmanager-v1 = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-secretmanager-v1" }
+google-cloud-auth = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-auth" }
 
 # AWS Secrets Manager - using official AWS Rust SDK
-aws-sdk-secretsmanager = "1.0"
-aws-config = "1.0"
-aws-sdk-sts = "1.0"  # For IRSA role assumption
-aws-credential-types = "1.0"  # For credentials handling
+aws-sdk-secretsmanager = "1"
+aws-config = "1"
+aws-sdk-sts = "1"  # For IRSA role assumption
+aws-credential-types = "1"  # For credentials handling
 
-# Azure Key Vault - using official Azure SDK for Rust
-azure_core = "0.25"
-azure_identity = "0.25"
-azure_security_keyvault_secrets = "0.4"
+# Azure Key Vault - using forked Azure SDK for Rust with rustls support
+# Fork: https://github.com/microscaler/azure-sdk-for-rust/tree/fix/rustls-support
+# This fork adds reqwest_rustls feature to enable rustls instead of native-tls (OpenSSL)
+azure_core = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "reqwest_rustls"] }
+azure_identity = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", package = "azure_identity" }
+azure_security_keyvault_secrets = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", package = "azure_security_keyvault_secrets" }
 
 # Async trait support
 async-trait = "0.1"
@@ -62,12 +68,12 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 dotenv = "0.15"
-schemars = "0.8"
-base64 = "0.21"
+schemars = "1"
+base64 = "0.22"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
@@ -79,8 +85,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # For now, we support Otel configuration via CRD and log the settings
 
 # File system operations
-walkdir = "2.4"
-regex = "1.10"
+walkdir = "2"
+regex = "1"
 
 # Async runtime
 futures = "0.3"
@@ -89,20 +95,33 @@ futures = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP server for metrics and probes
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # Prometheus metrics
-prometheus = "0.13"
+prometheus = "0.14"
 
 # CLI dependencies
 clap = { version = "4.5", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json"] }
+# Note: Using forked Google Cloud SDK with rustls support eliminates OpenSSL dependency.
+# No vendored OpenSSL needed - rustls is pure Rust and works perfectly with musl targets.
 
 # Git operations for ArgoCD support
-tempfile = "3.10"
+tempfile = "3"
 md5 = "0.7"
+
+# Force all reqwest dependencies to use rustls instead of native-tls (OpenSSL)
+# By adding reqwest as a direct dependency with rustls features, Cargo's feature
+# unification will ensure all transitive dependencies use rustls instead of OpenSSL
+# Note: Cargo feature unification may still compile native-tls if requested elsewhere,
+# but rustls will be used at runtime. For musl builds, cargo-zigbuild handles OpenSSL.
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+
+# Workaround: Cargo feature unification still enables native-tls even with rustls configured.
+# Add vendored OpenSSL so cargo-zigbuild can handle cross-compilation if native-tls gets enabled.
+# This is a fallback - rustls should be used at runtime, but this allows the build to succeed.
+openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 # Pact contract testing

@@ -7,7 +7,7 @@
 //! - `/healthz` - Liveness probe (always returns 200)
 //! - `/readyz` - Readiness probe (returns 200 when controller is ready)
 //!
-//! The server runs on port 8080 by default (configurable via `METRICS_PORT` environment variable).
+//! The server runs on port 5000 by default (configurable via `METRICS_PORT` environment variable).
 
 use axum::{
     extract::State,

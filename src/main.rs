@@ -29,8 +29,7 @@
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use kube::{
-    api::{Api, ListParams, Patch, PatchParams},
-    core::CustomResourceExt,
+    api::Api,
     Client, CustomResource,
 };
 use kube_runtime::{
@@ -38,10 +37,8 @@ use kube_runtime::{
     controller::Action,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub mod aws;
 pub mod azure;
@@ -437,9 +434,9 @@ async fn main() -> Result<()> {
     // Start HTTP server for metrics and probes
     let server_state_clone = server_state.clone();
     let server_port = std::env::var("METRICS_PORT")
-        .unwrap_or_else(|_| "8080".to_string())
+        .unwrap_or_else(|_| "5000".to_string())
         .parse::<u16>()
-        .unwrap_or(8080);
+        .unwrap_or(5000);
     
     tokio::spawn(async move {
         if let Err(e) = start_server(server_port, server_state_clone).await {

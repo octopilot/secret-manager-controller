@@ -35,6 +35,7 @@ impl AwsSecretManager {
                 info!("Using IRSA authentication with role: {}", role_arn);
                 Self::create_irsa_config(&region, role_arn, k8s_client).await?
             }
+            #[allow(deprecated)] // Intentionally supporting deprecated AccessKeys for backward compatibility
             Some(AwsAuthConfig::AccessKeys { secret_name, secret_namespace, access_key_id_key, secret_access_key_key }) => {
                 warn!("⚠️  DEPRECATED: Access Keys are available but will be deprecated once AWS deprecates them. Please migrate to IRSA.");
                 info!("Using Access Keys authentication from secret: {}/{}", 

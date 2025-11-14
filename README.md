@@ -371,17 +371,215 @@ spec:
 ### Prerequisites
 
 - Rust 1.75+
-- Kubernetes cluster with FluxCD or ArgoCD installed
-- GCP credentials configured
-- `google-cloud-secret-manager` Rust crate dependencies
+- Docker and Docker Compose
+- `kind` (Kubernetes in Docker) - for local cluster
+- `kubectl` - Kubernetes CLI
+- `tilt` - for local development (optional but recommended)
+- Kubernetes cluster with FluxCD or ArgoCD installed (for production)
+- Cloud provider credentials configured (GCP/AWS/Azure)
 - **For Kustomize Build Mode**: `kustomize` binary must be available in the controller container (v5.0+)
 - **For ArgoCD support**: `git` binary must be available in the controller container (v2.0+)
+- **For cross-compilation to Linux musl**: `cargo-zigbuild` (recommended) or OpenSSL development libraries configured manually
+  - Install with: `cargo install cargo-zigbuild`
+
+### Local Development with Kind Cluster
+
+The controller includes an independent kind cluster configuration for standalone development and testing. The project uses [`just`](https://github.com/casey/just) as a command runner for common development tasks.
+
+#### Quick Start
+
+1. **Check dependencies:**
+   ```bash
+   just check-deps
+   ```
+
+2. **Setup Kind cluster:**
+   ```bash
+   just setup-kind
+   ```
+
+   This will:
+   - Create a local Docker registry (`kind-registry`) if it doesn't exist
+   - Create a kind cluster named `secret-manager-controller`
+   - Configure the cluster to use the local registry
+   - Configure pod and service IP ranges (pods get their own IPs, no host port conflicts)
+
+3. **Start development environment:**
+   ```bash
+   just dev-up
+   ```
+
+   This will:
+   - Create the kind cluster (if not already created)
+   - Start Tilt for hot-reload development
+   - Generate the CRD when Rust code changes
+   - Build the Rust binary
+   - Build the Docker image and push to local registry
+   - Deploy to the kind cluster
+   - Watch for changes and automatically rebuild/redeploy
+
+4. **Access the Tilt UI:**
+   - Open http://localhost:10350 in your browser
+   - Monitor build logs, deployment status, and resource health
+
+5. **Access controller metrics:**
+   ```bash
+   # Port forward to access metrics endpoint (in a separate terminal)
+   just port-forward
+   # OR manually:
+   kubectl port-forward -n microscaler-system svc/secret-manager-controller-metrics 5000:5000
+   ```
+   Then access:
+   - Metrics: http://localhost:5000/metrics
+   - Health: http://localhost:5000/healthz
+   - Ready: http://localhost:5000/readyz
+
+   **Note:** Kubernetes pods get their own IP addresses (configured via `podSubnet`), so there are no host port conflicts. Access is via `kubectl port-forward` or Service types (ClusterIP/NodePort/LoadBalancer).
+
+#### Common Commands
+
+View all available commands:
+```bash
+just --list
+```
+
+**Development:**
+- `just dev-up` - Start development environment (Kind + Tilt)
+- `just dev-down` - Stop development environment
+- `just up` - Start Tilt (assumes cluster is running)
+- `just down` - Stop Tilt
+
+**Building:**
+- `just build` - Build Rust binary and Docker image
+- `just build-rust` - Build Rust binary (debug)
+- `just build-release` - Build Rust binary (release)
+- `just build-linux` - Build for Linux (musl target) - Uses `cargo-zigbuild` for OpenSSL cross-compilation
+- `just build-linux-release` - Build for Linux (musl target, release)
+- `just generate-crd` - Generate CRD from Rust code
+
+**Testing:**
+- `just test` - Run all tests (unit + pact)
+- `just test-unit` - Run unit tests
+- `just test-pact` - Run Pact contract tests
+- `just test-pact-gcp` - Run GCP Pact tests
+- `just test-pact-aws` - Run AWS Pact tests
+- `just test-pact-azure` - Run Azure Pact tests
+
+**Code Quality:**
+- `just fmt` - Format code
+- `just lint` - Lint code
+- `just check` - Check code (compile without building)
+- `just validate` - Run all validations (fmt, lint, check, tests)
+
+**Deployment:**
+- `just deploy` - Deploy to Kubernetes
+- `just deploy-crd` - Deploy CRD only
+- `just status` - Show cluster and controller status
+- `just logs` - Show controller logs
+
+**CLI Tool:**
+- `just build-cli` - Build msmctl CLI tool
+- `just install-cli` - Install msmctl to ~/.local/bin
+- `just cli <args>` - Run CLI tool (development mode)
+
+#### Manual Setup (without just)
+
+If you prefer not to use `just`, you can use the scripts directly:
+
+1. **Create the kind cluster:**
+   ```bash
+   ./scripts/setup-kind.sh
+   ```
+
+2. **Verify the cluster is running:**
+   ```bash
+   kubectl cluster-info --context kind-secret-manager-controller
+   ```
+
+3. **Start Tilt:**
+   ```bash
+   tilt up
+   ```
+
+#### Cleanup
+
+To stop and clean up everything:
+```bash
+just dev-down
+```
+
+Or manually:
+```bash
+# Stop Tilt
+tilt down
+
+# Delete kind cluster
+just teardown-kind
+# OR
+kind delete cluster --name secret-manager-controller
+
+# Remove local registry (optional)
+docker stop kind-registry
+docker rm kind-registry
+```
 
 ### Build
+
+#### Native Build
 
 ```bash
 cargo build --release
 ```
+
+#### Cross-Compilation for Linux (musl)
+
+The controller uses the Google Cloud SDK crates which depend on `reqwest` with OpenSSL support. For cross-compilation to `x86_64-unknown-linux-musl`, you need to handle OpenSSL dependencies.
+
+**Recommended: Use `cargo-zigbuild`**
+
+The easiest way to cross-compile is using `cargo-zigbuild`, which automatically handles OpenSSL compilation for musl targets:
+
+```bash
+# Install cargo-zigbuild (if not already installed)
+cargo install cargo-zigbuild
+
+# Build for Linux musl target
+cargo zigbuild --release --target x86_64-unknown-linux-musl
+
+# Or use the justfile command
+just build-linux-release
+```
+
+**Alternative: Manual OpenSSL Configuration**
+
+If you prefer not to use `cargo-zigbuild`, you can configure OpenSSL manually:
+
+1. **Install OpenSSL development libraries:**
+   - **macOS (Homebrew):**
+     ```bash
+     brew install openssl@3
+     export OPENSSL_DIR=$(brew --prefix openssl@3)
+     ```
+   - **Ubuntu/Debian:**
+     ```bash
+     sudo apt-get install libssl-dev pkg-config
+     ```
+   - **Fedora:**
+     ```bash
+     sudo dnf install openssl-devel pkg-config
+     ```
+
+2. **Set environment variables for cross-compilation:**
+   ```bash
+   # macOS example
+   export OPENSSL_DIR=/opt/homebrew/opt/openssl@3
+   export PKG_CONFIG_ALLOW_CROSS=1
+   
+   # Build
+   cargo build --release --target x86_64-unknown-linux-musl
+   ```
+
+**Note:** The Google Cloud SDK crates use `reqwest` with default features (OpenSSL), so we cannot force `rustls` without forking those crates. This is documented in `Cargo.toml`.
 
 ### Run Locally
 
@@ -429,7 +627,7 @@ kubectl apply -k config/
 - `AZURE_CLIENT_SECRET` - Azure client secret (only needed for Service Principal, not Workload Identity)
 - `AZURE_TENANT_ID` - Azure tenant ID (only needed for Service Principal, not Workload Identity)
 - `RUST_LOG` - Logging level (default: `info`)
-- `METRICS_PORT` - Port for metrics and probe endpoints (default: `8080`)
+- `METRICS_PORT` - Port for metrics and probe endpoints (default: `5000`)
 
 ### Cloud Provider Authentication
 

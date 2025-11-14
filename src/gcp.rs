@@ -12,8 +12,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use google_cloud_secretmanager_v1::client::SecretManagerService;
-use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use crate::metrics;
 use crate::provider::SecretManagerProvider;
 use base64::{Engine as _, engine::general_purpose};
@@ -37,7 +36,7 @@ impl SecretManager {
     /// - "WorkloadIdentity": Uses Workload Identity (DEFAULT, requires GKE with WI enabled)
     /// - "JsonCredentials": Uses JSON credentials from GOOGLE_APPLICATION_CREDENTIALS (DEPRECATED)
     /// - None: Defaults to Workload Identity
-    pub async fn new(project_id: String, auth_type: Option<&str>, service_account_email: Option<&str>) -> Result<Self> {
+    pub async fn new(_project_id: String, auth_type: Option<&str>, service_account_email: Option<&str>) -> Result<Self> {
         match auth_type {
             Some("WorkloadIdentity") | None => {
                 if let Some(email) = service_account_email {
@@ -79,8 +78,8 @@ impl SecretManager {
     /// If secret exists and value differs, creates new version and disables old versions
     async fn create_or_update_secret_impl(
         &self,
-        secret_name: &str,
-        secret_value: &str,
+        _secret_name: &str,
+        _secret_value: &str,
     ) -> Result<bool> {
         // Placeholder - needs proper SDK implementation
         // TODO: Implement when SDK API is available
@@ -88,18 +87,22 @@ impl SecretManager {
     }
 
     /// Get the latest secret version value
+    #[allow(dead_code)] // May be used in future implementations
     async fn get_latest_secret_value(&self, _secret_name: &str) -> Result<String> {
         Err(anyhow::anyhow!("Not implemented - waiting for correct SDK API"))
     }
 
+    #[allow(dead_code)] // May be used in future implementations
     async fn get_secret(&self, _secret_name: &str) -> Result<()> {
         Err(anyhow::anyhow!("Not implemented - waiting for correct SDK API"))
     }
 
+    #[allow(dead_code)] // May be used in future implementations
     async fn create_secret(&self, _project_id: &str, _secret_name: &str) -> Result<()> {
         Err(anyhow::anyhow!("Not implemented - waiting for correct SDK API"))
     }
 
+    #[allow(dead_code)] // May be used in future implementations
     async fn add_secret_version(
         &self,
         _secret_name: &str,
@@ -139,12 +142,12 @@ impl SecretManagerProvider for SecretManager {
         // Construct the secret version name: projects/{project}/secrets/{secret}/versions/latest
         let secret_version_name = format!("projects/{}/secrets/{}/versions/latest", self.project_id, secret_name);
         
-        let mut request = AccessSecretVersionRequest::default();
-        request.set_name(secret_version_name.clone());
+        let request = AccessSecretVersionRequest::default();
+        let request_for_send = request.clone().set_name(secret_version_name.clone()); // set_name returns Self
         
         match self.client
             .access_secret_version()
-            .with_request(request)
+            .with_request(request_for_send)
             .send()
             .await
         {
@@ -192,12 +195,12 @@ impl SecretManagerProvider for SecretManager {
         // Construct the secret name: projects/{project}/secrets/{secret}
         let secret_name_full = format!("projects/{}/secrets/{}", self.project_id, secret_name);
         
-        let mut request = DeleteSecretRequest::default();
-        request.set_name(secret_name_full.clone());
+        let request = DeleteSecretRequest::default();
+        let request_for_send = request.clone().set_name(secret_name_full.clone()); // set_name returns Self
         
         self.client
             .delete_secret()
-            .with_request(request)
+            .with_request(request_for_send)
             .send()
             .await
             .map(|_| ())

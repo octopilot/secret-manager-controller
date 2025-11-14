@@ -29,7 +29,6 @@ use kube_runtime::controller::Action;
 use anyhow::{Context, Result};
 use kube::Client;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use tracing::{error, info, warn};
@@ -158,7 +157,6 @@ impl Reconciler {
     /// Defaults to microscaler-system namespace
     async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
         use kube::Api;
-        use kube::core::ObjectMeta;
         use k8s_openapi::api::core::v1::Secret;
         
         // Use controller namespace (defaults to microscaler-system)
@@ -627,7 +625,7 @@ impl Reconciler {
             }
 
             // Fetch the specific revision if needed
-            let fetch_output = tokio::process::Command::new("git")
+            let _fetch_output = tokio::process::Command::new("git")
                 .arg("-C")
                 .arg(&clone_path)
                 .arg("fetch")
@@ -808,7 +806,6 @@ impl Reconciler {
         secrets_synced: i32,
     ) -> Result<()> {
         use kube::api::PatchParams;
-        use kube::core::ObjectMeta;
 
         let api: kube::Api<SecretManagerConfig> =
             kube::Api::namespaced(self.client.clone(), config.metadata.namespace.as_deref().unwrap_or("default"));

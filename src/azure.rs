@@ -10,7 +10,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
-use azure_identity::DefaultAzureCredential;
+use azure_identity::{WorkloadIdentityCredential, DeveloperToolsCredential, ClientSecretCredential, ClientSecretCredentialOptions};
 use azure_security_keyvault_secrets::{models::SetSecretParameters, SecretClient};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -42,10 +42,12 @@ impl AzureKeyVault {
             Some(AzureAuthConfig::WorkloadIdentity { client_id }) => {
                 info!("Using Azure Workload Identity authentication with client ID: {}", client_id);
                 info!("Ensure pod service account has Azure Workload Identity configured");
-                // DefaultAzureCredential will automatically use Workload Identity when available
-                let cred = DefaultAzureCredential::new().context("Failed to create DefaultAzureCredential")?;
-                Arc::new(cred)
+                let mut options = azure_identity::WorkloadIdentityCredentialOptions::default();
+                options.client_id = Some(client_id.clone());
+                WorkloadIdentityCredential::new(Some(options))
+                    .context("Failed to create WorkloadIdentityCredential")?
             }
+            #[allow(deprecated)] // Intentionally supporting deprecated ServicePrincipal for backward compatibility
             Some(AzureAuthConfig::ServicePrincipal { secret_name, secret_namespace }) => {
                 warn!("⚠️  DEPRECATED: Service Principal credentials are available but will be deprecated once Azure deprecates them. Please migrate to Workload Identity.");
                 info!("Using Service Principal authentication from secret: {}/{}", 
@@ -53,12 +55,11 @@ impl AzureKeyVault {
                 Self::create_service_principal_credential(secret_name, secret_namespace, k8s_client).await?
             }
             None => {
-                info!("No auth configuration specified, defaulting to Workload Identity");
-                info!("Ensure pod service account has Azure Workload Identity configured");
-                // DefaultAzureCredential will automatically use Workload Identity when available
-                // Falls back to Managed Identity, environment variables, or Azure CLI if WI is not available
-                let cred = DefaultAzureCredential::new().context("Failed to create DefaultAzureCredential")?;
-                Arc::new(cred)
+                info!("No auth configuration specified, defaulting to DeveloperToolsCredential");
+                info!("This will attempt Workload Identity, Managed Identity, environment variables, or Azure CLI");
+                // DeveloperToolsCredential attempts multiple authentication methods in order
+                DeveloperToolsCredential::new(None)
+                    .context("Failed to create DeveloperToolsCredential")?
             }
         };
 
@@ -112,15 +113,16 @@ impl AzureKeyVault {
             .and_then(|v| String::from_utf8(v.0.clone()).ok())
             .context("Failed to read tenant-id from secret")?;
         
-        // Set environment variables for DefaultAzureCredential to pick up
-        // The SDK will automatically use these from the environment
-        std::env::set_var("AZURE_CLIENT_ID", &client_id);
-        std::env::set_var("AZURE_CLIENT_SECRET", &client_secret);
-        std::env::set_var("AZURE_TENANT_ID", &tenant_id);
-        
-        // DefaultAzureCredential will use the environment variables we just set
-        let cred = DefaultAzureCredential::new().context("Failed to create DefaultAzureCredential from service principal")?;
-        Ok(Arc::new(cred))
+        // Create ClientSecretCredential directly from the service principal credentials
+        let options = ClientSecretCredentialOptions::default();
+        let cred = ClientSecretCredential::new(
+            tenant_id.as_str(),
+            client_id, // client_id is already String
+            client_secret.into(), // Convert String to azure_core::credentials::Secret
+            Some(options),
+        )
+        .context("Failed to create ClientSecretCredential from service principal")?;
+        Ok(cred)
     }
 }
 
@@ -159,10 +161,15 @@ impl SecretManagerProvider for AzureKeyVault {
     }
 
     async fn get_secret_value(&self, secret_name: &str) -> Result<Option<String>> {
-        // Use "latest" as the version to get the current version
-        match self.client.get_secret(secret_name, "latest", None).await {
+        // Get the latest version of the secret (no version parameter needed - defaults to latest)
+        match self.client.get_secret(secret_name, None).await {
             Ok(response) => {
-                let secret = response.into_body().await
+                // Response body needs to be deserialized into the Secret model
+                use azure_security_keyvault_secrets::models::Secret;
+                let body = response.into_body();
+                // Try to deserialize the body - ResponseBody might implement Deserialize or have a method
+                // Check if we can use serde_json or if there's a specific method
+                let secret: Secret = serde_json::from_slice(&body)
                     .context("Failed to deserialize Azure secret response")?;
                 Ok(secret.value)
             }

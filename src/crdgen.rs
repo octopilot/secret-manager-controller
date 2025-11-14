@@ -27,7 +27,8 @@
 
 use kube::{core::CustomResourceExt, CustomResource};
 use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema, gen::SchemaGenerator, schema::{Schema, SchemaObject, InstanceType, Metadata, SubschemaValidation}};
+use schemars::{JsonSchema, SchemaGenerator, Schema};
+use std::borrow::Cow;
 
 // Re-define the types needed for CRD generation
 // This matches the types in main.rs
@@ -64,37 +65,38 @@ pub enum ProviderConfig {
 }
 
 impl JsonSchema for ProviderConfig {
-    fn schema_name() -> String {
-        "ProviderConfig".to_string()
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("ProviderConfig")
     }
 
-    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
         // Use x-kubernetes-preserve-unknown-fields to allow discriminated union structure
         // kube-rs cannot generate proper oneOf schemas for nested discriminated unions
         // Validation is performed at runtime by the controller
-        let mut schema_obj = SchemaObject::default();
-        schema_obj.metadata = Some(Box::new(Metadata {
-            description: Some("Cloud provider configuration. Supports GCP, AWS, and Azure. Must have a 'type' field set to 'gcp', 'aws', or 'azure'.".to_string()),
-            ..Default::default()
-        }));
-        schema_obj.instance_type = Some(InstanceType::Object.into());
-        schema_obj.extensions.insert("x-kubernetes-preserve-unknown-fields".to_string(), serde_json::json!(true));
-        Schema::Object(schema_obj)
+        // In schemars 1.0+, Schema is a newtype wrapper around serde_json::Value
+        let schema = gen.root_schema_for::<serde_json::Value>();
+        // Convert to Value, modify, then convert back to Schema
+        let mut schema_value: serde_json::Value = schema.into();
+        if let serde_json::Value::Object(ref mut map) = schema_value {
+            map.insert("description".to_string(), serde_json::json!("Cloud provider configuration. Supports GCP, AWS, and Azure. Must have a 'type' field set to 'gcp', 'aws', or 'azure'."));
+            map.insert("x-kubernetes-preserve-unknown-fields".to_string(), serde_json::json!(true));
+        }
+        Schema::try_from(schema_value).expect("Failed to create Schema from modified Value")
     }
 }
 
-fn auth_config_schema(_gen: &mut SchemaGenerator) -> Schema {
-    let mut schema_obj = SchemaObject::default();
+fn auth_config_schema(gen: &mut SchemaGenerator) -> Schema {
     // Use generic metadata to ensure all auth fields have identical schemas
     // This is required for Kubernetes structural schemas with oneOf
-    schema_obj.metadata = Some(Box::new(Metadata {
-        description: Some("Authentication configuration. Supports multiple auth types via discriminated union.".to_string()),
-        ..Default::default()
-    }));
-    schema_obj.instance_type = Some(InstanceType::Object.into());
-    // Use x-kubernetes-preserve-unknown-fields to avoid schema conflicts with nested discriminated unions
-    schema_obj.extensions.insert("x-kubernetes-preserve-unknown-fields".to_string(), serde_json::json!(true));
-    Schema::Object(schema_obj)
+    // In schemars 1.0+, Schema is a newtype wrapper around serde_json::Value
+    let schema = gen.root_schema_for::<serde_json::Value>();
+    // Convert to Value, modify, then convert back to Schema
+    let mut schema_value: serde_json::Value = schema.into();
+    if let serde_json::Value::Object(ref mut map) = schema_value {
+        map.insert("description".to_string(), serde_json::json!("Authentication configuration. Supports multiple auth types via discriminated union."));
+        map.insert("x-kubernetes-preserve-unknown-fields".to_string(), serde_json::json!(true));
+    }
+    Schema::try_from(schema_value).expect("Failed to create Schema from modified Value")
 }
 
 

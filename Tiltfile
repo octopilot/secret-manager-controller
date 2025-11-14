@@ -10,56 +10,85 @@
 # Configuration
 # ====================
 
-CONTROLLER_DIR = './hack/controllers/secret-manager-controller'
+# Restrict to kind cluster (independent cluster for secret-manager-controller)
+allow_k8s_contexts(['kind-secret-manager-controller'])
+
+# Get the directory where this Tiltfile is located
+# Since the Tiltfile is in the controller directory, use '.' for relative paths
+CONTROLLER_DIR = '.'
 CONTROLLER_NAME = 'secret-manager-controller'
-IMAGE_NAME = 'localhost:5001/pricewhisperer-secret-manager-controller'
+IMAGE_NAME = 'localhost:5002/secret-manager-controller'
 BINARY_NAME = 'secret-manager-controller'
 BINARY_PATH = '%s/target/x86_64-unknown-linux-musl/debug/%s' % (CONTROLLER_DIR, BINARY_NAME)
 
 # ====================
 # CRD Generation
 # ====================
-# Regenerate CRD whenever Rust code changes
+# Regenerate CRD using the built crdgen binary (not cargo run)
+
+CRDGEN_BINARY_PATH = '%s/target/x86_64-unknown-linux-musl/debug/crdgen' % CONTROLLER_DIR
 
 local_resource(
     'secret-manager-controller-crd-gen',
     cmd='''
         echo "🔄 Regenerating SecretManagerConfig CRD..."
-        cd hack/controllers/secret-manager-controller
-        cargo run --bin crdgen 2>/dev/null > config/crd/secretmanagerconfig.yaml
+        if [ ! -f %s ]; then
+            echo "❌ CRD gen binary not found: %s"
+            echo "   Waiting for build to complete..."
+            exit 1
+        fi
+        %s 2>/dev/null > config/crd/secretmanagerconfig.yaml
         echo "✅ CRD regenerated: config/crd/secretmanagerconfig.yaml"
-    ''',
+    ''' % (CRDGEN_BINARY_PATH, CRDGEN_BINARY_PATH, CRDGEN_BINARY_PATH),
     deps=[
-        '%s/src' % CONTROLLER_DIR,
-        '%s/Cargo.toml' % CONTROLLER_DIR,
-        '%s/Cargo.lock' % CONTROLLER_DIR,
+        CRDGEN_BINARY_PATH,
     ],
-    resource_deps=[],
+    resource_deps=['secret-manager-controller-build'],  # Must wait for build to complete
     labels=['controllers'],
-    allow_parallel=True,
+    allow_parallel=False,  # Must run after build, before k8s deployment
 )
 
 # ====================
-# Build Rust Binary
+# Build Rust Binaries
 # ====================
-# Build the controller binary for local development (debug build for faster iteration)
+# Build all three binaries: controller, crdgen, and msmctl
+# Uses cargo zigbuild on macOS (like PriceWhisperer microservices) for cross-compilation
+# Host-aware build selection via shell script (matches BRRTRouter pattern)
+build_cmd = '%s/scripts/host-aware-build.sh' % CONTROLLER_DIR
 
 local_resource(
     'secret-manager-controller-build',
     cmd='''
-        echo "🔨 Building secret-manager-controller..."
-        cd hack/controllers/secret-manager-controller
-        cargo build --target x86_64-unknown-linux-musl
-        echo "✅ Build complete: target/x86_64-unknown-linux-musl/debug/secret-manager-controller"
-    ''',
+        echo "🔨 Building secret-manager-controller binaries..."
+        echo "   Building: secret-manager-controller, crdgen, msmctl"
+        # Build all binaries at once using --bins flag (builds all [[bin]] targets)
+        %s --bins
+        if [ ! -f target/x86_64-unknown-linux-musl/debug/secret-manager-controller ]; then
+            echo "❌ Build failed: secret-manager-controller binary not found"
+            exit 1
+        fi
+        if [ ! -f target/x86_64-unknown-linux-musl/debug/crdgen ]; then
+            echo "❌ Build failed: crdgen binary not found"
+            exit 1
+        fi
+        if [ ! -f target/x86_64-unknown-linux-musl/debug/msmctl ]; then
+            echo "❌ Build failed: msmctl binary not found"
+            exit 1
+        fi
+        echo "✅ Build complete:"
+        echo "   - secret-manager-controller"
+        echo "   - crdgen"
+        echo "   - msmctl"
+    ''' % build_cmd,
     deps=[
         '%s/src' % CONTROLLER_DIR,
         '%s/Cargo.toml' % CONTROLLER_DIR,
         '%s/Cargo.lock' % CONTROLLER_DIR,
+        '%s/scripts/host-aware-build.sh' % CONTROLLER_DIR,
     ],
     resource_deps=[],
     labels=['controllers'],
-    allow_parallel=True,
+    allow_parallel=False,  # Must run first, before CRD gen
 )
 
 # ====================
@@ -79,6 +108,7 @@ custom_build(
         BINARY_PATH,
         '%s/Dockerfile.dev' % CONTROLLER_DIR,
     ],
+    resource_deps=['secret-manager-controller-build'],  # Must wait for build to complete
     tag='tilt',
     live_update=[
         sync(BINARY_PATH, '/app/secret-manager-controller'),
@@ -90,15 +120,20 @@ custom_build(
 # Deploy to Kubernetes
 # ====================
 # Deploy using kustomize
+# Note: k8s_yaml runs kustomize when dependencies are ready
+# The k8s_resource dependency ensures CRD gen completes before deployment
 
 k8s_yaml(kustomize('%s/config' % CONTROLLER_DIR))
 
-# Update deployment image and configure resource
+# Configure resource
+# Tilt will automatically substitute the image in the deployment
+# because custom_build registers the image and Tilt matches it to the deployment
+# Note: No port forwarding needed - pods get their own IPs
+# Use 'kubectl port-forward' or 'just port-forward' to access metrics
+# Dependencies: Strict serial order - build -> CRD gen -> k8s deployment
 k8s_resource(
     CONTROLLER_NAME,
-    image=IMAGE_NAME,
-    port_forwards='8080:8080',  # Metrics port
     labels=['controllers'],
-    resource_deps=['secret-manager-controller-build', 'secret-manager-controller-crd-gen'],
+    resource_deps=['secret-manager-controller-crd-gen'],  # CRD gen depends on build, so this ensures both complete
 )
 

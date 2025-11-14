@@ -9,8 +9,8 @@
 //! Note: This is a simplified implementation. Full Otel support will be added
 //! as the opentelemetry-otlp API stabilizes.
 
-use anyhow::{Context, Result};
-use tracing::{error, info};
+use anyhow::Result;
+use tracing::info;
 
 use crate::OtelConfig;
 
