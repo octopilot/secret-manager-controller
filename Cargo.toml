@@ -2,6 +2,7 @@
 name = "secret-manager-controller"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 authors = ["Microscaler <info@microscaler.io>"]
 description = "Kubernetes controller that syncs secrets from GitOps repositories (FluxCD/ArgoCD) to Google Cloud Secret Manager"
 license = "BSL-1.1"
@@ -12,13 +13,17 @@ keywords = ["kubernetes", "controller", "secrets", "gitops", "fluxcd", "argocd",
 categories = ["development-tools", "web-programming", "authentication"]
 readme = "README.md"
 
+[lib]
+name = "secret_manager_controller"
+path = "src/lib.rs"
+
 [[bin]]
 name = "secret-manager-controller"
 path = "src/main.rs"
 
 [[bin]]
 name = "crdgen"
-path = "src/crdgen.rs"
+path = "src/controller/crdgen.rs"
 
 [[bin]]
 name = "msmctl"
@@ -26,38 +31,72 @@ path = "src/cli.rs"
 
 [dependencies]
 # Kubernetes client
-kube = { version = "0.88", features = ["runtime", "derive"] }
-kube-runtime = "0.88"
-k8s-openapi = { version = "0.21", default-features = false, features = ["v1_28"] }
+# Enable client feature for Client, Api, etc.
+# Enable rustls-tls feature for TLS support (required for Kubernetes API connections)
+kube = { version = "2.0.0", features = ["runtime", "derive", "client", "rustls-tls"], default-features = false }
+kube-runtime = "2.0"
+# Configure rustls crypto provider
+# Use ring as the crypto provider (default, more compatible)
+rustls = { version = "0.23", features = ["ring"], default-features = false }
+k8s-openapi = { version = "0.26", default-features = false, features = ["v1_30"] }
 tokio = { version = "1", features = ["full"] }
 
-# GCP Secret Manager - using official Google Cloud Rust SDK
-# Note: cargo zigbuild handles OpenSSL cross-compilation automatically
-google-cloud-secretmanager-v1 = "1.1"
-google-cloud-auth = "1.1"
+# GCP Secret Manager - using forked Google Cloud Rust SDK with rustls support
+# Fork: https://github.com/microscaler/google-cloud-rust/tree/fix/openssl-tls-issue
+# This fork uses rustls instead of OpenSSL, eliminating OpenSSL dependency complexity.
+google-cloud-gax-internal = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-gax-internal" }
+google-cloud-secretmanager-v1 = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-secretmanager-v1" }
+google-cloud-auth = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-auth" }
+
+# AWS Secrets Manager and Parameter Store - using official AWS Rust SDK
+# Match obsctl approach: use default features, aws-smithy-http-client will use rustls-aws-lc via feature unification
+# The rustls dependency with ring feature ensures aws-smithy-http-client uses ring
+aws-sdk-secretsmanager = "1.8"
+aws-sdk-ssm = "1.8"  # Systems Manager (includes Parameter Store)
+aws-config = "1.8"
+aws-sdk-sts = "1.8"  # For IRSA role assumption
+aws-credential-types = "1"  # For credentials handling
+
+# Azure Key Vault and App Configuration
+# Fork: https://github.com/microscaler/azure-sdk-for-rust/tree/fix/rustls-support
+# This fork adds reqwest_rustls feature to enable rustls instead of native-tls
+azure_core = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "reqwest_rustls"] }
+azure_identity = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", package = "azure_identity" }
+azure_security_keyvault_secrets = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", package = "azure_security_keyvault_secrets" }
+
+# Async trait support
+async-trait = "0.1"
 
 # SOPS decryption
 rops = "0.1"
+# Utilities for SOPS decryption
+which = "5.0"
+uuid = { version = "1.0", features = ["v4"] }
 
 # File parsing
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
+serde_yaml = "0.9.33"
 dotenv = "0.15"
-schemars = "0.8"
-base64 = "0.21"
+schemars = "1"
+base64 = "0.22"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# OpenTelemetry
+# Note: Full Otel implementation pending API stabilization
+# Dependencies will be added when implementing full Otel support
+# For now, we support Otel configuration via CRD and log the settings
+
 # File system operations
-walkdir = "2.4"
-regex = "1.10"
+walkdir = "2"
+regex = "1.12.1"
 
 # Async runtime
 futures = "0.3"
@@ -66,14 +105,45 @@ futures = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP server for metrics and probes
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6.6", features = ["cors", "trace"] }
 
 # Prometheus metrics
-prometheus = "0.13"
+prometheus = "0.14"
 
 # CLI dependencies
 clap = { version = "4.5", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json"] }
+# Note: Using forked Google Cloud SDK with rustls support eliminates OpenSSL dependency.
+# rustls is pure Rust and works perfectly across all platforms.
+
+# Git operations for ArgoCD support
+tempfile = "3"
+md5 = "0.8.0"
+
+# Force all reqwest dependencies to use rustls instead of native-tls (OpenSSL)
+# By adding reqwest as a direct dependency with rustls features, Cargo's feature
+# unification will ensure all transitive dependencies use rustls instead of OpenSSL
+# Note: We must ensure rustls-tls-webpki-roots is included to avoid system cert issues
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+
+
+[build-dependencies]
+# Build script dependencies
+chrono = "0.4"
+# Note: We use command-line git instead of git2 to avoid OpenSSL dependency issues
+# This works for both native and cross-compilation builds
+
+# For musl targets, use vendored OpenSSL to avoid system OpenSSL dependency
+# This allows cross-compilation without needing OpenSSL installed
+[target.'cfg(target_env = "musl")'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
+[dev-dependencies]
+# Pact contract testing
+pact_consumer = "1.4"
+# HTTP client for Pact tests (to make requests to mock server)
+# Force rustls to avoid OpenSSL dependency
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+tokio = { version = "1", features = ["full"] }
 

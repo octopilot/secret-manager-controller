@@ -1,0 +1,78 @@
+---
+# Flux GitRepository - Example Configuration
+# This GitRepository points to a repository containing deployment-configuration
+#
+# Prerequisites:
+# 1. A Git repository with deployment-configuration directory
+# 2. Repository must be accessible (public or with credentials)
+# 3. For private repos, create a secret with git credentials
+
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: my-service-repo
+  namespace: flux-system  # Default Flux namespace
+spec:
+  # Repository URL
+  url: https://github.com/your-org/your-service-repo
+  # Or use SSH:
+  # url: git@github.com:your-org/your-service-repo.git
+  
+  # Branch or tag to watch
+  ref:
+    branch: main
+    # Or use a tag:
+    # tag: v1.0.0
+    # Or use a commit:
+    # commit: abc123def456
+  
+  # How often to check for updates
+  interval: 1m
+  
+  # Timeout for git operations
+  timeout: 20s
+  
+  # Optional: Reference to secret with git credentials (for private repos)
+  # secretRef:
+  #   name: git-credentials
+  
+  # Optional: Ignore paths (not needed for our use case)
+  # ignore: |
+  #   # Ignore certain paths
+  #   .git/
+  #   README.md
+
+---
+# Example: GitRepository with SSH credentials
+# Uncomment and customize if using SSH authentication
+
+# apiVersion: source.toolkit.fluxcd.io/v1
+# kind: GitRepository
+# metadata:
+#   name: my-service-repo-ssh
+#   namespace: flux-system
+# spec:
+#   url: git@github.com:your-org/your-service-repo.git
+#   ref:
+#     branch: main
+#   interval: 1m
+#   secretRef:
+#     name: git-ssh-credentials  # Secret with SSH private key
+
+---
+# Example: GitRepository with HTTPS credentials
+# Uncomment and customize if using HTTPS authentication
+
+# apiVersion: source.toolkit.fluxcd.io/v1
+# kind: GitRepository
+# metadata:
+#   name: my-service-repo-https
+#   namespace: flux-system
+# spec:
+#   url: https://github.com/your-org/your-service-repo.git
+#   ref:
+#     branch: main
+#   interval: 1m
+#   secretRef:
+#     name: git-https-credentials  # Secret with username/password or token
+

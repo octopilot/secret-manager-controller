@@ -1,0 +1,124 @@
+name: Dependabot Automerge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Automerge Dependabot PRs
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Wait for status checks
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            // Match job names from ci.yml
+            // GitHub Actions uses the job 'name' field for status checks
+            const requiredStatusChecks = [
+              'Run Unit Tests',  // test job name
+              'Lint Secret Manager Controller', // lint job name
+            ];
+
+            const maxWaitTime = 30 * 60 * 1000; // 30 minutes
+            const checkInterval = 30 * 1000; // 30 seconds
+            const startTime = Date.now();
+
+            while (Date.now() - startTime < maxWaitTime) {
+              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+              });
+
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+              });
+
+              // Combine statuses and checks
+              const allStatuses = [
+                ...statuses.map(s => ({ name: s.context, state: s.state })),
+                ...checks.check_runs.map(c => ({ name: c.name, state: c.status === 'completed' ? c.conclusion : c.status })),
+              ];
+
+              const requiredChecks = requiredStatusChecks.map(name => {
+                const status = allStatuses.find(s => s.name === name || s.name.includes(name));
+                return { name, status };
+              });
+
+              const allPassed = requiredChecks.every(
+                check => check.status && (check.status.state === 'success' || check.status.state === 'completed')
+              );
+              const anyFailed = requiredChecks.some(
+                check => check.status && (check.status.state === 'failure' || check.status.state === 'failed')
+              );
+
+              if (allPassed) {
+                console.log('✅ All required checks passed');
+                return;
+              }
+
+              if (anyFailed) {
+                throw new Error('❌ One or more required checks failed');
+              }
+
+              console.log('⏳ Waiting for status checks...');
+              console.log('Required checks:', JSON.stringify(requiredChecks.map(c => ({ name: c.name, found: !!c.status, state: c.status?.state })), null, 2));
+              await new Promise(resolve => setTimeout(resolve, checkInterval));
+            }
+
+            throw new Error('⏱️ Timeout waiting for status checks');
+
+      - name: Enable auto-merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            // Only automerge if PR is from dependabot and has automerge label
+            const hasAutomergeLabel = pr.labels.some(label => label.name === 'automerge');
+            
+            if (!hasAutomergeLabel) {
+              console.log('⚠️  PR does not have automerge label, skipping');
+              return;
+            }
+
+            try {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+                merge_method: 'squash',
+                commit_title: `${pr.title} (#${pr.number})`,
+                commit_message: `Automerge: ${pr.body || ''}`,
+              });
+              console.log('✅ PR merged successfully');
+            } catch (error) {
+              if (error.status === 405) {
+                console.log('⚠️  PR cannot be merged (may require review or have conflicts)');
+              } else {
+                throw error;
+              }
+            }
+

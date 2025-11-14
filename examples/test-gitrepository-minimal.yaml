@@ -1,0 +1,19 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: GitRepository
+metadata:
+  name: test-repo
+  namespace: test-namespace
+spec:
+  url: https://github.com/example/test-repo.git
+  interval: 1m
+  ref:
+    branch: main
+status:
+  # For quick testing, manually set the artifact path
+  # The controller will use this path to find files
+  artifact:
+    path: /tmp/flux-source-test-namespace-test-repo
+    url: file:///tmp/flux-source-test-namespace-test-repo
+    revision: test-revision
+    checksum: ""
+

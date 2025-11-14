@@ -18,7 +18,7 @@ use prometheus::{Counter, Histogram, IntCounter, IntGauge, Registry};
 use std::sync::LazyLock;
 
 // Metrics
-pub(crate) static REGISTRY: LazyLock<Registry> = LazyLock::new(|| Registry::new());
+pub(crate) static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 static RECONCILIATIONS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     IntCounter::new(
@@ -90,6 +90,7 @@ static GCP_SECRET_MANAGER_OPERATION_DURATION: LazyLock<Histogram> = LazyLock::ne
     .unwrap()
 });
 
+#[allow(clippy::missing_errors_doc)]
 pub fn register_metrics() -> Result<()> {
     REGISTRY.register(Box::new(RECONCILIATIONS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(RECONCILIATION_ERRORS_TOTAL.clone()))?;
@@ -99,7 +100,7 @@ pub fn register_metrics() -> Result<()> {
     REGISTRY.register(Box::new(SECRETS_MANAGED.clone()))?;
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATIONS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATION_DURATION.clone()))?;
-    
+
     Ok(())
 }
 
@@ -116,11 +117,15 @@ pub fn observe_reconciliation_duration(duration: f64) {
 }
 
 pub fn increment_secrets_synced(count: i64) {
-    SECRETS_SYNCED_TOTAL.inc_by(count as u64);
+    #[allow(clippy::cast_sign_loss)] // We ensure non-negative with max(0)
+    let count_u64 = count.max(0) as u64;
+    SECRETS_SYNCED_TOTAL.inc_by(count_u64);
 }
 
 pub fn increment_secrets_updated(count: i64) {
-    SECRETS_UPDATED_TOTAL.inc_by(count as u64);
+    #[allow(clippy::cast_sign_loss)] // We ensure non-negative with max(0)
+    let count_u64 = count.max(0) as u64;
+    SECRETS_UPDATED_TOTAL.inc_by(count_u64);
 }
 
 pub fn set_secrets_managed(count: i64) {
@@ -135,4 +140,10 @@ pub fn observe_gcp_operation_duration(duration: f64) {
     GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
 }
 
-
+// Generic secret operation metrics for multi-provider support
+pub fn record_secret_operation(_provider: &str, _operation: &str, duration: f64) {
+    // For now, we'll use the GCP metrics as a generic metric
+    // In the future, we might want provider-specific metrics
+    GCP_SECRET_MANAGER_OPERATIONS_TOTAL.inc();
+    GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
+}

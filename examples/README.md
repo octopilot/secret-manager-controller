@@ -1,6 +1,6 @@
 # Secret Manager Controller Examples
 
-This directory contains example `SecretManagerConfig` resources for configuring the Secret Manager Controller to sync secrets from Flux GitRepositories to Google Cloud Secret Manager.
+This directory contains example `SecretManagerConfig` resources for configuring the Secret Manager Controller to sync secrets from Flux GitRepositories to cloud secret managers (GCP Secret Manager, AWS Secrets Manager, Azure Key Vault).
 
 ## Project Structure Support
 
@@ -50,13 +50,61 @@ The controller also supports legacy structures without the `profiles/` directory
 
 However, the `profiles/` structure is recommended for Skaffold compatibility.
 
+## Cloud Provider Examples
+
+### Google Cloud Platform (GCP)
+
+**Files:**
+- `idam-dev-secret-manager-config.yaml` - GCP with default authentication
+- `idam-dev-workload-identity-secret-manager-config.yaml` - GCP with Workload Identity
+
+### Amazon Web Services (AWS)
+
+**File:** `idam-dev-aws-secret-manager-config.yaml`
+
+This example syncs secrets to AWS Secrets Manager using IRSA (IAM Roles for Service Accounts):
+
+```bash
+# Apply the configuration
+kubectl apply -f examples/idam-dev-aws-secret-manager-config.yaml
+
+# Check the status
+kubectl get secretmanagerconfig idam-dev-secrets-aws -n pricewhisperer
+```
+
+**Expected Secrets in AWS Secrets Manager:**
+- `idam-dev-supabase-anon-key`
+- `idam-dev-jwt-secret`
+- `idam-dev-supabase-service-role-key`
+- `idam-dev-properties`
+
+### Microsoft Azure
+
+**File:** `idam-dev-azure-secret-manager-config.yaml`
+
+This example syncs secrets to Azure Key Vault using Workload Identity:
+
+```bash
+# Apply the configuration
+kubectl apply -f examples/idam-dev-azure-secret-manager-config.yaml
+
+# Check the status
+kubectl get secretmanagerconfig idam-dev-secrets-azure -n pricewhisperer
+```
+
+**Expected Secrets in Azure Key Vault:**
+- `idam-dev-supabase-anon-key`
+- `idam-dev-jwt-secret`
+- `idam-dev-supabase-service-role-key`
+- `idam-dev-properties`
+
 ## IDAM Service Examples (Monolith Structure)
 
 ### Development Environment
 
 **File:** `idam-dev-secret-manager-config.yaml`
 
-This example syncs secrets from the IDAM service's development deployment configuration:
+This example syncs secrets from the IDAM service's development deployment configuration to GCP Secret Manager:
 
 ```bash
 # Apply the configuration
@@ -130,7 +178,7 @@ The controller supports two operation modes:
 
 ## Namespace Flexibility
 
-**Important:** The controller watches `SecretManagerConfig` resources in **all namespaces**. You can deploy your `SecretManagerConfig` resources in any namespace where your services are deployed. The controller itself runs in the `flux-system` namespace.
+**Important:** The controller watches `SecretManagerConfig` resources in **all namespaces**. You can deploy your `SecretManagerConfig` resources in any namespace where your services are deployed. The controller itself runs in the `microscaler-system` namespace (GitOps provider agnostic).
 
 Examples show different namespaces:
 - `pricewhisperer` - For PriceWhisperer services
@@ -199,14 +247,26 @@ Before applying these examples, ensure:
    
    Ensure your ArgoCD Application references a Git repository with the deployment configuration.
 
-2. **GCP Project Configuration:**
+2. **Cloud Provider Configuration:**
+   
+   **For GCP:**
    - Replace `pricewhisperer-dev` and `pricewhisperer-prd` with your actual GCP project IDs
    - Ensure Secret Manager API is enabled in both projects
    - Ensure the controller's service account has `roles/secretmanager.admin` role
+   
+   **For AWS:**
+   - Replace `us-east-1` with your AWS region
+   - Ensure Secrets Manager API is enabled in your AWS account
+   - Ensure the IAM role has `SecretsManagerReadWrite` policy attached
+   
+   **For Azure:**
+   - Replace `my-key-vault` with your Azure Key Vault name
+   - Ensure Key Vault exists and has appropriate access policies
+   - Ensure the Azure AD application has "Key Vault Secrets Officer" role
 
 3. **SOPS Private Key:**
    - The controller needs access to the SOPS private key to decrypt `application.secrets.env` files
-   - The key should be stored in a Kubernetes secret in the `flux-system` namespace
+   - The key should be stored in a Kubernetes secret in the `microscaler-system` namespace
    - See the main [README.md](../README.md) for details on SOPS key configuration
 
 ## Single Service Example
@@ -224,9 +284,9 @@ kubectl get secretmanagerconfig my-service-secrets -n default
 ```
 
 **Key Differences:**
-- `environment: dev` - **Required** - Explicitly specifies which environment/profile to sync
-- `basePath: "."` - Indicates root of repository
-- `secretPrefix: my-service` - **Required** for single service (used as service name)
+- `secrets.environment: dev` - **Required** - Explicitly specifies which environment/profile to sync
+- `secrets.basePath: "."` - Indicates root of repository
+- `secrets.prefix: my-service` - **Required** for single service (used as service name)
 
 **Directory Structure:**
 ```
@@ -255,8 +315,8 @@ microservices/
 ```
 
 **Configuration:**
-- `basePath: microservices` (optional - specify if services are under a subdirectory)
-- `secretPrefix: {service-name}` (optional, defaults to service name from path)
+- `secrets.basePath: microservices` (optional - specify if services are under a subdirectory)
+- `secrets.prefix: {service-name}` (optional, defaults to service name from path)
 
 ### Single Service Structure
 
@@ -269,26 +329,29 @@ deployment-configuration/
 ```
 
 **Configuration:**
-- `basePath:` (optional - omit for root, or use `"."` to explicitly indicate root)
-- `secretPrefix: {service-name}` (**required** - used as service name)
+- `secrets.basePath:` (optional - omit for root, or use `"."` to explicitly indicate root)
+- `secrets.prefix: {service-name}` (**required** - used as service name)
 
 ## Secret Naming Convention
 
 Secrets in GCP Secret Manager follow the same naming pattern as `kustomize-google-secret-manager` for drop-in replacement compatibility:
 
-- `{secretPrefix}-{key}-{secretSuffix}` if both prefix and suffix are specified
-- `{secretPrefix}-{key}` if only prefix is specified
-- `{key}-{secretSuffix}` if only suffix is specified
+- `{prefix}-{key}-{suffix}` if both prefix and suffix are specified
+- `{prefix}-{key}` if only prefix is specified
+- `{key}-{suffix}` if only suffix is specified
 - `{key}` if neither is specified
 
-Invalid characters (`.`, `/`, spaces) are automatically sanitized to `_` to comply with GCP Secret Manager requirements.
+Invalid characters (`.`, `/`, spaces) are automatically sanitized to `_` to comply with cloud provider naming requirements:
+- **GCP Secret Manager**: Names must be 1-255 characters, can contain letters, numbers, hyphens, and underscores
+- **AWS Secrets Manager**: Names must be 1-512 characters, can contain letters, numbers, `/`, `_`, `+`, `=`, `.`, `@`, `-`
+- **Azure Key Vault**: Names must be 1-127 characters, can contain letters, numbers, and hyphens
 
-Where `secretPrefix` is either:
-- The value specified in `spec.secretPrefix`
+Where `prefix` is either:
+- The value specified in `spec.secrets.prefix`
 - Or derived from the service name in the path (e.g., `idam`)
 
-And `secretSuffix` is:
-- The value specified in `spec.secretSuffix` (optional)
+And `suffix` is:
+- The value specified in `spec.secrets.suffix` (optional)
 - Commonly used for environment identifiers (e.g., `-prod`, `-dev-cf`) or tags (e.g., `-be-gcw1`)
 
 ## Verification
@@ -351,7 +414,7 @@ If the status shows `Ready=False`, check:
 
 ## Environment Configuration
 
-**Important:** The `environment` field is **required** and must exactly match the directory name under `profiles/`.
+**Important:** The `secrets.environment` field is **required** and must exactly match the directory name under `profiles/`.
 
 ### Standard Environment Names
 - `dev` - Development environment
@@ -379,15 +442,15 @@ To create your own `SecretManagerConfig`:
 3. Update `spec.sourceRef` to reference your source:
    - FluxCD: `kind: GitRepository`, `name`, `namespace`
    - ArgoCD: `kind: Application`, `name`, `namespace`
-4. Update `spec.gcpProjectId` to your GCP project ID
-5. **Set `spec.environment`** - Must match the directory name under `profiles/`:
+4. Update `spec.gcp.projectId` to your GCP project ID
+5. **Set `spec.secrets.environment`** - Must match the directory name under `profiles/`:
    - Standard: `dev`, `staging`, `prod`
    - Custom: `dev-cf`, `pp-cf`, `prod-cf`, etc.
-6. **Optionally** set `spec.basePath` based on your structure:
+6. **Optionally** set `spec.secrets.basePath` based on your structure:
    - Monolith: `microservices`, `services`, `apps`, etc. (only if services are under a subdirectory)
    - Single service: Omit (searches from root) or `"."` to explicitly indicate root
    - If omitted, searches from repository root
-7. Set `spec.secretPrefix` to control secret naming:
+7. Set `spec.secrets.prefix` to control secret naming:
    - Monolith: Optional (defaults to service name from path)
    - Single service: **Required** (used as service name)
 
@@ -404,10 +467,12 @@ spec:
     kind: GitRepository  # FluxCD GitRepository
     name: pricewhisperer-manifests
     namespace: flux-system
-  gcpProjectId: pricewhisperer-dev
-  environment: dev  # Required - must match directory name under profiles/
-  basePath: microservices  # Optional - only needed if services are under a subdirectory
-  secretPrefix: billing-service  # Optional
+  gcp:
+    projectId: pricewhisperer-dev
+  secrets:
+    environment: dev  # Required - must match directory name under profiles/
+    basePath: microservices  # Optional - only needed if services are under a subdirectory
+    prefix: billing-service  # Optional
 ```
 
 ### Example: Single Service
@@ -423,10 +488,12 @@ spec:
     kind: GitRepository  # FluxCD GitRepository
     name: my-service-repo
     namespace: flux-system
-  gcpProjectId: my-gcp-project-dev
-  environment: dev  # Required - must match directory name under profiles/
-  # basePath omitted - searches from repository root
-  secretPrefix: my-service  # Required for single service
+  gcp:
+    projectId: my-gcp-project-dev
+  secrets:
+    environment: dev  # Required - must match directory name under profiles/
+    # basePath omitted - searches from repository root
+    prefix: my-service  # Required for single service
 ```
 
 ### Example: Custom Environment Names (Skaffold)
@@ -442,10 +509,12 @@ spec:
     kind: GitRepository  # FluxCD GitRepository
     name: sam-activity-repo
     namespace: flux-system
-  gcpProjectId: sam-activity-dev
-  environment: dev-cf  # Custom environment name - must match directory name
-  # basePath omitted - searches from repository root
-  secretPrefix: sam-activity-dev-cf
+  gcp:
+    projectId: sam-activity-dev
+  secrets:
+    environment: dev-cf  # Custom environment name - must match directory name
+    # basePath omitted - searches from repository root
+    prefix: sam-activity-dev-cf
 ```
 
 **Note:** For services with multiple custom environments (e.g., `dev-cf`, `pp-cf`, `prod-cf`), create separate `SecretManagerConfig` resources for each environment.

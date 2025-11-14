@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: flux-system
+  name: microscaler-system
   labels:
     app: secret-manager-controller
     managed-by: tilt

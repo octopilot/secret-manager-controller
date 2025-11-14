@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secret-manager-controller-pact-broker
+  labels:
+    name: secret-manager-controller-pact-broker
+    app.kubernetes.io/component: pact-broker
+    app.kubernetes.io/part-of: secret-manager-controller
+

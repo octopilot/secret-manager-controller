@@ -1,0 +1,46 @@
+# SOPS Configuration for PriceWhisperer
+# This file defines encryption keys for SOPS-encrypted files
+# 
+# Usage:
+#   - Encrypt: sops -e -i application.secrets.env
+#   - Decrypt: sops -d application.secrets.env
+#   - Edit: sops application.secrets.env
+#
+# Key Management:
+#   - Flux SOPS Key: Used by Flux CD for automated decryption
+#   - Developer Keys: Individual developer PGP keys for manual access
+#
+# To add a developer key:
+#   1. Generate PGP key: gpg --gen-key
+#   2. Export public key: gpg --armor --export <email>
+#   3. Add fingerprint to key_groups below
+
+creation_rules:
+  # Match any file containing "application.secrets" in its path
+  # This covers all deployment secrets regardless of location:
+  # - microservices/*/deployment-configuration/*/application.secrets.env
+  # - k8s/*/deployment-configuration/*/application.secrets.env
+  # - any other location with application.secrets files
+  - path_regex: .*application\.secrets.*
+    key_groups:
+      - pgp:
+          # Flux SOPS Key (for automated decryption in cluster)
+          - 564F22B9BCE625AC1A935A10BC2D684F8DCF5CD4
+          # Developer Keys (for manual access)
+          # TODO: Add developer PGP key fingerprints
+          # Example: - 7A38C<redacted>90B
+          # Example: - 2G39B<redacted>45C
+
+  # Dev desktop secrets: .env file in repository root only
+  # This allows developers to encrypt their local .env files containing
+  # desktop development secrets (API keys, tokens, etc.)
+  - path_regex: ^\.env$
+    key_groups:
+      - pgp:
+          # Flux SOPS Key (for automated decryption in CI/CD)
+          - 564F22B9BCE625AC1A935A10BC2D684F8DCF5CD4
+          # Developer Keys (for manual access)
+          # TODO: Add developer PGP key fingerprints
+          # Example: - 7A38C<redacted>90B
+          # Example: - 2G39B<redacted>45C
+

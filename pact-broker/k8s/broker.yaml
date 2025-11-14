@@ -1,0 +1,90 @@
+---
+# Pact Broker Deployment (Secret Manager Controller)
+# Uses SQLite database - ideal for isolated single-controller use
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pact-broker
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: pact-broker
+    app.kubernetes.io/component: pact-broker
+    app.kubernetes.io/part-of: secret-manager-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pact-broker
+  template:
+    metadata:
+      labels:
+        app: pact-broker
+    spec:
+      containers:
+      - name: pact-broker
+        image: pactfoundation/pact-broker:latest
+        ports:
+        - containerPort: 9292
+          name: http
+        env:
+        - name: PACT_BROKER_PORT
+          value: "9292"
+        - name: PACT_BROKER_DATABASE_URL
+          value: "sqlite:///pacts/pact_broker.sqlite"
+        - name: PACT_BROKER_BASIC_AUTH_USERNAME
+          value: "pact"
+        - name: PACT_BROKER_BASIC_AUTH_PASSWORD
+          value: "pact"
+        - name: PACT_BROKER_PUBLIC_HEARTBEAT
+          value: "true"
+        - name: PACT_BROKER_ALLOW_PUBLIC_READ
+          value: "true"
+        - name: PACT_BROKER_LOG_LEVEL
+          value: INFO
+        - name: PACT_BROKER_WEBHOOK_HTTP_VERIFY
+          value: "false"
+        volumeMounts:
+        - name: pacts-storage
+          mountPath: /pacts
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 50m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9292
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9292
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: pacts-storage
+        emptyDir: {}  # Ephemeral storage for CI/testing
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pact-broker
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: pact-broker
+    app.kubernetes.io/component: pact-broker
+    app.kubernetes.io/part-of: secret-manager-controller
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9292
+    targetPort: 9292
+    protocol: TCP
+    name: http
+  selector:
+    app: pact-broker
+

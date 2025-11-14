@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: secret-manager-controller
-  namespace: flux-system
+  namespace: microscaler-system
 spec:
   replicas: 1
   selector:
@@ -16,18 +16,20 @@ spec:
       serviceAccountName: secret-manager-controller
       containers:
       - name: controller
-        image: localhost:5001/pricewhisperer-secret-manager-controller:tilt
+        image: localhost:5002/secret-manager-controller
         imagePullPolicy: Never
         env:
         - name: RUST_LOG
           value: "info"
-        - name: GOOGLE_APPLICATION_CREDENTIALS
-          value: /var/secrets/google/key.json
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: METRICS_PORT
-          value: "8080"
+          value: "5000"
         ports:
         - name: metrics
-          containerPort: 8080
+          containerPort: 5000
           protocol: TCP
         livenessProbe:
           httpGet:
@@ -39,12 +41,14 @@ spec:
           httpGet:
             path: /readyz
             port: metrics
-          initialDelaySeconds: 5
-          periodSeconds: 5
-        volumeMounts:
-        - name: gcp-credentials
-          mountPath: /var/secrets/google
-          readOnly: true
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        # Volume mount for JSON credentials (only needed if not using Workload Identity)
+        # Uncomment the following if using JSON credentials:
+        # volumeMounts:
+        # - name: gcp-credentials
+        #   mountPath: /var/secrets/google
+        #   readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -52,8 +56,10 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
-      volumes:
-      - name: gcp-credentials
-        secret:
-          secretName: gcp-secret-manager-credentials
+      # Volume for JSON credentials (only needed if not using Workload Identity)
+      # Uncomment the following if using JSON credentials:
+      # volumes:
+      # - name: gcp-credentials
+      #   secret:
+      #     secretName: gcp-secret-manager-credentials
 

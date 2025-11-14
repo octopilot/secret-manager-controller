@@ -29,29 +29,22 @@
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use kube::{
-    api::{Api, ListParams, Patch, PatchParams},
-    core::CustomResourceExt,
+    api::{Api, ListParams},
     Client, CustomResource,
 };
-use kube_runtime::{
-    watcher, Controller,
-    controller::Action,
-};
+use kube_runtime::{controller::Action, watcher, Controller};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::borrow::Cow;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-mod gcp;
-mod kustomize;
-mod metrics;
-mod parser;
-mod reconciler;
-mod server;
+pub mod controller;
+pub mod observability;
+pub mod provider;
 
-use reconciler::Reconciler;
-use server::{ServerState, start_server};
+use controller::reconciler::Reconciler;
+use controller::server::{start_server, ServerState};
 
 /// SecretManagerConfig Custom Resource Definition
 ///
@@ -70,7 +63,7 @@ use server::{ServerState, start_server};
 ///   sourceRef:
 ///     kind: GitRepository
 ///     name: my-repo
-///     namespace: flux-system
+///     namespace: microscaler-system
 ///   gcpProjectId: my-gcp-project
 ///   environment: dev
 ///   kustomizePath: microservices/my-service/deployment-configuration/profiles/dev
@@ -82,15 +75,184 @@ use server::{ServerState, start_server};
     version = "v1",
     namespaced,
     status = "SecretManagerConfigStatus",
-    printcolumn = r#"{"name":"Ready", "type":"string", "jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#
+    printcolumn = r#"{"name":"Phase", "type":"string", "jsonPath":".status.phase"}, {"name":"Description", "type":"string", "jsonPath":".status.description"}, {"name":"Ready", "type":"string", "jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#
 )]
 #[serde(rename_all = "camelCase")]
 pub struct SecretManagerConfigSpec {
     /// Source reference - supports FluxCD GitRepository and ArgoCD Application
     /// This makes the controller GitOps-agnostic
     pub source_ref: SourceRef,
+    /// Cloud provider configuration - supports GCP, AWS, and Azure
+    pub provider: ProviderConfig,
+    /// Secrets sync configuration
+    pub secrets: SecretsConfig,
+    /// Config store configuration for routing application.properties to config stores
+    /// When enabled, properties are stored individually in config stores instead of as a JSON blob in secret stores
+    #[serde(default)]
+    pub configs: Option<ConfigsConfig>,
+    /// OpenTelemetry configuration for distributed tracing (optional)
+    /// Supports OTLP exporter (to OpenTelemetry Collector) and Datadog direct export
+    /// If not specified, OpenTelemetry is disabled and standard tracing is used
+    #[serde(default)]
+    pub otel: Option<OtelConfig>,
+    /// GitRepository pull update interval
+    /// How often to check for updates from the GitRepository source
+    /// Format: Kubernetes duration string (e.g., "1m", "5m", "1h")
+    /// Minimum: 1m (60 seconds) - shorter intervals may hit API rate limits
+    /// Default: "5m" (5 minutes)
+    /// Recommended: 5m or greater to avoid rate limiting
+    #[serde(default = "default_git_repository_pull_interval")]
+    pub git_repository_pull_interval: String,
+    /// Reconcile interval
+    /// How often to reconcile secrets between Git and cloud providers (Secret Manager or Parameter Manager)
+    /// Format: Kubernetes duration string (e.g., "1m", "30s", "5m")
+    /// Default: "1m" (1 minute)
+    #[serde(default = "default_reconcile_interval")]
+    pub reconcile_interval: String,
+    /// Enable diff discovery
+    /// When enabled, detects if secrets have been tampered with in Secret Manager or Parameter Manager
+    /// and logs warnings when differences are found between Git (source of truth) and cloud provider
+    /// Default: true (enabled)
+    #[serde(default = "default_true")]
+    pub diff_discovery: bool,
+    /// Enable update triggers
+    /// When enabled, automatically updates cloud provider secrets if Git values have changed since last pull
+    /// This ensures Git remains the source of truth
+    /// Default: true (enabled)
+    #[serde(default = "default_true")]
+    pub trigger_update: bool,
+}
+
+/// Cloud provider configuration
+/// Supports GCP, AWS, and Azure Secret Manager
+/// Kubernetes sends data in format: {"type": "gcp", "gcp": {...}}
+/// We use externally tagged format and ignore the "type" field during deserialization
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ProviderConfig {
+    /// Google Cloud Platform Secret Manager
+    #[serde(rename = "gcp")]
+    Gcp(GcpConfig),
+    /// Amazon Web Services Secrets Manager
+    #[serde(rename = "aws")]
+    Aws(AwsConfig),
+    /// Microsoft Azure Key Vault
+    #[serde(rename = "azure")]
+    Azure(AzureConfig),
+}
+
+impl<'de> serde::Deserialize<'de> for ProviderConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, MapAccess, Visitor};
+        use std::fmt;
+
+        struct ProviderConfigVisitor;
+
+        impl<'de> Visitor<'de> for ProviderConfigVisitor {
+            type Value = ProviderConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a provider config object with gcp, aws, or azure field")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                // Try to find the variant key (gcp, aws, or azure)
+                let mut gcp: Option<GcpConfig> = None;
+                let mut aws: Option<AwsConfig> = None;
+                let mut azure: Option<AzureConfig> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "gcp" => {
+                            if gcp.is_some() {
+                                return Err(de::Error::duplicate_field("gcp"));
+                            }
+                            // Deserialize GcpConfig from the nested object
+                            // The JSON has {"projectId": "..."} which should map to project_id via rename_all
+                            gcp = Some(map.next_value::<GcpConfig>().map_err(|e| {
+                                de::Error::custom(format!("Failed to deserialize GcpConfig: {}", e))
+                            })?);
+                        }
+                        "aws" => {
+                            if aws.is_some() {
+                                return Err(de::Error::duplicate_field("aws"));
+                            }
+                            aws = Some(map.next_value()?);
+                        }
+                        "azure" => {
+                            if azure.is_some() {
+                                return Err(de::Error::duplicate_field("azure"));
+                            }
+                            azure = Some(map.next_value()?);
+                        }
+                        "type" => {
+                            // Ignore the "type" field - it's redundant
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                        _ => {
+                            // Ignore unknown fields (like "type")
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                match (gcp, aws, azure) {
+                    (Some(config), None, None) => Ok(ProviderConfig::Gcp(config)),
+                    (None, Some(config), None) => Ok(ProviderConfig::Aws(config)),
+                    (None, None, Some(config)) => Ok(ProviderConfig::Azure(config)),
+                    (None, None, None) => Err(de::Error::missing_field("gcp, aws, or azure")),
+                    _ => Err(de::Error::custom("multiple provider types specified")),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(ProviderConfigVisitor)
+    }
+}
+
+/// GCP configuration for Secret Manager
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GcpConfig {
     /// GCP project ID for Secret Manager
-    pub gcp_project_id: String,
+    pub project_id: String,
+    /// GCP authentication configuration. If not specified, defaults to Workload Identity (recommended).
+    #[serde(default)]
+    pub auth: Option<GcpAuthConfig>,
+}
+
+/// AWS configuration for Secrets Manager
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AwsConfig {
+    /// AWS region for Secrets Manager (e.g., "us-east-1", "eu-west-1")
+    pub region: String,
+    /// AWS authentication configuration. If not specified, defaults to IRSA (IAM Roles for Service Accounts) - recommended.
+    #[serde(default)]
+    pub auth: Option<AwsAuthConfig>,
+}
+
+/// Azure configuration for Key Vault (stub)
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AzureConfig {
+    /// Azure Key Vault name
+    pub vault_name: String,
+    /// Azure authentication configuration. If not specified, defaults to Workload Identity (recommended).
+    #[serde(default)]
+    pub auth: Option<AzureAuthConfig>,
+}
+
+/// Secrets sync configuration
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretsConfig {
     /// Environment/profile name to sync (e.g., "dev", "dev-cf", "prod-cf", "pp-cf")
     /// This must match the directory name under profiles/
     pub environment: String,
@@ -110,12 +272,157 @@ pub struct SecretManagerConfigSpec {
     /// Secret name prefix (default: repository name)
     /// Matches kustomize-google-secret-manager prefix behavior
     #[serde(default)]
-    pub secret_prefix: Option<String>,
+    pub prefix: Option<String>,
     /// Secret name suffix (optional)
     /// Matches kustomize-google-secret-manager suffix behavior
     /// Common use cases: environment identifiers, tags, etc.
     #[serde(default)]
-    pub secret_suffix: Option<String>,
+    pub suffix: Option<String>,
+}
+
+/// Config store configuration for routing application.properties to config stores
+/// When enabled, properties are stored individually in config stores instead of as a JSON blob in secret stores
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigsConfig {
+    /// Enable config store sync (default: false for backward compatibility)
+    /// When true, application.properties files are routed to config stores
+    /// When false, properties are stored as a JSON blob in secret stores (current behavior)
+    #[serde(default)]
+    pub enabled: bool,
+    /// AWS-specific: Parameter path prefix
+    /// Only applies when provider.type == aws
+    /// Optional: defaults to /{prefix}/{environment} if not specified
+    /// Example: /my-service/dev
+    #[serde(default)]
+    pub parameter_path: Option<String>,
+    /// GCP-specific: Store type (default: SecretManager)
+    /// Only applies when provider.type == gcp
+    /// - SecretManager: Store configs as individual secrets in Secret Manager (interim solution)
+    /// - ParameterManager: Store configs in Parameter Manager (future, after ESO contribution)
+    #[serde(default)]
+    pub store: Option<ConfigStoreType>,
+    /// Azure-specific: App Configuration endpoint
+    /// Only applies when provider.type == azure
+    /// Optional: defaults to auto-detection from vault region if not specified
+    /// Example: https://my-app-config.azconfig.io
+    #[serde(default)]
+    pub app_config_endpoint: Option<String>,
+}
+
+/// GCP config store type
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConfigStoreType {
+    /// Store configs as individual secrets in Secret Manager (interim solution)
+    /// This is the default and recommended interim approach until Parameter Manager support is contributed to ESO
+    SecretManager,
+    /// Store configs in Parameter Manager (future)
+    /// Requires ESO contribution for Kubernetes consumption
+    #[serde(rename = "ParameterManager")]
+    ParameterManager,
+}
+
+impl JsonSchema for ConfigStoreType {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("ConfigStoreType")
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+        // Generate a structural schema for Kubernetes CRD
+        // Use enum with nullable support (not anyOf)
+        let schema_value = serde_json::json!({
+            "type": "string",
+            "enum": ["secretManager", "ParameterManager"],
+            "description": "GCP config store type. SecretManager: Store configs as individual secrets in Secret Manager (interim solution). ParameterManager: Store configs in Parameter Manager (future, after ESO contribution)."
+        });
+        Schema::try_from(schema_value).expect("Failed to create Schema for ConfigStoreType")
+    }
+}
+
+/// GCP authentication configuration
+/// Only supports Workload Identity (recommended and default)
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum GcpAuthConfig {
+    /// Use Workload Identity for authentication (DEFAULT)
+    /// Requires GKE cluster with Workload Identity enabled
+    /// This is the recommended authentication method and is used by default when auth is not specified
+    WorkloadIdentity {
+        /// GCP service account email to impersonate
+        /// Format: <service-account-name>@<project-id>.iam.gserviceaccount.com
+        service_account_email: String,
+    },
+}
+
+/// AWS authentication configuration
+/// Only supports IRSA (IAM Roles for Service Accounts) - recommended and default
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum AwsAuthConfig {
+    /// Use IRSA (IAM Roles for Service Accounts) for authentication (DEFAULT)
+    /// Requires EKS cluster with IRSA enabled and service account annotation
+    /// This is the recommended authentication method and is used by default when auth is not specified
+    Irsa {
+        /// AWS IAM role ARN to assume
+        /// Format: arn:aws:iam::<account-id>:role/<role-name>
+        role_arn: String,
+    },
+}
+
+/// Azure authentication configuration
+/// Only supports Workload Identity (recommended and default)
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum AzureAuthConfig {
+    /// Use Workload Identity for authentication (DEFAULT)
+    /// Requires AKS cluster with Workload Identity enabled
+    /// This is the recommended authentication method and is used by default when auth is not specified
+    WorkloadIdentity {
+        /// Azure service principal client ID
+        client_id: String,
+    },
+}
+
+/// OpenTelemetry configuration
+/// Supports both OTLP exporter and Datadog direct export
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum OtelConfig {
+    /// Use OTLP exporter to send traces to an OpenTelemetry Collector
+    Otlp {
+        /// OTLP endpoint URL (e.g., "http://otel-collector:4317")
+        endpoint: String,
+        /// Service name for traces (defaults to "secret-manager-controller")
+        #[serde(default)]
+        service_name: Option<String>,
+        /// Service version for traces (defaults to Cargo package version)
+        #[serde(default)]
+        service_version: Option<String>,
+        /// Deployment environment (e.g., "dev", "prod")
+        #[serde(default)]
+        environment: Option<String>,
+    },
+    /// Use Datadog OpenTelemetry exporter (direct to Datadog)
+    Datadog {
+        /// Service name for traces (defaults to "secret-manager-controller")
+        #[serde(default)]
+        service_name: Option<String>,
+        /// Service version for traces (defaults to Cargo package version)
+        #[serde(default)]
+        service_version: Option<String>,
+        /// Deployment environment (e.g., "dev", "prod")
+        #[serde(default)]
+        environment: Option<String>,
+        /// Datadog site (e.g., "datadoghq.com", "us3.datadoghq.com")
+        /// If not specified, uses DD_SITE environment variable or defaults to "datadoghq.com"
+        #[serde(default)]
+        site: Option<String>,
+        /// Datadog API key
+        /// If not specified, uses DD_API_KEY environment variable
+        #[serde(default)]
+        api_key: Option<String>,
+    },
 }
 
 /// Source reference for GitOps repositories
@@ -140,12 +447,32 @@ fn default_source_kind() -> String {
     "GitRepository".to_string()
 }
 
+fn default_git_repository_pull_interval() -> String {
+    "5m".to_string()
+}
+
+fn default_reconcile_interval() -> String {
+    "1m".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Status of the SecretManagerConfig resource
 ///
 /// Tracks reconciliation state, errors, and metrics.
 #[derive(Debug, Clone, Deserialize, Serialize, Default, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretManagerConfigStatus {
+    /// Current phase of reconciliation
+    /// Values: Pending, Started, Cloning, Updating, Failed, Ready
+    #[serde(default)]
+    pub phase: Option<String>,
+    /// Human-readable description of current state
+    /// Examples: "Clone failed, repo unavailable", "Reconciling secrets to Secret Manager", "Reconciling properties to Parameter Manager"
+    #[serde(default)]
+    pub description: Option<String>,
     /// Conditions represent the latest available observations
     #[serde(default)]
     pub conditions: Vec<Condition>,
@@ -183,18 +510,41 @@ pub struct Condition {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "secret_manager_controller=info".into()),
-        )
-        .init();
+    // Configure rustls crypto provider FIRST, before any other operations
+    // Required for rustls 0.23+ when no default provider is set via features
+    // This must be called synchronously before any async operations that use rustls
+    // We use ring as the crypto provider
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
 
-    info!("Starting Secret Manager Controller");
+    // Initialize OpenTelemetry first (if configured)
+    // This will set up tracing with Otel support
+    // Note: Otel config can come from CRD, but we initialize early from env vars
+    // Per-resource Otel config is handled in the reconciler
+    let otel_tracer_provider =
+        observability::otel::init_otel(None).context("Failed to initialize OpenTelemetry")?;
+
+    // If Otel wasn't initialized, use standard tracing subscriber
+    if otel_tracer_provider.is_none() {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "secret_manager_controller=info".into()),
+            )
+            .init();
+    }
+
+    info!("Starting Secret Manager Controller v2");
+    info!(
+        "Build info: timestamp={}, datetime={}, git_hash={}",
+        env!("BUILD_TIMESTAMP"),
+        env!("BUILD_DATETIME"),
+        env!("BUILD_GIT_HASH")
+    );
 
     // Initialize metrics
-    metrics::register_metrics()?;
+    observability::metrics::register_metrics()?;
 
     // Create server state
     let server_state = Arc::new(ServerState {
@@ -202,17 +552,52 @@ async fn main() -> Result<()> {
     });
 
     // Start HTTP server for metrics and probes
+    // We start it in a background task but wait for it to be ready before proceeding
     let server_state_clone = server_state.clone();
     let server_port = std::env::var("METRICS_PORT")
-        .unwrap_or_else(|_| "8080".to_string())
+        .unwrap_or_else(|_| "5000".to_string())
         .parse::<u16>()
-        .unwrap_or(8080);
-    
-    tokio::spawn(async move {
+        .unwrap_or(5000);
+
+    // Start server in background task
+    let server_handle = tokio::spawn(async move {
         if let Err(e) = start_server(server_port, server_state_clone).await {
             error!("HTTP server error: {}", e);
         }
     });
+
+    // Poll server startup - wait for it to be ready before proceeding
+    // This ensures readiness probes pass immediately after server starts
+    let startup_timeout = std::time::Duration::from_secs(10);
+    let poll_interval = std::time::Duration::from_millis(50);
+    let start_time = std::time::Instant::now();
+
+    loop {
+        // Check if server task crashed
+        if server_handle.is_finished() {
+            return Err(anyhow::anyhow!("HTTP server failed to start"));
+        }
+
+        // Check if server is ready (set by start_server once bound)
+        if server_state
+            .is_ready
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            info!("HTTP server is ready and accepting connections");
+            break;
+        }
+
+        // Check timeout
+        if start_time.elapsed() > startup_timeout {
+            return Err(anyhow::anyhow!(
+                "HTTP server failed to become ready within {} seconds",
+                startup_timeout.as_secs()
+            ));
+        }
+
+        // Wait before next poll
+        tokio::time::sleep(poll_interval).await;
+    }
 
     // Create Kubernetes client
     let client = Client::try_default().await?;
@@ -221,28 +606,167 @@ async fn main() -> Result<()> {
     // This allows developers to deploy SecretManagerConfig resources in any namespace
     let configs: Api<SecretManagerConfig> = Api::all(client.clone());
 
+    // Check if CRD is queryable before starting the controller
+    // This ensures the CRD is installed and the controller can watch for resources
+    match configs.list(&ListParams::default().limit(1)).await {
+        Ok(list) => {
+            info!("CRD is queryable, starting controller watch");
+            info!(
+                "Found {} existing SecretManagerConfig resources",
+                list.items.len()
+            );
+            for item in &list.items {
+                info!(
+                    "  - {} in namespace {}",
+                    item.metadata.name.as_deref().unwrap_or("unknown"),
+                    item.metadata.namespace.as_deref().unwrap_or("default")
+                );
+            }
+        }
+        Err(e) => {
+            error!("CRD is not queryable; {:?}. Is the CRD installed?", e);
+            error!("Installation: kubectl apply -f config/crd/secretmanagerconfig.yaml");
+            // Don't exit - let the controller start and it will handle the error gracefully
+            warn!("Continuing despite CRD queryability check failure - controller will retry");
+        }
+    }
+
     // Create reconciler context
     let reconciler = Arc::new(Reconciler::new(client.clone()).await?);
 
-    // Mark as ready
-    server_state.is_ready.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Server is already marked as ready by start_server() once it binds
+    // This ensures readiness probes pass before we start reconciling
+    info!("Controller initialized, starting watch loop...");
 
-    // Create controller
-    Controller::new(configs, watcher::Config::default())
-        .shutdown_on_signal()
-        .run(
-            reconciler::Reconciler::reconcile,
-            |obj, error, _ctx| {
-                error!("Reconciliation error for {}: {:?}", 
-                    obj.metadata.name.as_deref().unwrap_or("unknown"), error);
-                metrics::increment_reconciliation_errors();
-                Action::requeue(std::time::Duration::from_secs(60))
-            },
-            reconciler.clone(),
-        )
-        .for_each(|_| std::future::ready(()))
-        .await;
+    // Create controller with any_semantic() to watch for all semantic changes (create, update, delete)
+    // This ensures the controller picks up newly created resources
+    info!("Starting controller watch loop...");
+
+    // Set up graceful shutdown handler - mark server as not ready when shutting down
+    let server_state_shutdown = server_state.clone();
+
+    // Use Arc for shared backoff state
+    let backoff_duration_ms = Arc::new(std::sync::atomic::AtomicU64::new(1000)); // Start with 1 second
+    let max_backoff_ms = 30_000; // 30 seconds max
+
+    // Set up shutdown signal handler - mark server as not ready when SIGTERM received
+    let shutdown_server_state = server_state_shutdown.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        info!("Received shutdown signal (SIGINT/SIGTERM), initiating graceful shutdown...");
+        shutdown_server_state
+            .is_ready
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        info!("Marked server as not ready, waiting for in-flight reconciliations to complete...");
+    });
+
+    // Run controller with improved error handling and automatic restart
+    loop {
+        // Check if we should shut down before starting/restarting watch
+        if !server_state_shutdown
+            .is_ready
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            info!("Shutdown requested, exiting watch loop");
+            break;
+        }
+
+        let backoff_clone = backoff_duration_ms.clone();
+        let controller_future = Controller::new(configs.clone(), watcher::Config::default().any_semantic())
+            .shutdown_on_signal()
+            .run(
+                |obj, ctx| {
+                    let reconciler = ctx.clone();
+                    async move {
+                        info!("Reconciling SecretManagerConfig: {}",
+obj.metadata.name.as_deref().unwrap_or("unknown"));
+                        Reconciler::reconcile(obj, reconciler.clone()).await
+                    }
+                },
+                |obj, error, _ctx| {
+                    error!(
+                        "Reconciliation error for {}: {:?}",
+                        obj.metadata.name.as_deref().unwrap_or("unknown"),
+                        error
+                    );
+                    observability::metrics::increment_reconciliation_errors();
+                    Action::requeue(std::time::Duration::from_secs(60))
+                },
+                reconciler.clone(),
+            )
+            .filter_map(move |x| {
+                let backoff = backoff_clone.clone();
+                async move {
+                    match &x {
+                        Ok(_) => {
+// Successful event, reset backoff on success
+backoff.store(1000, std::sync::atomic::Ordering::Relaxed);
+Some(x)
+                        }
+                        Err(e) => {
+// Handle watch errors with proper classification
+let error_string = format!("{:?}", e);
+// Check for specific error types
+let is_410 = error_string.contains("410")
+    || error_string.contains("too old resource version")
+    || error_string.contains("Expired")
+    || error_string.contains("Gone");
+let is_429 = error_string.contains("429")
+    || error_string.contains("storage is (re)initializing")
+    || error_string.contains("TooManyRequests");
+let is_not_found = error_string.contains("ObjectNotFound")
+    || (error_string.contains("404") && error_string.contains("not found"));
+if is_410 {
+    // Resource version expired - this is normal during pod restarts
+    warn!("Watch resource version expired (410) - this is normal during pod restarts, watch will restart");
+    None // Filter out to allow restart
+} else if is_429 {
+    // Storage reinitializing - back off and let it restart
+    let current_backoff = backoff.load(std::sync::atomic::Ordering::Relaxed);
+    warn!("API server storage reinitializing (429), backing off for {}ms before restart...", current_backoff);
+    tokio::time::sleep(std::time::Duration::from_millis(current_backoff)).await;
+    // Exponential backoff, max 30 seconds
+    let new_backoff = std::cmp::min(current_backoff * 2, max_backoff_ms);
+    backoff.store(new_backoff, std::sync::atomic::Ordering::Relaxed);
+    None // Filter out to allow restart
+} else if is_not_found {
+    // Resource not found - this is normal for deleted resources
+    warn!("Resource not found (likely deleted), continuing watch...");
+    Some(x) // Continue - this is expected
+} else {
+    // Other errors - log but continue
+    error!("Controller stream error: {:?}", e);
+    // For unknown errors, wait a bit before restarting
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    None // Filter out to allow restart
+}
+                        }
+                    }
+                }
+            })
+            .for_each(|_| futures::future::ready(()));
+
+        // Run controller - check for shutdown before and after
+        controller_future.await;
+
+        // Check if shutdown was requested
+        if !server_state_shutdown
+            .is_ready
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            info!("Shutdown requested, exiting watch loop");
+            break;
+        }
+
+        // Controller stream ended - restart watch
+        warn!("Controller watch stream ended, restarting in 1 second...");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    info!("Controller stopped gracefully");
+
+    // Shutdown OpenTelemetry tracer provider if it was initialized
+    observability::otel::shutdown_otel(otel_tracer_provider);
 
     Ok(())
 }
-

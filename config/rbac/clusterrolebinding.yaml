@@ -9,6 +9,6 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: secret-manager-controller
-  namespace: flux-system
+  namespace: microscaler-system
 
 

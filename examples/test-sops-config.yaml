@@ -1,0 +1,50 @@
+apiVersion: secret-management.microscaler.io/v1
+kind: SecretManagerConfig
+metadata:
+  name: test-sops-config
+  namespace: default
+spec:
+  # Source reference - points to a GitRepository
+  # For quick testing, you can create a minimal GitRepository that points to the test path
+  sourceRef:
+    kind: GitRepository
+    name: test-repo
+    namespace: test-namespace
+  
+  # Secrets configuration
+  secrets:
+    # Environment name - must match the directory name under profiles/
+    environment: dev
+    
+    # Optional: Base path within the repository
+    # Leave empty for single-service structure
+    # Set to "microservices" for monolith structure
+    basePath: ""
+    
+    # Optional: Default service name (used if not found in directory structure)
+    # defaultServiceName: "test-service"
+    
+    # Secret prefix for cloud provider
+    prefix: "test-service"
+    
+    # Optional: Suffix for secret names
+    # suffix: "dev"
+  
+  # Config store routing (optional)
+  # When enabled, application.properties routes to config stores instead of secrets
+  configs:
+    enabled: false
+    # For AWS: routes to Parameter Store
+    # For GCP: routes to Secret Manager (interim solution)
+    # For Azure: routes to App Configuration
+  
+  # Cloud provider configuration
+  provider:
+    type: gcp
+    gcp:
+      projectId: your-gcp-project-id
+      # Optional: Workload Identity configuration
+      # auth:
+      #   authType: WorkloadIdentity
+      #   serviceAccountEmail: secret-manager-controller@your-project.iam.gserviceaccount.com
+

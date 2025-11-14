@@ -1,0 +1,30 @@
+# Ignore unencrypted secret files
+# Only encrypted SOPS files should be committed
+
+# Unencrypted secret files (if testing locally)
+*.secrets.env.decrypted
+*.secrets.yaml.decrypted
+*.secrets.env.plain
+*.secrets.yaml.plain
+
+# GPG keys (never commit these!)
+*.asc
+*.gpg
+private-key*
+public-key*
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+

@@ -1,5 +1,7 @@
 # Rust build artifacts
 target/
+target-crdgen/  # Separate target directory for CRD generation to avoid Cargo lock conflicts
+build_artifacts/  # Build artifacts directory (binaries, checksums, etc.)
 Cargo.lock
 
 # IDE
@@ -19,6 +21,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+# Note: .env.encrypted (SOPS encrypted) can be safely committed to git
 
 # Backup files
 *.backup
@@ -34,3 +37,16 @@ kubeconfig
 *.gpg
 private-key*
 *.asc
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+*.pyzwzw
+*.pyzwzwz
