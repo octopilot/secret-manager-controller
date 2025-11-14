@@ -121,7 +121,6 @@ pub struct GcpConfig {
     /// GCP project ID for Secret Manager
     pub project_id: String,
     /// GCP authentication configuration. If not specified, defaults to Workload Identity (recommended).
-    /// JSON credentials are available but will be deprecated once GCP deprecates them.
     #[serde(default)]
     pub auth: Option<GcpAuthConfig>,
 }
@@ -133,7 +132,6 @@ pub struct AwsConfig {
     /// AWS region for Secrets Manager (e.g., "us-east-1", "eu-west-1")
     pub region: String,
     /// AWS authentication configuration. If not specified, defaults to IRSA (IAM Roles for Service Accounts) - recommended.
-    /// Access Keys are available but will be deprecated once AWS deprecates them.
     #[serde(default)]
     pub auth: Option<AwsAuthConfig>,
 }
@@ -145,7 +143,6 @@ pub struct AzureConfig {
     /// Azure Key Vault name
     pub vault_name: String,
     /// Azure authentication configuration. If not specified, defaults to Workload Identity (recommended).
-    /// Service Principal credentials are available but will be deprecated once Azure deprecates them.
     #[serde(default)]
     pub auth: Option<AzureAuthConfig>,
 }
@@ -182,29 +179,10 @@ pub struct SecretsConfig {
 }
 
 /// GCP authentication configuration
-/// Supports both JSON credentials and Workload Identity
+/// Only supports Workload Identity (recommended and default)
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "authType")]
 pub enum GcpAuthConfig {
-    /// Use JSON credentials from a Kubernetes secret
-    /// 
-    /// ⚠️ DEPRECATED: JSON credentials are available but will be deprecated once GCP deprecates them.
-    /// Workload Identity is the recommended and default authentication method.
-    #[deprecated(note = "JSON credentials will be deprecated once GCP deprecates them. Use WorkloadIdentity instead.")]
-    JsonCredentials {
-        /// Secret name containing the JSON credentials
-        /// Defaults to "gcp-secret-manager-credentials" if not specified
-        #[serde(default = "default_json_secret_name")]
-        secret_name: String,
-        /// Secret namespace
-        /// Defaults to controller namespace (microscaler-system) if not specified
-        #[serde(default)]
-        secret_namespace: Option<String>,
-        /// Key in the secret containing the JSON credentials
-        /// Defaults to "key.json" if not specified
-        #[serde(default = "default_json_secret_key")]
-        secret_key: String,
-    },
     /// Use Workload Identity for authentication (DEFAULT)
     /// Requires GKE cluster with Workload Identity enabled
     /// This is the recommended authentication method and is used by default when auth is not specified
@@ -215,42 +193,11 @@ pub enum GcpAuthConfig {
     },
 }
 
-fn default_json_secret_name() -> String {
-    "gcp-secret-manager-credentials".to_string()
-}
-
-fn default_json_secret_key() -> String {
-    "key.json".to_string()
-}
-
 /// AWS authentication configuration
-/// Supports both Access Keys and IRSA (IAM Roles for Service Accounts)
+/// Only supports IRSA (IAM Roles for Service Accounts) - recommended and default
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "authType")]
 pub enum AwsAuthConfig {
-    /// Use Access Keys from a Kubernetes secret
-    /// 
-    /// ⚠️ DEPRECATED: Access Keys are available but will be deprecated once AWS deprecates them.
-    /// IRSA (IAM Roles for Service Accounts) is the recommended and default authentication method.
-    #[deprecated(note = "Access Keys will be deprecated once AWS deprecates them. Use Irsa instead.")]
-    AccessKeys {
-        /// Secret name containing the AWS credentials
-        /// Defaults to "aws-secret-manager-credentials" if not specified
-        #[serde(default = "default_aws_secret_name")]
-        secret_name: String,
-        /// Secret namespace
-        /// Defaults to controller namespace (microscaler-system) if not specified
-        #[serde(default)]
-        secret_namespace: Option<String>,
-        /// Key in the secret containing the AWS access key ID
-        /// Defaults to "access-key-id" if not specified
-        #[serde(default = "default_aws_access_key_id_key")]
-        access_key_id_key: String,
-        /// Key in the secret containing the AWS secret access key
-        /// Defaults to "secret-access-key" if not specified
-        #[serde(default = "default_aws_secret_access_key_key")]
-        secret_access_key_key: String,
-    },
     /// Use IRSA (IAM Roles for Service Accounts) for authentication (DEFAULT)
     /// Requires EKS cluster with IRSA enabled and service account annotation
     /// This is the recommended authentication method and is used by default when auth is not specified
@@ -261,34 +208,11 @@ pub enum AwsAuthConfig {
     },
 }
 
-fn default_aws_secret_name() -> String {
-    "aws-secret-manager-credentials".to_string()
-}
-
-fn default_aws_access_key_id_key() -> String {
-    "access-key-id".to_string()
-}
-
-fn default_aws_secret_access_key_key() -> String {
-    "secret-access-key".to_string()
-}
-
-/// Azure authentication configuration (stub)
+/// Azure authentication configuration
+/// Only supports Workload Identity (recommended and default)
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "authType")]
 pub enum AzureAuthConfig {
-    /// Use Service Principal from a Kubernetes secret
-    /// 
-    /// ⚠️ DEPRECATED: Service Principal credentials are available but will be deprecated once Azure deprecates them.
-    /// Workload Identity is the recommended and default authentication method.
-    #[deprecated(note = "Service Principal credentials will be deprecated once Azure deprecates them. Use WorkloadIdentity instead.")]
-    ServicePrincipal {
-        /// Secret name containing the Azure credentials
-        secret_name: String,
-        /// Secret namespace
-        #[serde(default)]
-        secret_namespace: Option<String>,
-    },
     /// Use Workload Identity for authentication (DEFAULT)
     /// Requires AKS cluster with Workload Identity enabled
     /// This is the recommended authentication method and is used by default when auth is not specified

@@ -29,31 +29,16 @@ impl SecretManager {
     /// Authentication is handled automatically by the Google Cloud SDK:
     /// - Workload Identity: Uses Application Default Credentials (ADC) when running in GKE
     ///   with Workload Identity enabled and service account annotation
-    /// - JSON Credentials: Uses GOOGLE_APPLICATION_CREDENTIALS environment variable
-    ///   pointing to mounted secret file
     /// 
-    /// The auth_type parameter indicates which authentication method to use:
-    /// - "WorkloadIdentity": Uses Workload Identity (DEFAULT, requires GKE with WI enabled)
-    /// - "JsonCredentials": Uses JSON credentials from GOOGLE_APPLICATION_CREDENTIALS (DEPRECATED)
-    /// - None: Defaults to Workload Identity
-    pub async fn new(_project_id: String, auth_type: Option<&str>, service_account_email: Option<&str>) -> Result<Self> {
-        match auth_type {
-            Some("WorkloadIdentity") | None => {
-                if let Some(email) = service_account_email {
-                    info!("Using Workload Identity authentication with service account: {}", email);
-                    info!("Ensure service account annotation is set: iam.gke.io/gcp-service-account={}", email);
-                } else {
-                    info!("Using Workload Identity authentication (service account from pod annotation)");
-                }
-            }
-            Some("JsonCredentials") => {
-                warn!("⚠️  DEPRECATED: JSON credentials are available but will be deprecated once GCP deprecates them. Please migrate to Workload Identity.");
-                info!("Using JSON credentials from GOOGLE_APPLICATION_CREDENTIALS");
-                info!("Ensure GOOGLE_APPLICATION_CREDENTIALS points to mounted secret file");
-            }
-            _ => {
-                info!("No auth type specified, defaulting to Workload Identity");
-            }
+    /// Uses Workload Identity for authentication (DEFAULT, requires GKE with WI enabled)
+    /// If service_account_email is provided, uses that specific service account.
+    /// Otherwise, uses the service account from pod annotation.
+    pub async fn new(_project_id: String, _auth_type: Option<&str>, service_account_email: Option<&str>) -> Result<Self> {
+        if let Some(email) = service_account_email {
+            info!("Using Workload Identity authentication with service account: {}", email);
+            info!("Ensure service account annotation is set: iam.gke.io/gcp-service-account={}", email);
+        } else {
+            info!("Using Workload Identity authentication (service account from pod annotation)");
         }
 
         // Create client - SecretManagerService should have a constructor

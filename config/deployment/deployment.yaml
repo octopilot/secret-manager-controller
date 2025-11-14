@@ -16,7 +16,7 @@ spec:
       serviceAccountName: secret-manager-controller
       containers:
       - name: controller
-        image: localhost:5002/secret-manager-controller:tilt
+        image: localhost:5002/secret-manager-controller
         imagePullPolicy: Never
         env:
         - name: RUST_LOG
@@ -25,11 +25,6 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        # GOOGLE_APPLICATION_CREDENTIALS is only needed for JSON credentials
-        # If using Workload Identity, this can be omitted
-        # Uncomment the following line if using JSON credentials:
-        # - name: GOOGLE_APPLICATION_CREDENTIALS
-        #   value: /var/secrets/google/key.json
         - name: METRICS_PORT
           value: "5000"
         ports:

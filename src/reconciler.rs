@@ -301,10 +301,6 @@ impl Reconciler {
                                 .to_string();
                             (Some("WorkloadIdentity"), Some(email))
                         }
-                        Some("JsonCredentials") => {
-                            warn!("⚠️  DEPRECATED: JSON credentials are available but will be deprecated once GCP deprecates them. Please migrate to Workload Identity.");
-                            (Some("JsonCredentials"), None)
-                        }
                         _ => {
                             // Default to Workload Identity
                             info!("No auth type specified, defaulting to Workload Identity");

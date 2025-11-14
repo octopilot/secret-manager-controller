@@ -47,13 +47,6 @@ impl AzureKeyVault {
                 WorkloadIdentityCredential::new(Some(options))
                     .context("Failed to create WorkloadIdentityCredential")?
             }
-            #[allow(deprecated)] // Intentionally supporting deprecated ServicePrincipal for backward compatibility
-            Some(AzureAuthConfig::ServicePrincipal { secret_name, secret_namespace }) => {
-                warn!("⚠️  DEPRECATED: Service Principal credentials are available but will be deprecated once Azure deprecates them. Please migrate to Workload Identity.");
-                info!("Using Service Principal authentication from secret: {}/{}", 
-                    secret_namespace.as_deref().unwrap_or("default"), secret_name);
-                Self::create_service_principal_credential(secret_name, secret_namespace, k8s_client).await?
-            }
             None => {
                 info!("No auth configuration specified, defaulting to DeveloperToolsCredential");
                 info!("This will attempt Workload Identity, Managed Identity, environment variables, or Azure CLI");
@@ -72,58 +65,6 @@ impl AzureKeyVault {
         })
     }
 
-    /// Create Service Principal credential from Kubernetes secret
-    /// 
-    /// ⚠️ DEPRECATED: Service Principal credentials are available but will be deprecated once Azure deprecates them.
-    /// Workload Identity is the recommended and default authentication method.
-    async fn create_service_principal_credential(
-        secret_name: &str,
-        secret_namespace: &Option<String>,
-        k8s_client: &kube::Client,
-    ) -> Result<Arc<dyn TokenCredential>> {
-        use kube::api::Api;
-        use k8s_openapi::api::core::v1::Secret;
-        
-        let namespace = secret_namespace.as_deref().unwrap_or("default");
-        let secrets_api: Api<Secret> = Api::namespaced(k8s_client.clone(), namespace);
-        
-        let secret = secrets_api.get(secret_name).await
-            .context(format!("Failed to get secret {}/{}", namespace, secret_name))?;
-        
-        let data = secret.data.as_ref()
-            .context("Secret data is empty")?;
-        
-        // Extract Service Principal credentials from secret
-        // Expected keys: client-id, client-secret, tenant-id
-        let client_id = data.get("client-id")
-            .or_else(|| data.get("clientId"))
-            .or_else(|| data.get("CLIENT_ID"))
-            .and_then(|v| String::from_utf8(v.0.clone()).ok())
-            .context("Failed to read client-id from secret")?;
-        
-        let client_secret = data.get("client-secret")
-            .or_else(|| data.get("clientSecret"))
-            .or_else(|| data.get("CLIENT_SECRET"))
-            .and_then(|v| String::from_utf8(v.0.clone()).ok())
-            .context("Failed to read client-secret from secret")?;
-        
-        let tenant_id = data.get("tenant-id")
-            .or_else(|| data.get("tenantId"))
-            .or_else(|| data.get("TENANT_ID"))
-            .and_then(|v| String::from_utf8(v.0.clone()).ok())
-            .context("Failed to read tenant-id from secret")?;
-        
-        // Create ClientSecretCredential directly from the service principal credentials
-        let options = ClientSecretCredentialOptions::default();
-        let cred = ClientSecretCredential::new(
-            tenant_id.as_str(),
-            client_id, // client_id is already String
-            client_secret.into(), // Convert String to azure_core::credentials::Secret
-            Some(options),
-        )
-        .context("Failed to create ClientSecretCredential from service principal")?;
-        Ok(cred)
-    }
 }
 
 #[async_trait]
@@ -218,22 +159,20 @@ mod tests {
     }
 
     #[test]
-    fn test_azure_config_service_principal() {
+    fn test_azure_config_workload_identity() {
         let config = AzureConfig {
             vault_name: "test-vault".to_string(),
-            auth: Some(AzureAuthConfig::ServicePrincipal {
-                secret_name: "azure-credentials".to_string(),
-                secret_namespace: Some("default".to_string()),
+            auth: Some(AzureAuthConfig::WorkloadIdentity {
+                client_id: "12345678-1234-1234-1234-123456789012".to_string(),
             }),
         };
         
         assert_eq!(config.vault_name, "test-vault");
         match config.auth {
-            Some(AzureAuthConfig::ServicePrincipal { secret_name, secret_namespace }) => {
-                assert_eq!(secret_name, "azure-credentials");
-                assert_eq!(secret_namespace, Some("default".to_string()));
+            Some(AzureAuthConfig::WorkloadIdentity { client_id }) => {
+                assert_eq!(client_id, "12345678-1234-1234-1234-123456789012");
             }
-            _ => panic!("Expected ServicePrincipal auth config"),
+            _ => panic!("Expected WorkloadIdentity auth config"),
         }
     }
 

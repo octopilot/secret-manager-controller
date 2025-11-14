@@ -35,13 +35,6 @@ impl AwsSecretManager {
                 info!("Using IRSA authentication with role: {}", role_arn);
                 Self::create_irsa_config(&region, role_arn, k8s_client).await?
             }
-            #[allow(deprecated)] // Intentionally supporting deprecated AccessKeys for backward compatibility
-            Some(AwsAuthConfig::AccessKeys { secret_name, secret_namespace, access_key_id_key, secret_access_key_key }) => {
-                warn!("⚠️  DEPRECATED: Access Keys are available but will be deprecated once AWS deprecates them. Please migrate to IRSA.");
-                info!("Using Access Keys authentication from secret: {}/{}", 
-                    secret_namespace.as_ref().unwrap_or(&"default".to_string()), secret_name);
-                Self::create_access_keys_config(&region, secret_name, secret_namespace, access_key_id_key, secret_access_key_key, k8s_client).await?
-            }
             None => {
                 info!("No auth configuration specified, defaulting to IRSA (IAM Roles for Service Accounts)");
                 info!("Ensure pod service account has annotation: eks.amazonaws.com/role-arn=<role-arn>");
@@ -73,53 +66,6 @@ impl AwsSecretManager {
         // The role ARN from the config is informational - the actual role comes from the pod annotation
         info!("IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}", role_arn);
         
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.to_string()))
-            .load()
-            .await;
-        
-        Ok(sdk_config)
-    }
-
-    /// Create AWS SDK config using Access Keys from Kubernetes secret
-    /// Note: This approach sets environment variables temporarily
-    /// 
-    /// ⚠️ DEPRECATED: Access Keys are available but will be deprecated once AWS deprecates them.
-    /// IRSA is the recommended and default authentication method.
-    async fn create_access_keys_config(
-        region: &str,
-        secret_name: &str,
-        secret_namespace: &Option<String>,
-        access_key_id_key: &str,
-        secret_access_key_key: &str,
-        k8s_client: &kube::Client,
-    ) -> Result<SdkConfig> {
-        use kube::api::Api;
-        use k8s_openapi::api::core::v1::Secret;
-        
-        let namespace = secret_namespace.as_deref().unwrap_or("default");
-        let secrets_api: Api<Secret> = Api::namespaced(k8s_client.clone(), namespace);
-        
-        let secret = secrets_api.get(secret_name).await
-            .context(format!("Failed to get secret {}/{}", namespace, secret_name))?;
-        
-        let data = secret.data.as_ref()
-            .context("Secret data is empty")?;
-        
-        let access_key_id = data.get(access_key_id_key)
-            .and_then(|v| String::from_utf8(v.0.clone()).ok())
-            .context(format!("Failed to read {} from secret", access_key_id_key))?;
-        
-        let secret_access_key = data.get(secret_access_key_key)
-            .and_then(|v| String::from_utf8(v.0.clone()).ok())
-            .context(format!("Failed to read {} from secret", secret_access_key_key))?;
-        
-        // Set environment variables for AWS SDK to pick up
-        // The SDK will automatically use these from the environment
-        std::env::set_var("AWS_ACCESS_KEY_ID", &access_key_id);
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", &secret_access_key);
-        
-        // Load config from environment (will use the env vars we just set)
         let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_config::Region::new(region.to_string()))
             .load()
@@ -264,26 +210,20 @@ mod tests {
     }
 
     #[test]
-    fn test_aws_config_access_keys() {
+    fn test_aws_config_irsa() {
         let config = AwsConfig {
             region: "us-west-2".to_string(),
-            auth: Some(AwsAuthConfig::AccessKeys {
-                secret_name: "aws-credentials".to_string(),
-                secret_namespace: Some("default".to_string()),
-                access_key_id_key: "access-key-id".to_string(),
-                secret_access_key_key: "secret-access-key".to_string(),
+            auth: Some(AwsAuthConfig::Irsa {
+                role_arn: "arn:aws:iam::123456789012:role/test-role".to_string(),
             }),
         };
         
         assert_eq!(config.region, "us-west-2");
         match config.auth {
-            Some(AwsAuthConfig::AccessKeys { secret_name, secret_namespace, access_key_id_key, secret_access_key_key }) => {
-                assert_eq!(secret_name, "aws-credentials");
-                assert_eq!(secret_namespace, Some("default".to_string()));
-                assert_eq!(access_key_id_key, "access-key-id");
-                assert_eq!(secret_access_key_key, "secret-access-key");
+            Some(AwsAuthConfig::Irsa { role_arn }) => {
+                assert_eq!(role_arn, "arn:aws:iam::123456789012:role/test-role");
             }
-            _ => panic!("Expected AccessKeys auth config"),
+            _ => panic!("Expected Irsa auth config"),
         }
     }
 

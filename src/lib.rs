@@ -70,48 +70,23 @@ pub struct AzureConfig {
 }
 
 /// AWS authentication configuration
+/// Only supports IRSA (IAM Roles for Service Accounts) - recommended and default
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "authType")]
 pub enum AwsAuthConfig {
-    AccessKeys {
-        #[serde(default = "default_aws_secret_name")]
-        secret_name: String,
-        #[serde(default)]
-        secret_namespace: Option<String>,
-        #[serde(default = "default_aws_access_key_id_key")]
-        access_key_id_key: String,
-        #[serde(default = "default_aws_secret_access_key_key")]
-        secret_access_key_key: String,
-    },
     Irsa {
         role_arn: String,
     },
 }
 
-/// Azure authentication configuration (stub)
+/// Azure authentication configuration
+/// Only supports Workload Identity (recommended and default)
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "authType")]
 pub enum AzureAuthConfig {
-    ServicePrincipal {
-        secret_name: String,
-        #[serde(default)]
-        secret_namespace: Option<String>,
-    },
     WorkloadIdentity {
         client_id: String,
     },
-}
-
-fn default_aws_secret_name() -> String {
-    "aws-secret-manager-credentials".to_string()
-}
-
-fn default_aws_access_key_id_key() -> String {
-    "access-key-id".to_string()
-}
-
-fn default_aws_secret_access_key_key() -> String {
-    "secret-access-key".to_string()
 }
 
 /// GCP configuration for Secret Manager
@@ -152,29 +127,13 @@ fn default_source_kind() -> String {
 }
 
 /// GCP authentication configuration
-/// Supports both JSON credentials and Workload Identity
+/// Only supports Workload Identity (recommended and default)
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "authType")]
 pub enum GcpAuthConfig {
-    JsonCredentials {
-        #[serde(default = "default_json_secret_name")]
-        secret_name: String,
-        #[serde(default)]
-        secret_namespace: Option<String>,
-        #[serde(default = "default_json_secret_key")]
-        secret_key: String,
-    },
     WorkloadIdentity {
         service_account_email: String,
     },
-}
-
-fn default_json_secret_name() -> String {
-    "gcp-secret-manager-credentials".to_string()
-}
-
-fn default_json_secret_key() -> String {
-    "key.json".to_string()
 }
 
 /// OpenTelemetry configuration
