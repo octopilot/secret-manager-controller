@@ -21,8 +21,11 @@ spec:
         env:
         - name: RUST_LOG
           value: "info"
-        - name: GOOGLE_APPLICATION_CREDENTIALS
-          value: /var/secrets/google/key.json
+        # GOOGLE_APPLICATION_CREDENTIALS is only needed for JSON credentials
+        # If using Workload Identity, this can be omitted
+        # Uncomment the following line if using JSON credentials:
+        # - name: GOOGLE_APPLICATION_CREDENTIALS
+        #   value: /var/secrets/google/key.json
         - name: METRICS_PORT
           value: "8080"
         ports:
@@ -41,10 +44,12 @@ spec:
             port: metrics
           initialDelaySeconds: 5
           periodSeconds: 5
-        volumeMounts:
-        - name: gcp-credentials
-          mountPath: /var/secrets/google
-          readOnly: true
+        # Volume mount for JSON credentials (only needed if not using Workload Identity)
+        # Uncomment the following if using JSON credentials:
+        # volumeMounts:
+        # - name: gcp-credentials
+        #   mountPath: /var/secrets/google
+        #   readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -52,8 +57,10 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
-      volumes:
-      - name: gcp-credentials
-        secret:
-          secretName: gcp-secret-manager-credentials
+      # Volume for JSON credentials (only needed if not using Workload Identity)
+      # Uncomment the following if using JSON credentials:
+      # volumes:
+      # - name: gcp-credentials
+      #   secret:
+      #     secretName: gcp-secret-manager-credentials
 

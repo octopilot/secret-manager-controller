@@ -224,9 +224,9 @@ kubectl get secretmanagerconfig my-service-secrets -n default
 ```
 
 **Key Differences:**
-- `environment: dev` - **Required** - Explicitly specifies which environment/profile to sync
-- `basePath: "."` - Indicates root of repository
-- `secretPrefix: my-service` - **Required** for single service (used as service name)
+- `secrets.environment: dev` - **Required** - Explicitly specifies which environment/profile to sync
+- `secrets.basePath: "."` - Indicates root of repository
+- `secrets.prefix: my-service` - **Required** for single service (used as service name)
 
 **Directory Structure:**
 ```
@@ -255,8 +255,8 @@ microservices/
 ```
 
 **Configuration:**
-- `basePath: microservices` (optional - specify if services are under a subdirectory)
-- `secretPrefix: {service-name}` (optional, defaults to service name from path)
+- `secrets.basePath: microservices` (optional - specify if services are under a subdirectory)
+- `secrets.prefix: {service-name}` (optional, defaults to service name from path)
 
 ### Single Service Structure
 
@@ -269,26 +269,26 @@ deployment-configuration/
 ```
 
 **Configuration:**
-- `basePath:` (optional - omit for root, or use `"."` to explicitly indicate root)
-- `secretPrefix: {service-name}` (**required** - used as service name)
+- `secrets.basePath:` (optional - omit for root, or use `"."` to explicitly indicate root)
+- `secrets.prefix: {service-name}` (**required** - used as service name)
 
 ## Secret Naming Convention
 
 Secrets in GCP Secret Manager follow the same naming pattern as `kustomize-google-secret-manager` for drop-in replacement compatibility:
 
-- `{secretPrefix}-{key}-{secretSuffix}` if both prefix and suffix are specified
-- `{secretPrefix}-{key}` if only prefix is specified
-- `{key}-{secretSuffix}` if only suffix is specified
+- `{prefix}-{key}-{suffix}` if both prefix and suffix are specified
+- `{prefix}-{key}` if only prefix is specified
+- `{key}-{suffix}` if only suffix is specified
 - `{key}` if neither is specified
 
 Invalid characters (`.`, `/`, spaces) are automatically sanitized to `_` to comply with GCP Secret Manager requirements.
 
-Where `secretPrefix` is either:
-- The value specified in `spec.secretPrefix`
+Where `prefix` is either:
+- The value specified in `spec.secrets.prefix`
 - Or derived from the service name in the path (e.g., `idam`)
 
-And `secretSuffix` is:
-- The value specified in `spec.secretSuffix` (optional)
+And `suffix` is:
+- The value specified in `spec.secrets.suffix` (optional)
 - Commonly used for environment identifiers (e.g., `-prod`, `-dev-cf`) or tags (e.g., `-be-gcw1`)
 
 ## Verification
@@ -351,7 +351,7 @@ If the status shows `Ready=False`, check:
 
 ## Environment Configuration
 
-**Important:** The `environment` field is **required** and must exactly match the directory name under `profiles/`.
+**Important:** The `secrets.environment` field is **required** and must exactly match the directory name under `profiles/`.
 
 ### Standard Environment Names
 - `dev` - Development environment
@@ -379,15 +379,15 @@ To create your own `SecretManagerConfig`:
 3. Update `spec.sourceRef` to reference your source:
    - FluxCD: `kind: GitRepository`, `name`, `namespace`
    - ArgoCD: `kind: Application`, `name`, `namespace`
-4. Update `spec.gcpProjectId` to your GCP project ID
-5. **Set `spec.environment`** - Must match the directory name under `profiles/`:
+4. Update `spec.gcp.projectId` to your GCP project ID
+5. **Set `spec.secrets.environment`** - Must match the directory name under `profiles/`:
    - Standard: `dev`, `staging`, `prod`
    - Custom: `dev-cf`, `pp-cf`, `prod-cf`, etc.
-6. **Optionally** set `spec.basePath` based on your structure:
+6. **Optionally** set `spec.secrets.basePath` based on your structure:
    - Monolith: `microservices`, `services`, `apps`, etc. (only if services are under a subdirectory)
    - Single service: Omit (searches from root) or `"."` to explicitly indicate root
    - If omitted, searches from repository root
-7. Set `spec.secretPrefix` to control secret naming:
+7. Set `spec.secrets.prefix` to control secret naming:
    - Monolith: Optional (defaults to service name from path)
    - Single service: **Required** (used as service name)
 
@@ -404,10 +404,12 @@ spec:
     kind: GitRepository  # FluxCD GitRepository
     name: pricewhisperer-manifests
     namespace: flux-system
-  gcpProjectId: pricewhisperer-dev
-  environment: dev  # Required - must match directory name under profiles/
-  basePath: microservices  # Optional - only needed if services are under a subdirectory
-  secretPrefix: billing-service  # Optional
+  gcp:
+    projectId: pricewhisperer-dev
+  secrets:
+    environment: dev  # Required - must match directory name under profiles/
+    basePath: microservices  # Optional - only needed if services are under a subdirectory
+    prefix: billing-service  # Optional
 ```
 
 ### Example: Single Service
@@ -423,10 +425,12 @@ spec:
     kind: GitRepository  # FluxCD GitRepository
     name: my-service-repo
     namespace: flux-system
-  gcpProjectId: my-gcp-project-dev
-  environment: dev  # Required - must match directory name under profiles/
-  # basePath omitted - searches from repository root
-  secretPrefix: my-service  # Required for single service
+  gcp:
+    projectId: my-gcp-project-dev
+  secrets:
+    environment: dev  # Required - must match directory name under profiles/
+    # basePath omitted - searches from repository root
+    prefix: my-service  # Required for single service
 ```
 
 ### Example: Custom Environment Names (Skaffold)
@@ -442,10 +446,12 @@ spec:
     kind: GitRepository  # FluxCD GitRepository
     name: sam-activity-repo
     namespace: flux-system
-  gcpProjectId: sam-activity-dev
-  environment: dev-cf  # Custom environment name - must match directory name
-  # basePath omitted - searches from repository root
-  secretPrefix: sam-activity-dev-cf
+  gcp:
+    projectId: sam-activity-dev
+  secrets:
+    environment: dev-cf  # Custom environment name - must match directory name
+    # basePath omitted - searches from repository root
+    prefix: sam-activity-dev-cf
 ```
 
 **Note:** For services with multiple custom environments (e.g., `dev-cf`, `pp-cf`, `prod-cf`), create separate `SecretManagerConfig` resources for each environment.

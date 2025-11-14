@@ -150,20 +150,47 @@ spec:
     kind: GitRepository  # FluxCD GitRepository (default) or "Application" for ArgoCD
     name: my-repo
     namespace: flux-system
-  gcpProjectId: my-gcp-project
-  environment: dev  # Required - must match directory name under profiles/
-  # Option 1: Kustomize Build Mode (recommended - supports overlays/patches)
-  kustomizePath: microservices/my-service/deployment-configuration/profiles/dev
-  # Option 2: Raw File Mode (if kustomizePath not specified)
-  # basePath: microservices  # Optional - if omitted, searches from repository root
-  secretPrefix: my-service  # Optional, defaults to service name
-  secretSuffix: -prod       # Optional, matches kustomize-google-secret-manager behavior
+  gcp:
+    projectId: my-gcp-project
+    # Optional: GCP authentication configuration
+    # If not specified, defaults to JSON credentials from GOOGLE_APPLICATION_CREDENTIALS
+    auth:
+      type: WorkloadIdentity  # or "JsonCredentials"
+      serviceAccountEmail: secret-manager-controller@my-project.iam.gserviceaccount.com  # For Workload Identity
+      # OR for JSON credentials:
+      # secretName: gcp-secret-manager-credentials
+      # secretNamespace: flux-system
+      # secretKey: key.json
+  secrets:
+    # Environment/profile name to sync (required - must match directory name under profiles/)
+    environment: dev
+    # Option 1: Kustomize Build Mode (recommended - supports overlays/patches)
+    kustomizePath: microservices/my-service/deployment-configuration/profiles/dev
+    # Option 2: Raw File Mode (if kustomizePath not specified)
+    # basePath: microservices  # Optional - if omitted, searches from repository root
+    prefix: my-service  # Optional, defaults to service name
+    suffix: -prod       # Optional, matches kustomize-google-secret-manager behavior
+  # Optional: OpenTelemetry configuration for distributed tracing
+  # If not specified, OpenTelemetry is disabled and standard tracing is used
+  # otel:
+  #   type: Otlp
+  #   endpoint: http://otel-collector:4317
+  #   serviceName: secret-manager-controller
+  #   environment: production
+  # OR for Datadog:
+  # otel:
+  #   type: Datadog
+  #   serviceName: secret-manager-controller
+  #   site: datadoghq.com
+  #   apiKey: <from-secret>
 ```
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
+run_terminal_cmd
 
 **Important:** 
-- The `environment` field is **required** and must exactly match the directory name under `profiles/`. This allows the controller to explicitly sync a specific environment rather than scanning all environments. This is especially useful for projects using Skaffold with custom environment names like `dev-cf`, `pp-cf`, `prod-cf`.
-- **Kustomize Build Mode** (when `kustomizePath` is specified): The controller runs `kustomize build` and extracts secrets from the generated Kubernetes Secret resources. This ensures overlays, patches, and generator modifications are included. Works with any GitOps tool (FluxCD, ArgoCD, etc.).
-- **Raw File Mode** (when `kustomizePath` is not specified): The controller reads `application.secrets.env` files directly. Simpler but doesn't support kustomize overlays/patches.
+- The `secrets.environment` field is **required** and must exactly match the directory name under `profiles/`. This allows the controller to explicitly sync a specific environment rather than scanning all environments. This is especially useful for projects using Skaffold with custom environment names like `dev-cf`, `pp-cf`, `prod-cf`.
+- **Kustomize Build Mode** (when `secrets.kustomizePath` is specified): The controller runs `kustomize build` and extracts secrets from the generated Kubernetes Secret resources. This ensures overlays, patches, and generator modifications are included. Works with any GitOps tool (FluxCD, ArgoCD, etc.).
+- **Raw File Mode** (when `secrets.kustomizePath` is not specified): The controller reads `application.secrets.env` files directly. Simpler but doesn't support kustomize overlays/patches.
 
 ## Directory Structure
 
@@ -272,9 +299,104 @@ kubectl apply -f config/deployment/
 
 ### Environment Variables
 
-- `GOOGLE_APPLICATION_CREDENTIALS` - Path to GCP service account JSON
+- `GOOGLE_APPLICATION_CREDENTIALS` - Path to GCP service account JSON (only needed for JSON credentials, not Workload Identity)
 - `RUST_LOG` - Logging level (default: `info`)
 - `METRICS_PORT` - Port for metrics and probe endpoints (default: `8080`)
+
+### GCP Authentication
+
+The controller supports two authentication methods:
+
+#### 1. Workload Identity (Recommended for GKE)
+
+Workload Identity is the recommended authentication method for GKE clusters. It eliminates the need to manage service account keys.
+
+**Setup:**
+
+1. **Create GCP Service Account:**
+   ```bash
+   gcloud iam service-accounts create secret-manager-controller \
+     --display-name="Secret Manager Controller" \
+     --project=YOUR_PROJECT_ID
+   ```
+
+2. **Grant Secret Manager Admin role:**
+   ```bash
+   gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+     --member="serviceAccount:secret-manager-controller@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+     --role="roles/secretmanager.admin"
+   ```
+
+3. **Bind Workload Identity:**
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding \
+     secret-manager-controller@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+     --role roles/iam.workloadIdentityUser \
+     --member "serviceAccount:YOUR_PROJECT_ID.svc.id.goog[flux-system/secret-manager-controller]"
+   ```
+
+4. **Annotate Kubernetes Service Account:**
+   Update `config/rbac/serviceaccount.yaml`:
+   ```yaml
+   metadata:
+     annotations:
+       iam.gke.io/gcp-service-account: secret-manager-controller@YOUR_PROJECT_ID.iam.gserviceaccount.com
+   ```
+
+5. **Configure SecretManagerConfig:**
+   ```yaml
+   spec:
+     gcp:
+       projectId: YOUR_PROJECT_ID
+       auth:
+         type: WorkloadIdentity
+         serviceAccountEmail: secret-manager-controller@YOUR_PROJECT_ID.iam.gserviceaccount.com
+   ```
+
+#### 2. JSON Credentials
+
+For non-GKE clusters or when Workload Identity is not available:
+
+1. **Create service account key:**
+   ```bash
+   gcloud iam service-accounts keys create key.json \
+     --iam-account=secret-manager-controller@YOUR_PROJECT_ID.iam.gserviceaccount.com
+   ```
+
+2. **Create Kubernetes secret:**
+   ```bash
+   kubectl create secret generic gcp-secret-manager-credentials \
+     --from-file=key.json=key.json \
+     --namespace=flux-system
+   ```
+
+3. **Update deployment:**
+   Uncomment the volume mount and environment variable in `config/deployment/deployment.yaml`:
+   ```yaml
+   env:
+   - name: GOOGLE_APPLICATION_CREDENTIALS
+     value: /var/secrets/google/key.json
+   volumeMounts:
+   - name: gcp-credentials
+     mountPath: /var/secrets/google
+     readOnly: true
+   volumes:
+   - name: gcp-credentials
+     secret:
+       secretName: gcp-secret-manager-credentials
+   ```
+
+4. **Configure SecretManagerConfig (optional, defaults to above):**
+   ```yaml
+   spec:
+     gcp:
+       projectId: YOUR_PROJECT_ID
+       auth:
+         type: JsonCredentials
+         secretName: gcp-secret-manager-credentials
+         secretNamespace: flux-system
+         secretKey: key.json
+   ```
 
 ### HTTP Endpoints
 
@@ -407,12 +529,13 @@ Trigger a manual reconciliation for a SecretManagerConfig resource.
 
 **Usage:**
 ```bash
-msmctl reconcile --name <name> [--namespace <namespace>]
+msmctl reconcile --name <name> [--namespace <namespace>] [--force]
 ```
 
 **Options:**
 - `--name, -n`: Name of the SecretManagerConfig resource (required)
 - `--namespace, -N`: Namespace of the resource (defaults to "default")
+- `--force`: Force reconciliation by deleting and waiting for GitOps to recreate the resource (useful when resources get stuck)
 
 **Example:**
 ```bash
@@ -421,12 +544,44 @@ msmctl reconcile --name idam-dev-secrets
 
 # Trigger reconciliation in specific namespace
 msmctl reconcile --name idam-dev-secrets --namespace pricewhisperer
+
+# Force reconciliation (delete and wait for GitOps recreation)
+msmctl reconcile --name idam-dev-secrets --namespace pricewhisperer --force
 ```
 
 **How it works:**
-- Updates the `secret-management.microscaler.io/reconcile` annotation with a timestamp
-- The controller watches for annotation changes and triggers reconciliation
-- This is a Kubernetes-native approach that doesn't require HTTP endpoints
+- **Normal mode**: Updates the `secret-management.microscaler.io/reconcile` annotation with a timestamp. The controller watches for annotation changes and triggers reconciliation. This is a Kubernetes-native approach that doesn't require HTTP endpoints.
+- **Force mode (`--force`)**: 
+  1. Deletes the SecretManagerConfig resource
+  2. Waits for GitOps (Flux/ArgoCD) to recreate it (up to 5 minutes)
+  3. Shows progress logs during the wait
+  4. Once recreated, triggers reconciliation
+  5. Provides command to view reconciliation logs
+
+**Force mode output:**
+```
+🔄 Force reconciliation mode enabled
+   Resource: pricewhisperer/idam-dev-secrets
+
+🗑️  Deleting SecretManagerConfig 'pricewhisperer/idam-dev-secrets'...
+   ✅ Resource deleted
+
+⏳ Waiting for GitOps to recreate resource...
+   (This may take a few moments depending on GitOps sync interval)
+   ⏳ Still waiting... (10s elapsed)
+   ⏳ Still waiting... (20s elapsed)
+   ✅ Resource recreated (generation: 1)
+
+⏳ Waiting for resource to stabilize...
+
+🔄 Triggering reconciliation for SecretManagerConfig 'pricewhisperer/idam-dev-secrets'...
+✅ Reconciliation triggered successfully
+   Resource: pricewhisperer/idam-dev-secrets
+   Timestamp: 1702567890
+
+📊 Watching reconciliation logs...
+   (Use 'kubectl logs -n flux-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)
+```
 
 #### `msmctl list`
 

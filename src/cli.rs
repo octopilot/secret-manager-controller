@@ -25,7 +25,8 @@ use kube::{
     Client,
 };
 use serde_json::json;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::time::sleep;
 
 // Re-define types inline for CLI (avoids circular dependencies)
 use kube::CustomResource;
@@ -122,6 +123,12 @@ enum Commands {
         /// Namespace of the SecretManagerConfig resource
         #[arg(short, long)]
         namespace: Option<String>,
+
+        /// Force reconciliation by deleting and waiting for GitOps to recreate
+        /// Useful when resources get stuck. Deletes the resource, waits for Flux/GitOps
+        /// to recreate it, then triggers reconciliation.
+        #[arg(long)]
+        force: bool,
     },
     /// List all SecretManagerConfig resources
     List {
@@ -159,8 +166,8 @@ async fn main() -> Result<()> {
         .context("Failed to create Kubernetes client. Ensure kubeconfig is configured.")?;
 
     match cli.command {
-        Commands::Reconcile { name, namespace } => {
-            reconcile_command(client, name, namespace.or(cli.namespace)).await
+        Commands::Reconcile { name, namespace, force } => {
+            reconcile_command(client, name, namespace.or(cli.namespace), force).await
         }
         Commands::List { namespace } => list_command(client, namespace.or(cli.namespace)).await,
         Commands::Status { name, namespace } => {
@@ -175,13 +182,113 @@ async fn reconcile_command(
     client: Client,
     name: String,
     namespace: Option<String>,
+    force: bool,
 ) -> Result<()> {
     let ns = namespace.as_deref().unwrap_or("default");
     
-    println!("Triggering reconciliation for SecretManagerConfig '{}/{}'...", ns, name);
-
     // Create API for SecretManagerConfig
-    let api: Api<SecretManagerConfig> = Api::namespaced(client, ns);
+    let api: Api<SecretManagerConfig> = Api::namespaced(client.clone(), ns);
+
+    if force {
+        println!("🔄 Force reconciliation mode enabled");
+        println!("   Resource: {}/{}", ns, name);
+        println!();
+
+        // Step 1: Get the resource spec before deletion (for verification)
+        let existing = api.get(&name).await;
+        let resource_exists = existing.is_ok();
+        
+        if !resource_exists {
+            return Err(anyhow::anyhow!(
+                "Resource '{}/{}' does not exist. Cannot force reconcile.",
+                ns, name
+            ));
+        }
+
+        // Step 2: Delete the resource
+        println!("🗑️  Deleting SecretManagerConfig '{}/{}'...", ns, name);
+        match api.delete(&name, &kube::api::DeleteParams::default()).await {
+            Ok(_) => {
+                println!("   ✅ Resource deleted");
+            }
+            Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
+                println!("   ⚠️  Resource already deleted (may have been removed by GitOps)");
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to delete resource '{}/{}': {}",
+                    ns,
+                    name,
+                    e
+                ));
+            }
+        }
+
+        // Step 3: Wait for resource recreation
+        println!();
+        println!("⏳ Waiting for GitOps to recreate resource...");
+        println!("   (This may take a few moments depending on GitOps sync interval)");
+
+        let timeout = Duration::from_secs(300); // 5 minute timeout
+        let start = SystemTime::now();
+        let mut recreated = false;
+        let mut last_log = SystemTime::now();
+
+        // Poll for resource recreation
+        // After deletion, wait a moment for deletion to complete
+        sleep(Duration::from_secs(1)).await;
+
+        while SystemTime::now().duration_since(start).unwrap() < timeout {
+            // Check if resource exists again (recreated by GitOps)
+            match api.get(&name).await {
+                Ok(resource) => {
+                    // Resource exists - it's been recreated
+                    recreated = true;
+                    let gen = resource.metadata.generation.unwrap_or(0);
+                    println!("   ✅ Resource recreated (generation: {})", gen);
+                    break;
+                }
+                Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
+                    // Resource still doesn't exist, continue waiting
+                }
+                Err(e) => {
+                    // Log error but continue waiting
+                    let elapsed_since_log = SystemTime::now().duration_since(last_log).unwrap_or(Duration::from_secs(0));
+                    if elapsed_since_log > Duration::from_secs(10) {
+                        eprintln!("   ⚠️  Error checking resource: {}", e);
+                        last_log = SystemTime::now();
+                    }
+                }
+            }
+
+            // Log progress every 10 seconds
+            let elapsed = SystemTime::now().duration_since(start).unwrap();
+            let elapsed_since_log = SystemTime::now().duration_since(last_log).unwrap_or(Duration::from_secs(0));
+            if elapsed_since_log > Duration::from_secs(10) {
+                println!("   ⏳ Still waiting... ({}s elapsed)", elapsed.as_secs());
+                last_log = SystemTime::now();
+            }
+
+            sleep(Duration::from_millis(500)).await;
+        }
+
+        if !recreated {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for resource '{}/{}' to be recreated by GitOps. \
+                The resource may not be managed by GitOps, or the sync interval is too long.",
+                ns, name
+            ));
+        }
+
+        // Step 4: Wait a moment for the resource to stabilize
+        println!();
+        println!("⏳ Waiting for resource to stabilize...");
+        sleep(Duration::from_secs(2)).await;
+    }
+
+    // Step 5: Trigger reconciliation
+    println!();
+    println!("🔄 Triggering reconciliation for SecretManagerConfig '{}/{}'...", ns, name);
 
     // Get current timestamp for annotation
     let timestamp = SystemTime::now()
@@ -209,7 +316,14 @@ async fn reconcile_command(
     println!("✅ Reconciliation triggered successfully");
     println!("   Resource: {}/{}", ns, name);
     println!("   Timestamp: {}", timestamp);
-    println!("\nThe controller will reconcile this resource shortly.");
+    
+    if force {
+        println!();
+        println!("📊 Watching reconciliation logs...");
+        println!("   (Use 'kubectl logs -n flux-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)");
+    } else {
+        println!("\nThe controller will reconcile this resource shortly.");
+    }
 
     Ok(())
 }

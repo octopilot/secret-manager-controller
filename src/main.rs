@@ -46,6 +46,7 @@ use tracing::{error, info, warn};
 mod gcp;
 mod kustomize;
 mod metrics;
+mod otel;
 mod parser;
 mod reconciler;
 mod server;
@@ -89,8 +90,33 @@ pub struct SecretManagerConfigSpec {
     /// Source reference - supports FluxCD GitRepository and ArgoCD Application
     /// This makes the controller GitOps-agnostic
     pub source_ref: SourceRef,
+    /// GCP configuration for Secret Manager
+    pub gcp: GcpConfig,
+    /// Secrets sync configuration
+    pub secrets: SecretsConfig,
+    /// OpenTelemetry configuration for distributed tracing (optional)
+    /// Supports OTLP exporter (to OpenTelemetry Collector) and Datadog direct export
+    /// If not specified, OpenTelemetry is disabled and standard tracing is used
+    #[serde(default)]
+    pub otel: Option<OtelConfig>,
+}
+
+/// GCP configuration for Secret Manager
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GcpConfig {
     /// GCP project ID for Secret Manager
-    pub gcp_project_id: String,
+    pub project_id: String,
+    /// GCP authentication configuration
+    /// If not specified, defaults to JSON credentials from GOOGLE_APPLICATION_CREDENTIALS
+    #[serde(default)]
+    pub auth: Option<GcpAuthConfig>,
+}
+
+/// Secrets sync configuration
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretsConfig {
     /// Environment/profile name to sync (e.g., "dev", "dev-cf", "prod-cf", "pp-cf")
     /// This must match the directory name under profiles/
     pub environment: String,
@@ -110,12 +136,91 @@ pub struct SecretManagerConfigSpec {
     /// Secret name prefix (default: repository name)
     /// Matches kustomize-google-secret-manager prefix behavior
     #[serde(default)]
-    pub secret_prefix: Option<String>,
+    pub prefix: Option<String>,
     /// Secret name suffix (optional)
     /// Matches kustomize-google-secret-manager suffix behavior
     /// Common use cases: environment identifiers, tags, etc.
     #[serde(default)]
-    pub secret_suffix: Option<String>,
+    pub suffix: Option<String>,
+}
+
+/// GCP authentication configuration
+/// Supports both JSON credentials and Workload Identity
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum GcpAuthConfig {
+    /// Use JSON credentials from a Kubernetes secret
+    /// This is the default if gcpAuth is not specified
+    JsonCredentials {
+        /// Secret name containing the JSON credentials
+        /// Defaults to "gcp-secret-manager-credentials" if not specified
+        #[serde(default = "default_json_secret_name")]
+        secret_name: String,
+        /// Secret namespace
+        /// Defaults to controller namespace (flux-system) if not specified
+        #[serde(default)]
+        secret_namespace: Option<String>,
+        /// Key in the secret containing the JSON credentials
+        /// Defaults to "key.json" if not specified
+        #[serde(default = "default_json_secret_key")]
+        secret_key: String,
+    },
+    /// Use Workload Identity for authentication
+    /// Requires GKE cluster with Workload Identity enabled
+    WorkloadIdentity {
+        /// GCP service account email to impersonate
+        /// Format: <service-account-name>@<project-id>.iam.gserviceaccount.com
+        service_account_email: String,
+    },
+}
+
+fn default_json_secret_name() -> String {
+    "gcp-secret-manager-credentials".to_string()
+}
+
+fn default_json_secret_key() -> String {
+    "key.json".to_string()
+}
+
+/// OpenTelemetry configuration
+/// Supports both OTLP exporter and Datadog direct export
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum OtelConfig {
+    /// Use OTLP exporter to send traces to an OpenTelemetry Collector
+    Otlp {
+        /// OTLP endpoint URL (e.g., "http://otel-collector:4317")
+        endpoint: String,
+        /// Service name for traces (defaults to "secret-manager-controller")
+        #[serde(default)]
+        service_name: Option<String>,
+        /// Service version for traces (defaults to Cargo package version)
+        #[serde(default)]
+        service_version: Option<String>,
+        /// Deployment environment (e.g., "dev", "prod")
+        #[serde(default)]
+        environment: Option<String>,
+    },
+    /// Use Datadog OpenTelemetry exporter (direct to Datadog)
+    Datadog {
+        /// Service name for traces (defaults to "secret-manager-controller")
+        #[serde(default)]
+        service_name: Option<String>,
+        /// Service version for traces (defaults to Cargo package version)
+        #[serde(default)]
+        service_version: Option<String>,
+        /// Deployment environment (e.g., "dev", "prod")
+        #[serde(default)]
+        environment: Option<String>,
+        /// Datadog site (e.g., "datadoghq.com", "us3.datadoghq.com")
+        /// If not specified, uses DD_SITE environment variable or defaults to "datadoghq.com"
+        #[serde(default)]
+        site: Option<String>,
+        /// Datadog API key
+        /// If not specified, uses DD_API_KEY environment variable
+        #[serde(default)]
+        api_key: Option<String>,
+    },
 }
 
 /// Source reference for GitOps repositories
@@ -183,13 +288,22 @@ pub struct Condition {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "secret_manager_controller=info".into()),
-        )
-        .init();
+    // Initialize OpenTelemetry first (if configured)
+    // This will set up tracing with Otel support
+    // Note: Otel config can come from CRD, but we initialize early from env vars
+    // Per-resource Otel config is handled in the reconciler
+    let otel_tracer_provider = otel::init_otel(None)
+        .context("Failed to initialize OpenTelemetry")?;
+
+    // If Otel wasn't initialized, use standard tracing subscriber
+    if otel_tracer_provider.is_none() {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "secret_manager_controller=info".into()),
+            )
+            .init();
+    }
 
     info!("Starting Secret Manager Controller");
 
@@ -243,6 +357,11 @@ async fn main() -> Result<()> {
         .for_each(|_| std::future::ready(()))
         .await;
 
+    info!("Controller stopped");
+    
+    // Shutdown OpenTelemetry tracer provider if it was initialized
+    otel::shutdown_otel(otel_tracer_provider);
+    
     Ok(())
 }
 

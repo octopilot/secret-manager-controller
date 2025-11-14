@@ -12,6 +12,10 @@ keywords = ["kubernetes", "controller", "secrets", "gitops", "fluxcd", "argocd",
 categories = ["development-tools", "web-programming", "authentication"]
 readme = "README.md"
 
+[lib]
+name = "secret_manager_controller"
+path = "src/lib.rs"
+
 [[bin]]
 name = "secret-manager-controller"
 path = "src/main.rs"
@@ -54,6 +58,11 @@ thiserror = "1.0"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# OpenTelemetry
+# Note: Full Otel implementation pending API stabilization
+# Dependencies will be added when implementing full Otel support
+# For now, we support Otel configuration via CRD and log the settings
 
 # File system operations
 walkdir = "2.4"

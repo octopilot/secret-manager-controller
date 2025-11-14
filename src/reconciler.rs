@@ -20,7 +20,7 @@
 //! 5. Sync secrets to GCP Secret Manager
 //! 6. Update status
 
-use crate::{gcp::SecretManagerClient, parser, SecretManagerConfig, metrics};
+use crate::{gcp::SecretManagerClient, parser, metrics, SecretManagerConfig, SourceRef, SecretManagerConfigStatus, Condition};
 use kube_runtime::controller::Action;
 use anyhow::{Context, Result};
 use kube::Client;
@@ -40,7 +40,17 @@ use md5;
 ///         {key} (if neither exists)
 /// 
 /// Invalid characters (`.`, `/`, etc.) are replaced with `_` to match GCP Secret Manager requirements
+#[cfg(test)]
+pub fn construct_secret_name(prefix: Option<&str>, key: &str, suffix: Option<&str>) -> String {
+    construct_secret_name_impl(prefix, key, suffix)
+}
+
+#[cfg(not(test))]
 fn construct_secret_name(prefix: Option<&str>, key: &str, suffix: Option<&str>) -> String {
+    construct_secret_name_impl(prefix, key, suffix)
+}
+
+fn construct_secret_name_impl(prefix: Option<&str>, key: &str, suffix: Option<&str>) -> String {
     let mut parts = Vec::new();
     
     if let Some(p) = prefix {
@@ -53,7 +63,11 @@ fn construct_secret_name(prefix: Option<&str>, key: &str, suffix: Option<&str>) 
     
     if let Some(s) = suffix {
         if !s.is_empty() {
-            parts.push(s);
+            // Strip leading dashes from suffix to avoid double dashes when joining
+            let suffix_trimmed = s.trim_start_matches('-');
+            if !suffix_trimmed.is_empty() {
+                parts.push(suffix_trimmed);
+            }
         }
     }
     
@@ -64,8 +78,18 @@ fn construct_secret_name(prefix: Option<&str>, key: &str, suffix: Option<&str>) 
 /// Sanitize secret name to comply with GCP Secret Manager naming requirements
 /// Replaces invalid characters (`.`, `/`, etc.) with `_`
 /// Matches kustomize-google-secret-manager character sanitization behavior
+#[cfg(test)]
+pub fn sanitize_secret_name(name: &str) -> String {
+    sanitize_secret_name_impl(name)
+}
+
+#[cfg(not(test))]
 fn sanitize_secret_name(name: &str) -> String {
-    name.chars()
+    sanitize_secret_name_impl(name)
+}
+
+fn sanitize_secret_name_impl(name: &str) -> String {
+    let sanitized: String = name.chars()
         .map(|c| match c {
             // GCP Secret Manager allows: [a-zA-Z0-9_-]+
             // Replace common invalid characters with underscore
@@ -75,7 +99,27 @@ fn sanitize_secret_name(name: &str) -> String {
             // Replace any other invalid character with underscore
             _ => '_',
         })
-        .collect()
+        .collect();
+    
+    // Remove consecutive dashes (double dashes, triple dashes, etc.)
+    // This handles cases where sanitization creates multiple dashes in a row
+    let mut result = String::with_capacity(sanitized.len());
+    let mut prev_was_dash = false;
+    
+    for c in sanitized.chars() {
+        if c == '-' {
+            if !prev_was_dash {
+                result.push(c);
+                prev_was_dash = true;
+            }
+        } else {
+            result.push(c);
+            prev_was_dash = false;
+        }
+    }
+    
+    // Remove leading and trailing dashes
+    result.trim_matches('-').to_string()
 }
 
 #[derive(Debug, Error)]
@@ -87,20 +131,22 @@ pub enum ReconcilerError {
 #[derive(Clone)]
 pub struct Reconciler {
     client: Client,
-    secret_manager: Arc<SecretManagerClient>,
+    // Note: secret_manager is created per-reconciliation to support per-resource auth config
+    // In the future, we might want to cache clients per auth config
     sops_private_key: Option<String>,
 }
 
 impl Reconciler {
     pub async fn new(client: Client) -> Result<Self> {
-        let secret_manager = SecretManagerClient::new().await?;
+        // Create secret manager with default authentication (will use GOOGLE_APPLICATION_CREDENTIALS or ADC)
+        // Per-resource auth config is handled in reconcile()
+        let secret_manager = SecretManagerClient::new(None, None).await?;
         
         // Load SOPS private key from Kubernetes secret
         let sops_private_key = Self::load_sops_private_key(&client).await?;
         
         Ok(Self {
             client,
-            secret_manager: Arc::new(secret_manager),
             sops_private_key,
         })
     }
@@ -231,18 +277,48 @@ impl Reconciler {
             }
         };
 
+        // Determine authentication method from config
+        // Note: We need to serialize to JSON and parse back to determine the type
+        // since GcpAuthConfig enum is defined in main.rs and not accessible here
+        let (auth_type, service_account_email_owned) = if let Some(ref auth_config) = config.spec.gcp.auth {
+            let auth_json = serde_json::to_value(auth_config)
+                .context("Failed to serialize gcpAuth config")?;
+            let auth_type_str = auth_json.get("type").and_then(|t| t.as_str());
+            match auth_type_str {
+                Some("WorkloadIdentity") => {
+                    let email = auth_json.get("serviceAccountEmail")
+                        .and_then(|e| e.as_str())
+                        .context("WorkloadIdentity requires serviceAccountEmail")?
+                        .to_string();
+                    (Some("WorkloadIdentity"), Some(email))
+                }
+                Some("JsonCredentials") => {
+                    (Some("JsonCredentials"), None)
+                }
+                _ => (None, None),
+            }
+        } else {
+            (None, None)
+        };
+        
+        let service_account_email = service_account_email_owned.as_deref();
+
+        // Create secret manager client with appropriate authentication
+        // Note: In a real implementation, we might want to cache clients per auth config
+        let secret_manager = SecretManagerClient::new(auth_type, service_account_email).await?;
+
         let mut secrets_synced = 0;
 
         // Check if kustomize_path is specified - use kustomize build mode
-        if let Some(ref kustomize_path) = config.spec.kustomize_path {
+        if let Some(kustomize_path) = &config.spec.secrets.kustomize_path {
             // Use kustomize build to extract secrets from generated Secret resources
             // This supports overlays, patches, and generators
             info!("Using kustomize build mode on path: {}", kustomize_path);
             
             match crate::kustomize::extract_secrets_from_kustomize(&artifact_path, kustomize_path).await {
                 Ok(secrets) => {
-                    let secret_prefix = config.spec.secret_prefix.as_deref().unwrap_or("default");
-                    match ctx.process_kustomize_secrets(&config, &secrets, secret_prefix).await {
+                    let secret_prefix = config.spec.secrets.prefix.as_deref().unwrap_or("default");
+                    match ctx.process_kustomize_secrets(&secret_manager, &config, &secrets, secret_prefix).await {
                         Ok(count) => {
                             secrets_synced += count;
                             info!("Synced {} secrets from kustomize build", count);
@@ -266,11 +342,11 @@ impl Reconciler {
             
             // Find application files for the specified environment
             // Pass secret_prefix as default_service_name for single service deployments
-            let default_service_name = config.spec.secret_prefix.as_deref();
+            let default_service_name = config.spec.secrets.prefix.as_deref();
             let application_files = match parser::find_application_files(
                 &artifact_path,
-                config.spec.base_path.as_deref(),
-                &config.spec.environment,
+                config.spec.secrets.base_path.as_deref(),
+                &config.spec.secrets.environment,
                 default_service_name,
             )
             .await
@@ -278,7 +354,7 @@ impl Reconciler {
                 Ok(files) => files,
                 Err(e) => {
                     error!("Failed to find application files for environment '{}': {}", 
-                        config.spec.environment, e);
+                        config.spec.secrets.environment, e);
                     metrics::increment_reconciliation_errors();
                     return Err(ReconcilerError::ReconciliationFailed(e.into()));
                 }
@@ -291,7 +367,7 @@ impl Reconciler {
 
             // Process each application file set
             for app_files in application_files {
-                match ctx.process_application_files(&config, &app_files).await {
+                match ctx.process_application_files(&secret_manager, &config, &app_files).await {
                     Ok(count) => {
                         secrets_synced += count;
                         info!("Synced {} secrets for {}", count, app_files.service_name);
@@ -321,7 +397,7 @@ impl Reconciler {
     /// Get FluxCD GitRepository resource
     async fn get_flux_git_repository(
         &self,
-        source_ref: &crate::SourceRef,
+        source_ref: &SourceRef,
     ) -> Result<serde_json::Value> {
         // Use Kubernetes API to get GitRepository
         // GitRepository is a CRD from source.toolkit.fluxcd.io/v1beta2
@@ -385,7 +461,7 @@ impl Reconciler {
     /// Clones the Git repository directly from the Application spec
     async fn get_argocd_artifact_path(
         &self,
-        source_ref: &crate::SourceRef,
+        source_ref: &SourceRef,
     ) -> Result<PathBuf> {
         use kube::core::DynamicObject;
         use kube::api::ApiResource;
@@ -561,12 +637,14 @@ impl Reconciler {
 
     async fn process_application_files(
         &self,
+        secret_manager: &SecretManagerClient,
         config: &SecretManagerConfig,
         app_files: &parser::ApplicationFiles,
     ) -> Result<i32> {
         let secret_prefix = config
             .spec
-            .secret_prefix
+            .secrets
+            .prefix
             .as_deref()
             .unwrap_or(&app_files.service_name);
 
@@ -582,11 +660,11 @@ impl Reconciler {
             let secret_name = construct_secret_name(
                 Some(secret_prefix),
                 key.as_str(),
-                config.spec.secret_suffix.as_deref(),
+                config.spec.secrets.suffix.as_deref(),
             );
-            match self.secret_manager
+            match secret_manager
                 .create_or_update_secret(
-                    &config.spec.gcp_project_id,
+                    &config.spec.gcp.project_id,
                     &secret_name,
                     &value,
                 )
@@ -620,11 +698,11 @@ impl Reconciler {
             let secret_name = construct_secret_name(
                 Some(secret_prefix),
                 "properties",
-                config.spec.secret_suffix.as_deref(),
+                config.spec.secrets.suffix.as_deref(),
             );
-            match self.secret_manager
+            match secret_manager
                 .create_or_update_secret(
-                    &config.spec.gcp_project_id,
+                    &config.spec.gcp.project_id,
                     &secret_name,
                     &properties_json,
                 )
@@ -650,6 +728,7 @@ impl Reconciler {
 
     async fn process_kustomize_secrets(
         &self,
+        secret_manager: &SecretManagerClient,
         config: &SecretManagerConfig,
         secrets: &std::collections::HashMap<String, String>,
         secret_prefix: &str,
@@ -662,11 +741,11 @@ impl Reconciler {
             let secret_name = construct_secret_name(
                 Some(secret_prefix),
                 key.as_str(),
-                config.spec.secret_suffix.as_deref(),
+                config.spec.secrets.suffix.as_deref(),
             );
-            match self.secret_manager
+            match secret_manager
                 .create_or_update_secret(
-                    &config.spec.gcp_project_id,
+                    &config.spec.gcp.project_id,
                     &secret_name,
                     value,
                 )
@@ -709,8 +788,8 @@ impl Reconciler {
         let api: kube::Api<SecretManagerConfig> =
             kube::Api::namespaced(self.client.clone(), config.metadata.namespace.as_deref().unwrap_or("default"));
 
-        let status = crate::SecretManagerConfigStatus {
-            conditions: vec![crate::Condition {
+        let status = SecretManagerConfigStatus {
+            conditions: vec![Condition {
                 r#type: "Ready".to_string(),
                 status: "True".to_string(),
                 last_transition_time: Some(chrono::Utc::now().to_rfc3339()),
@@ -734,6 +813,127 @@ impl Reconciler {
         .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod secret_name_tests {
+        use super::*;
+
+        #[test]
+        fn test_construct_secret_name_with_prefix_and_suffix() {
+            let result = construct_secret_name(Some("my-service"), "database-url", Some("-prod"));
+            assert_eq!(result, "my-service-database-url-prod"); // Leading dash stripped from suffix
+        }
+
+        #[test]
+        fn test_construct_secret_name_with_prefix_only() {
+            let result = construct_secret_name(Some("my-service"), "database-url", None);
+            assert_eq!(result, "my-service-database-url");
+        }
+
+        #[test]
+        fn test_construct_secret_name_with_suffix_only() {
+            let result = construct_secret_name(None, "database-url", Some("-prod"));
+            assert_eq!(result, "database-url-prod"); // Leading dash stripped from suffix
+        }
+
+        #[test]
+        fn test_construct_secret_name_no_prefix_no_suffix() {
+            let result = construct_secret_name(None, "database-url", None);
+            assert_eq!(result, "database-url");
+        }
+
+        #[test]
+        fn test_construct_secret_name_empty_prefix() {
+            let result = construct_secret_name(Some(""), "database-url", Some("-prod"));
+            assert_eq!(result, "database-url-prod"); // Leading dash stripped from suffix
+        }
+
+        #[test]
+        fn test_construct_secret_name_empty_suffix() {
+            let result = construct_secret_name(Some("my-service"), "database-url", Some(""));
+            assert_eq!(result, "my-service-database-url");
+        }
+
+        #[test]
+        fn test_construct_secret_name_properties_key() {
+            let result = construct_secret_name(Some("my-service"), "properties", Some("-prod"));
+            assert_eq!(result, "my-service-properties-prod"); // Leading dash stripped from suffix
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_dots() {
+            let result = sanitize_secret_name("my.service.database.url");
+            assert_eq!(result, "my_service_database_url");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_slashes() {
+            let result = sanitize_secret_name("my/service/database/url");
+            assert_eq!(result, "my_service_database_url");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_spaces() {
+            let result = sanitize_secret_name("my service database url");
+            assert_eq!(result, "my_service_database_url");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_mixed_invalid_chars() {
+            let result = sanitize_secret_name("my.service/database url");
+            assert_eq!(result, "my_service_database_url");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_valid_chars() {
+            let result = sanitize_secret_name("my-service_database-url123");
+            assert_eq!(result, "my-service_database-url123");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_special_chars() {
+            let result = sanitize_secret_name("my@service#database$url");
+            assert_eq!(result, "my_service_database_url");
+        }
+
+        #[test]
+        fn test_construct_secret_name_with_sanitization() {
+            // Test that construct_secret_name applies sanitization
+            let result = construct_secret_name(Some("my.service"), "database/url", Some("-prod"));
+            assert_eq!(result, "my_service-database_url-prod"); // Leading dash stripped, invalid chars sanitized
+        }
+
+        #[test]
+        fn test_construct_secret_name_kustomize_compatibility() {
+            // Test compatibility with kustomize-google-secret-manager naming
+            let result = construct_secret_name(Some("idam-dev"), "database-url", Some("-prod"));
+            assert_eq!(result, "idam-dev-database-url-prod"); // Leading dash stripped from suffix
+        }
+
+        #[test]
+        fn test_construct_secret_name_edge_cases() {
+            // Test edge cases
+            assert_eq!(construct_secret_name(None, "", None), "");
+            assert_eq!(construct_secret_name(Some("prefix"), "", Some("suffix")), "prefix-suffix"); // Empty key becomes empty string after trim
+            assert_eq!(construct_secret_name(Some("a"), "b", Some("c")), "a-b-c");
+            assert_eq!(construct_secret_name(Some("prefix"), "key", Some("---suffix")), "prefix-key-suffix"); // Multiple leading dashes stripped
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_edge_cases() {
+            // Test edge cases
+            assert_eq!(sanitize_secret_name(""), "");
+            assert_eq!(sanitize_secret_name("a"), "a");
+            assert_eq!(sanitize_secret_name("___"), "___");
+            assert_eq!(sanitize_secret_name("---"), ""); // All dashes removed by trim
+            assert_eq!(sanitize_secret_name("--test--"), "test"); // Leading/trailing dashes removed
+            assert_eq!(sanitize_secret_name("a--b--c"), "a-b-c"); // Consecutive dashes collapsed
+        }
     }
 }
 
