@@ -18,34 +18,59 @@ env:
   TTL_IMAGE_NAME: ${{ github.repository }}-${GITHUB_SHA::8}
 
 jobs:
-  # Step 1: Run cargo tests
-  test:
-    name: Run Unit Tests
+  # Step 1: Run linting checks
+  lint:
+    name: Lint Secret Manager Controller
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: write
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Determine controller directory
-        id: controller-dir
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-secret-manager-
+
+      - name: Run cargo audit
+        continue-on-error: true
         run: |
-          # Check if we're in a standalone repo (Cargo.toml exists at root)
-          if [ -f "Cargo.toml" ]; then
-            echo "dir=." >> $GITHUB_OUTPUT
-            echo "lockfile=Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=target/" >> $GITHUB_OUTPUT
-            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
-            echo "pact-broker-dir=pact-broker" >> $GITHUB_OUTPUT
-          # Otherwise assume we're in a subdirectory
-          else
-            echo "dir=hack/controllers/secret-manager-controller" >> $GITHUB_OUTPUT
-            echo "lockfile=hack/controllers/secret-manager-controller/Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=hack/controllers/secret-manager-controller/target/" >> $GITHUB_OUTPUT
-            echo "dockerfile=hack/controllers/secret-manager-controller/Dockerfile" >> $GITHUB_OUTPUT
-            echo "pact-broker-dir=hack/controllers/secret-manager-controller/pact-broker" >> $GITHUB_OUTPUT
+          # Install cargo-audit if not available
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --locked || echo "cargo-audit installation failed, skipping audit"
           fi
+          cargo audit || echo "Audit completed with warnings"
+
+  # Step 2: Run cargo tests
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -66,23 +91,20 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            ${{ steps.controller-dir.outputs.target }}
-          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles(steps.controller-dir.outputs.lockfile) }}
+            target/
+          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-secret-manager-
 
       - name: Check formatting
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           cargo fmt --all -- --check
 
       - name: Run clippy
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build (native and musl targets)
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           # Build native target (for faster unit tests)
           cargo build --all-targets --all-features
@@ -91,17 +113,14 @@ jobs:
           ./scripts/host-aware-build.sh --all-features
 
       - name: Run unit tests
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           cargo test --lib --all-features --no-fail-fast
 
       - name: Generate CRD
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           cargo run --bin crdgen 1> config/crd/secretmanagerconfig.yaml || echo "CRD generation completed"
 
       - name: Verify CRD is valid YAML
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           # Check if CRD file exists and is valid YAML
           if [ -f config/crd/secretmanagerconfig.yaml ]; then
@@ -120,32 +139,22 @@ jobs:
     needs: test
     permissions:
       contents: read
+    outputs:
+      image-ref: ${{ steps.image.outputs.image_ref }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Determine controller directory
-        id: controller-dir
-        run: |
-          # Check if we're in a standalone repo (Cargo.toml exists at root)
-          if [ -f "Cargo.toml" ]; then
-            echo "dir=." >> $GITHUB_OUTPUT
-            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
-          # Otherwise assume we're in a subdirectory
-          else
-            echo "dir=hack/controllers/secret-manager-controller" >> $GITHUB_OUTPUT
-            echo "dockerfile=hack/controllers/secret-manager-controller/Dockerfile" >> $GITHUB_OUTPUT
-          fi
+        uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push to ttl.sh
+        id: build
         uses: docker/build-push-action@v5
         with:
-          context: ${{ steps.controller-dir.outputs.dir }}
-          file: ${{ steps.controller-dir.outputs.dockerfile }}
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ env.TTL_REGISTRY }}/${{ env.TTL_IMAGE_NAME }}:1h
           cache-from: type=gha
@@ -153,8 +162,12 @@ jobs:
           platforms: linux/amd64
 
       - name: Output image reference
+        id: image
         run: |
-          echo "IMAGE_REF=${{ env.TTL_REGISTRY }}/${{ env.TTL_IMAGE_NAME }}:1h" >> $GITHUB_ENV
+          IMAGE_REF="${{ env.TTL_REGISTRY }}/${{ env.TTL_IMAGE_NAME }}:1h"
+          echo "image_ref=${IMAGE_REF}" >> $GITHUB_OUTPUT
+          echo "IMAGE_REF=${IMAGE_REF}" >> $GITHUB_ENV
+          echo "✅ Built and pushed image: ${IMAGE_REF}"
 
   # Step 3: Run Pact tests in k3s cluster
   pact-tests:
@@ -162,27 +175,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-test-image
     timeout-minutes: 20
+    permissions:
+      contents: read
+      checks: write
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-
-      - name: Determine controller directory
-        id: controller-dir
-        run: |
-          # Check if we're in a standalone repo (Cargo.toml exists at root)
-          if [ -f "Cargo.toml" ]; then
-            echo "dir=." >> $GITHUB_OUTPUT
-            echo "lockfile=Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=target/" >> $GITHUB_OUTPUT
-            echo "pact-broker-dir=pact-broker" >> $GITHUB_OUTPUT
-          # Otherwise assume we're in a subdirectory
-          else
-            echo "dir=hack/controllers/secret-manager-controller" >> $GITHUB_OUTPUT
-            echo "lockfile=hack/controllers/secret-manager-controller/Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=hack/controllers/secret-manager-controller/target/" >> $GITHUB_OUTPUT
-            echo "pact-broker-dir=hack/controllers/secret-manager-controller/pact-broker" >> $GITHUB_OUTPUT
-          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -203,6 +202,44 @@ jobs:
       - name: Wait for cluster to be ready
         run: |
           kubectl wait --for=condition=Ready nodes --all --timeout=300s
+
+      - name: Set image reference
+        id: image-ref
+        run: |
+          echo "image_ref=${{ needs.build-test-image.outputs.image-ref }}" >> $GITHUB_OUTPUT
+          echo "✅ Using test image: ${{ needs.build-test-image.outputs.image-ref }}"
+
+      - name: Deploy controller with test image
+        run: |
+          # Create namespace
+          kubectl create namespace microscaler-system --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Apply CRD first
+          kubectl apply -f config/crd/
+          
+          # Apply RBAC
+          kubectl apply -k config/rbac/
+          
+          # Apply deployment (will use default image from manifest)
+          kubectl apply -f config/deployment/deployment.yaml
+          
+          # Patch deployment to use the test image from ttl.sh
+          kubectl set image deployment/secret-manager-controller \
+            controller=${{ needs.build-test-image.outputs.image-ref }} \
+            -n microscaler-system
+          
+          # Update image pull policy to allow pulling from ttl.sh
+          kubectl patch deployment secret-manager-controller \
+            -n microscaler-system \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"controller","imagePullPolicy":"Always"}]}}}}'
+          
+          # Wait for deployment to be ready
+          kubectl wait --for=condition=available \
+            deployment/secret-manager-controller \
+            -n microscaler-system \
+            --timeout=300s
+          
+          echo "✅ Controller deployed with image: ${{ needs.build-test-image.outputs.image-ref }}"
 
       - name: Install Flux CLI
         run: |
@@ -228,7 +265,6 @@ jobs:
             --namespace=flux-system || true
 
       - name: Deploy Pact Broker to k3s
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           # Apply Pact Broker manifests directly (for CI testing)
           # This uses the controller's isolated Pact Broker with SQLite
@@ -251,13 +287,12 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            ${{ steps.controller-dir.outputs.target }}
-          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles(steps.controller-dir.outputs.lockfile) }}
+            target/
+          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-secret-manager-
 
       - name: Run Pact contract tests
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         env:
           PACT_BROKER_URL: http://localhost:9292
           PACT_BROKER_USERNAME: pact
@@ -276,33 +311,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, pact-tests]
     # Run on push (not PR), tags, or manual dispatch
-    if: github.event_name != 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Determine controller directory
-        id: controller-dir
-        run: |
-          # Check if we're in a standalone repo (Cargo.toml exists at root)
-          if [ -f "Cargo.toml" ]; then
-            echo "dir=." >> $GITHUB_OUTPUT
-            echo "lockfile=Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=target/" >> $GITHUB_OUTPUT
-            echo "dockerfile=Dockerfile" >> $GITHUB_OUTPUT
-            echo "binaries-path=target/x86_64-unknown-linux-musl/release" >> $GITHUB_OUTPUT
-          # Otherwise assume we're in a subdirectory
-          else
-            echo "dir=hack/controllers/secret-manager-controller" >> $GITHUB_OUTPUT
-            echo "lockfile=hack/controllers/secret-manager-controller/Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=hack/controllers/secret-manager-controller/target/" >> $GITHUB_OUTPUT
-            echo "dockerfile=hack/controllers/secret-manager-controller/Dockerfile" >> $GITHUB_OUTPUT
-            echo "binaries-path=hack/controllers/secret-manager-controller/target/x86_64-unknown-linux-musl/release" >> $GITHUB_OUTPUT
-          fi
+        uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -323,13 +339,12 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            ${{ steps.controller-dir.outputs.target }}
-          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles(steps.controller-dir.outputs.lockfile) }}
+            target/
+          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-secret-manager-
 
       - name: Build binaries
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
         run: |
           chmod +x scripts/host-aware-build.sh
           ./scripts/host-aware-build.sh --release --bins
@@ -339,9 +354,9 @@ jobs:
         with:
           name: secret-manager-controller-binaries
           path: |
-            ${{ steps.controller-dir.outputs.binaries-path }}/secret-manager-controller
-            ${{ steps.controller-dir.outputs.binaries-path }}/crdgen
-            ${{ steps.controller-dir.outputs.binaries-path }}/msmctl
+            target/x86_64-unknown-linux-musl/release/secret-manager-controller
+            target/x86_64-unknown-linux-musl/release/crdgen
+            target/x86_64-unknown-linux-musl/release/msmctl
           retention-days: 30
 
       - name: Set up Docker Buildx
@@ -371,8 +386,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: ${{ steps.controller-dir.outputs.dir }}
-          file: ${{ steps.controller-dir.outputs.dockerfile }}
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -386,55 +401,3 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-
-  lint:
-    name: Lint Secret Manager Controller
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Determine controller directory
-        id: controller-dir
-        run: |
-          # Check if we're in a standalone repo (Cargo.toml exists at root)
-          if [ -f "Cargo.toml" ]; then
-            echo "dir=." >> $GITHUB_OUTPUT
-            echo "lockfile=Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=target/" >> $GITHUB_OUTPUT
-          # Otherwise assume we're in a subdirectory
-          else
-            echo "dir=hack/controllers/secret-manager-controller" >> $GITHUB_OUTPUT
-            echo "lockfile=hack/controllers/secret-manager-controller/Cargo.lock" >> $GITHUB_OUTPUT
-            echo "target=hack/controllers/secret-manager-controller/target/" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ${{ steps.controller-dir.outputs.target }}
-          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles(steps.controller-dir.outputs.lockfile) }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-secret-manager-
-
-      - name: Run cargo audit
-        working-directory: ${{ steps.controller-dir.outputs.dir }}
-        continue-on-error: true
-        run: |
-          # Install cargo-audit if not available
-          if ! command -v cargo-audit &> /dev/null; then
-            cargo install cargo-audit --locked || echo "cargo-audit installation failed, skipping audit"
-          fi
-          cargo audit || echo "Audit completed with warnings"
