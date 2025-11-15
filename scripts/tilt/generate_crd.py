@@ -82,31 +82,83 @@ def main():
     
     print("✅ CRD generated successfully")
     
+    # Check if cluster is accessible before trying to apply CRD
+    print("📋 Checking cluster connectivity...")
+    try:
+        cluster_check = subprocess.run(
+            ["kubectl", "cluster-info"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if cluster_check.returncode != 0:
+            print("⚠️  Warning: Cannot connect to Kubernetes cluster", file=sys.stderr)
+            print("   Cluster may not be ready yet. CRD file generated but not applied.", file=sys.stderr)
+            print(f"   CRD file: {crd_output_path}", file=sys.stderr)
+            print("   You can apply it manually later with:", file=sys.stderr)
+            print(f"   kubectl apply -f {crd_output_path}", file=sys.stderr)
+            # Don't fail - CRD generation succeeded, just can't apply yet
+            sys.exit(0)
+    except subprocess.TimeoutExpired:
+        print("⚠️  Warning: Cluster connectivity check timed out", file=sys.stderr)
+        print("   Cluster may not be ready yet. CRD file generated but not applied.", file=sys.stderr)
+        print(f"   CRD file: {crd_output_path}", file=sys.stderr)
+        print("   You can apply it manually later with:", file=sys.stderr)
+        print(f"   kubectl apply -f {crd_output_path}", file=sys.stderr)
+        # Don't fail - CRD generation succeeded, just can't apply yet
+        sys.exit(0)
+    
     # Delete existing CRD before applying (handles schema changes)
     print("📋 Deleting existing CRD (if exists)...")
-    delete_result = subprocess.run(
-        ["kubectl", "delete", "crd", "secretmanagerconfigs.secret-management.microscaler.io"],
-        capture_output=True,
-        text=True
-    )
-    # Ignore errors if CRD doesn't exist
+    try:
+        delete_result = subprocess.run(
+            ["kubectl", "delete", "crd", "secretmanagerconfigs.secret-management.microscaler.io"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        # Ignore errors if CRD doesn't exist
+    except subprocess.TimeoutExpired:
+        print("⚠️  Warning: CRD deletion timed out, continuing...", file=sys.stderr)
     
     # Apply CRD to Kubernetes cluster
     print("📋 Applying CRD to cluster...")
-    apply_result = subprocess.run(
-        ["kubectl", "apply", "-f", str(crd_output_path)],
-        capture_output=True,
-        text=True
-    )
-    
-    apply_exit_code = apply_result.returncode
-    if apply_exit_code == 0:
-        print("✅ CRD applied successfully")
-    else:
-        print(f"❌ Error: CRD apply failed with exit code {apply_exit_code}", file=sys.stderr)
-        if apply_result.stderr:
-            print(apply_result.stderr, file=sys.stderr)
-        sys.exit(apply_exit_code)
+    try:
+        apply_result = subprocess.run(
+            ["kubectl", "apply", "-f", str(crd_output_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        apply_exit_code = apply_result.returncode
+        if apply_exit_code == 0:
+            print("✅ CRD applied successfully")
+        else:
+            # Check if error is due to cluster connectivity
+            error_output = apply_result.stderr or ""
+            if "connection refused" in error_output.lower() or "dial tcp" in error_output.lower():
+                print("⚠️  Warning: Cannot connect to Kubernetes cluster", file=sys.stderr)
+                print("   Cluster may not be ready yet. CRD file generated but not applied.", file=sys.stderr)
+                print(f"   CRD file: {crd_output_path}", file=sys.stderr)
+                print("   You can apply it manually later with:", file=sys.stderr)
+                print(f"   kubectl apply -f {crd_output_path}", file=sys.stderr)
+                # Don't fail - CRD generation succeeded, just can't apply yet
+                sys.exit(0)
+            else:
+                print(f"❌ Error: CRD apply failed with exit code {apply_exit_code}", file=sys.stderr)
+                if apply_result.stderr:
+                    print(apply_result.stderr, file=sys.stderr)
+                sys.exit(apply_exit_code)
+    except subprocess.TimeoutExpired:
+        print("⚠️  Warning: CRD apply timed out", file=sys.stderr)
+        print("   Cluster may not be ready yet. CRD file generated but not applied.", file=sys.stderr)
+        print(f"   CRD file: {crd_output_path}", file=sys.stderr)
+        print("   You can apply it manually later with:", file=sys.stderr)
+        print(f"   kubectl apply -f {crd_output_path}", file=sys.stderr)
+        # Don't fail - CRD generation succeeded, just can't apply yet
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,18 @@ import time
 from pathlib import Path
 
 
+def is_interactive():
+    """Check if running in interactive mode (TTY).
+    
+    Can be overridden by NON_INTERACTIVE environment variable.
+    """
+    # Check environment variable first (allows forcing non-interactive mode)
+    if os.getenv("NON_INTERACTIVE", "").lower() in ("1", "true", "yes"):
+        return False
+    # Otherwise check if stdin is a TTY
+    return sys.stdin.isatty()
+
+
 # Configuration
 CLUSTER_NAME = "secret-manager-controller"
 CONTAINER_NAME = f"k3s-{CLUSTER_NAME}"
@@ -160,33 +172,74 @@ def setup_k3s_container():
     result = run_command(f"docker ps -a --format '{{{{.Names}}}}'", check=False)
     
     if CONTAINER_NAME in result.stdout:
-        log_warn(f"K3s container '{CONTAINER_NAME}' already exists")
-        response = input("Do you want to delete and recreate it? (y/N) ")
-        if response.lower() == 'y':
-            log_info("Stopping and removing existing container...")
-            run_command(f"docker stop {CONTAINER_NAME}", check=False)
-            run_command(f"docker rm {CONTAINER_NAME}", check=False)
+        log_info(f"K3s container '{CONTAINER_NAME}' already exists")
+        container_deleted = False
+        
+        # In non-interactive mode (e.g., from justfile), just update kubeconfig
+        if not is_interactive():
+            log_info("Non-interactive mode: updating kubeconfig from existing container...")
         else:
-            log_info("Using existing container")
+            log_warn(f"K3s container '{CONTAINER_NAME}' already exists")
+            response = input("Do you want to delete and recreate it? (y/N) ")
+            if response.lower() == 'y':
+                log_info("Stopping and removing existing container...")
+                run_command(f"docker stop {CONTAINER_NAME}", check=False)
+                run_command(f"docker rm {CONTAINER_NAME}", check=False)
+                container_deleted = True
+                # Continue to create new container below
+            else:
+                log_info("Using existing container")
+        
+        # If container was deleted, skip kubeconfig update and continue to creation
+        if container_deleted:
+            log_info("Container deleted, will create new container...")
+            # Fall through to container creation below
+        else:
+            # Start container if not running
             run_command(f"docker start {CONTAINER_NAME}", check=False)
+            
             # Get kubeconfig from existing container
             log_info("Retrieving kubeconfig from existing container...")
             kube_dir = Path.home() / ".kube"
             kube_dir.mkdir(parents=True, exist_ok=True)
             
             run_command(
-                f"docker cp {CONTAINER_NAME}:/etc/rancher/k3s/k3s.yaml {kube_dir}/k3s-{CLUSTER_NAME}.yaml"
+                f"docker cp {CONTAINER_NAME}:/etc/rancher/k3s/k3s.yaml {kube_dir}/k3s-{CLUSTER_NAME}.yaml",
+                check=False
             )
             
-            # Update kubeconfig
+            # Update kubeconfig to use localhost
             kubeconfig_path = kube_dir / f"k3s-{CLUSTER_NAME}.yaml"
             if kubeconfig_path.exists():
                 content = kubeconfig_path.read_text()
                 content = content.replace("127.0.0.1", "localhost")
                 kubeconfig_path.write_text(content)
+                
+                # Merge kubeconfig into main config
+                main_config = kube_dir / "config"
+                if main_config.exists():
+                    run_command(
+                        f"KUBECONFIG={kubeconfig_path}:{main_config} kubectl config view --flatten > {main_config}.new",
+                        check=False
+                    )
+                    if (main_config.with_suffix(".new")).exists():
+                        (main_config.with_suffix(".new")).replace(main_config)
+                else:
+                    shutil.copy(kubeconfig_path, main_config)
+                
+                # Ensure context is named correctly
+                run_command(
+                    f"kubectl config rename-context default k3s-{CLUSTER_NAME}",
+                    check=False
+                )
             
             log_info("✅ K3s cluster is ready!")
-            sys.exit(0)
+            log_info(f"📋 Context name: k3s-{CLUSTER_NAME}")
+            
+            # Exit early if we're using existing container
+            # In interactive mode: user chose not to recreate
+            # In non-interactive mode: just update kubeconfig and use existing container
+            return
     
     # Create k3s container
     log_info("Creating K3s container...")

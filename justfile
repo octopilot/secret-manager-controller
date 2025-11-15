@@ -14,57 +14,11 @@ default:
 
 # Start development environment (K3s + Tilt)
 dev-up:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "🚀 Starting Secret Manager Controller development environment (K3s)..."
-    
-    # Check if Docker is running
-    if ! docker info >/dev/null 2>&1; then
-        echo "❌ Error: Docker daemon is not running"
-        echo "   Please start Docker Desktop and try again"
-        exit 1
-    fi
-
-    # Check if k3s container exists
-    if docker ps -a --filter "name=k3s-secret-manager-controller" --quiet | grep -q .; then
-        echo "✅ K3s container 'k3s-secret-manager-controller' already exists"
-        docker start k3s-secret-manager-controller 2>/dev/null || true
-    else
-        # Create K3s cluster
-        echo "📦 Creating K3s cluster..."
-        chmod +x scripts/setup-k3s.sh
-        if ! ./scripts/setup-k3s.sh; then
-            echo "❌ Failed to create K3s cluster"
-            exit 1
-        fi
-    fi
-
-    # Set kubeconfig context
-    kubectl config use-context k3s-secret-manager-controller 2>/dev/null || {
-        echo "⚠️  Warning: Could not set k3s context, using current context"
-    }
-
-    
-    # Start Tilt
-    echo "🎯 Starting Tilt..."
-    tilt up
-
+    python3 scripts/dev_up.py
 
 # Stop development environment (K3s + Tilt)
 dev-down:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "🛑 Stopping Secret Manager Controller development environment..."
-    
-    # Stop Tilt
-    echo "Stopping Tilt..."
-    pkill -f "tilt up" 2>/dev/null || true
-    
-    # Stop K3s container
-    echo "Stopping K3s container..."
-    docker stop k3s-secret-manager-controller 2>/dev/null || true
-    
-    echo "✅ Development environment stopped"
+    python3 scripts/dev_down.py
 # ============================================================================
 # Building
 # ============================================================================
@@ -203,9 +157,7 @@ deploy-crd:
 
 # Undeploy from Kubernetes
 undeploy:
-    @echo "🗑️ Undeploying from Kubernetes..."
-    @kubectl delete -k config/ || true
-    @echo "✅ Undeployed"
+    python3 scripts/undeploy.py
 
 # ============================================================================
 # Utilities
@@ -219,18 +171,7 @@ clean:
 
 # Show cluster and controller status
 status:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "📊 Cluster Status:"
-    echo ""
-    echo "📦 Controller Pods:"
-    kubectl get pods -n microscaler-system -l app=secret-manager-controller 2>/dev/null || echo "No pods found"
-    echo ""
-    echo "📋 SecretManagerConfig Resources:"
-    kubectl get secretmanagerconfig --all-namespaces 2>/dev/null || echo "No SecretManagerConfig resources found"
-    echo ""
-    echo "🔧 CRD Status:"
-    kubectl get crd secretmanagerconfigs.secretmanager.microscaler.io 2>/dev/null || echo "CRD not found"
+    python3 scripts/status.py
 
 # Show controller logs
 logs:
@@ -253,15 +194,7 @@ port-forward:
 
 # Check prerequisites
 check-deps:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Checking dependencies..."
-    command -v docker >/dev/null 2>&1 || { echo "❌ docker is required but not installed."; exit 1; }
-    echo "Installing Tilt..."
-    curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash
-    echo "Installing Just..."
-    curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin
-    echo "✅ Tools installed!"
+    python3 scripts/check_deps.py
 
 # ============================================================================
 # CLI Tool (msmctl)
