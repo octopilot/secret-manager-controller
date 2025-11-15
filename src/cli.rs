@@ -195,8 +195,6 @@ enum ResourceType {
     SecretManagerConfig,
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Configure rustls crypto provider FIRST, before any other operations
@@ -244,23 +242,38 @@ async fn main() -> Result<()> {
             validate_resource_type(&rt)?;
             list_command(client, cli.namespace).await
         }
-        Commands::Status { resource_type, name } => {
+        Commands::Status {
+            resource_type,
+            name,
+        } => {
             validate_resource_type(&resource_type)?;
             status_command(client, name, cli.namespace).await
         }
-        Commands::Suspend { resource_type, name } => {
+        Commands::Suspend {
+            resource_type,
+            name,
+        } => {
             validate_resource_type(&resource_type)?;
             suspend_command(client, name, cli.namespace).await
         }
-        Commands::Resume { resource_type, name } => {
+        Commands::Resume {
+            resource_type,
+            name,
+        } => {
             validate_resource_type(&resource_type)?;
             resume_command(client, name, cli.namespace).await
         }
-        Commands::SuspendGitPulls { resource_type, name } => {
+        Commands::SuspendGitPulls {
+            resource_type,
+            name,
+        } => {
             validate_resource_type(&resource_type)?;
             suspend_git_pulls_command(client, name, cli.namespace).await
         }
-        Commands::ResumeGitPulls { resource_type, name } => {
+        Commands::ResumeGitPulls {
+            resource_type,
+            name,
+        } => {
             validate_resource_type(&resource_type)?;
             resume_git_pulls_command(client, name, cli.namespace).await
         }
@@ -404,7 +417,9 @@ async fn reconcile_command(
 
     api.patch(&name, &patch_params, &Patch::Merge(patch))
         .await
-        .with_context(|| format!("Failed to trigger reconciliation for SecretManagerConfig '{ns}/{name}'"))?;
+        .with_context(|| {
+            format!("Failed to trigger reconciliation for SecretManagerConfig '{ns}/{name}'")
+        })?;
 
     println!("✅ Reconciliation triggered successfully");
     println!("   Resource: {ns}/{name}");
@@ -491,8 +506,14 @@ async fn status_command(client: Client, name: String, namespace: Option<String>)
 
     // Basic info
     println!("Resource Information:");
-    println!("  Name: {}", config.metadata.name.as_deref().unwrap_or("<unknown>"));
-    println!("  Namespace: {}", config.metadata.namespace.as_deref().unwrap_or("<unknown>"));
+    println!(
+        "  Name: {}",
+        config.metadata.name.as_deref().unwrap_or("<unknown>")
+    );
+    println!(
+        "  Namespace: {}",
+        config.metadata.namespace.as_deref().unwrap_or("<unknown>")
+    );
     if let Some(uid) = &config.metadata.uid {
         println!("  UID: {}", uid);
     }
@@ -503,7 +524,10 @@ async fn status_command(client: Client, name: String, namespace: Option<String>)
     println!("  Suspend: {}", config.spec.suspend);
     println!("  Suspend Git Pulls: {}", config.spec.suspend_git_pulls);
     println!("  Reconcile Interval: {}", config.spec.reconcile_interval);
-    println!("  Git Repository Pull Interval: {}", config.spec.git_repository_pull_interval);
+    println!(
+        "  Git Repository Pull Interval: {}",
+        config.spec.git_repository_pull_interval
+    );
     println!("  Environment: {}", config.spec.secrets.environment);
     if let Some(prefix) = &config.spec.secrets.prefix {
         println!("  Prefix: {}", prefix);
@@ -583,11 +607,7 @@ async fn status_command(client: Client, name: String, namespace: Option<String>)
 }
 
 /// Suspend reconciliation for a SecretManagerConfig resource
-async fn suspend_command(
-    client: Client,
-    name: String,
-    namespace: Option<String>,
-) -> Result<()> {
+async fn suspend_command(client: Client, name: String, namespace: Option<String>) -> Result<()> {
     let ns = namespace.as_deref().unwrap_or("default");
 
     println!("⏸️  Suspending reconciliation for SecretManagerConfig '{ns}/{name}'...");
@@ -629,11 +649,7 @@ async fn suspend_command(
 }
 
 /// Resume reconciliation for a SecretManagerConfig resource
-async fn resume_command(
-    client: Client,
-    name: String,
-    namespace: Option<String>,
-) -> Result<()> {
+async fn resume_command(client: Client, name: String, namespace: Option<String>) -> Result<()> {
     let ns = namespace.as_deref().unwrap_or("default");
 
     println!("▶️  Resuming reconciliation for SecretManagerConfig '{ns}/{name}'...");
@@ -709,7 +725,9 @@ async fn suspend_git_pulls_command(
 
     api.patch(&name, &patch_params, &Patch::Merge(patch))
         .await
-        .with_context(|| format!("Failed to suspend Git pulls for SecretManagerConfig '{ns}/{name}'"))?;
+        .with_context(|| {
+            format!("Failed to suspend Git pulls for SecretManagerConfig '{ns}/{name}'")
+        })?;
 
     println!("✅ Git pulls suspended successfully");
     println!("   Resource: {ns}/{name}");
@@ -756,7 +774,9 @@ async fn resume_git_pulls_command(
 
     api.patch(&name, &patch_params, &Patch::Merge(patch))
         .await
-        .with_context(|| format!("Failed to resume Git pulls for SecretManagerConfig '{ns}/{name}'"))?;
+        .with_context(|| {
+            format!("Failed to resume Git pulls for SecretManagerConfig '{ns}/{name}'")
+        })?;
 
     println!("✅ Git pulls resumed successfully");
     println!("   Resource: {ns}/{name}");

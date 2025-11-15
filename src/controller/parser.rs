@@ -271,6 +271,7 @@ async fn parse_env_file(
         .context(format!("Failed to read: {}", path.display()))?;
 
     // Check if file is SOPS-encrypted
+    // SECURITY: Decrypted content exists only in memory, never written to disk
     let content = if is_sops_encrypted(&content) {
         debug!("Detected SOPS-encrypted file: {}", path.display());
         decrypt_sops_content(&content, sops_private_key)
@@ -280,6 +281,9 @@ async fn parse_env_file(
         content
     };
 
+    // Parse .env format from in-memory buffer (no disk writes)
+    // Parse line-by-line from the in-memory content string
+    // SECURITY: All parsing happens in memory, no temp files
     let mut secrets = HashMap::new();
 
     for line in content.lines() {
@@ -310,6 +314,7 @@ async fn parse_yaml_secrets(
         .context(format!("Failed to read: {}", path.display()))?;
 
     // Check if file is SOPS-encrypted
+    // SECURITY: Decrypted content exists only in memory, never written to disk
     let content = if is_sops_encrypted(&content) {
         debug!("Detected SOPS-encrypted file: {}", path.display());
         decrypt_sops_content(&content, sops_private_key)
@@ -319,7 +324,7 @@ async fn parse_yaml_secrets(
         content
     };
 
-    // Parse YAML as key-value pairs
+    // Parse YAML from in-memory buffer (no disk writes)
     let yaml: serde_yaml::Value = serde_yaml::from_str(&content).context("Failed to parse YAML")?;
 
     let mut secrets = HashMap::new();
@@ -430,15 +435,19 @@ fn is_sops_encrypted(content: &str) -> bool {
     false
 }
 
-/// Decrypt SOPS-encrypted content using rops crate or sops binary
+/// Decrypt SOPS-encrypted content using sops binary
 ///
-/// Supports two methods:
-/// 1. Using rops crate with GPG private key (future implementation)
-/// 2. Using sops binary (current implementation - more reliable)
-async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> Result<String> {
+/// This function uses the sops binary for decryption, which is the current
+/// production implementation. The rops crate implementation is deactivated
+/// (see `decrypt_with_rops` for details).
+pub async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> Result<String> {
     let content_size = content.len();
-    let encryption_method = if sops_private_key.is_some() { "gpg" } else { "system_keyring" };
-    
+    let encryption_method = if sops_private_key.is_some() {
+        "gpg"
+    } else {
+        "system_keyring"
+    };
+
     let span = info_span!(
         "sops.decrypt",
         file.size = content_size,
@@ -446,34 +455,12 @@ async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> 
     );
     let span_clone = span.clone();
     let start = Instant::now();
-    
+
     async move {
-        // Try rops crate first if private key is provided (future enhancement)
-        if let Some(private_key) = sops_private_key {
-            debug!("Attempting SOPS decryption with provided GPG private key");
-
-            // Try using rops crate (currently falls back to sops binary)
-            match decrypt_with_rops(content, private_key) {
-                Ok(decrypted) => {
-                    debug!("Successfully decrypted SOPS content using rops");
-                    span_clone.record("decryption.method", "rops");
-                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                    span_clone.record("operation.success", true);
-                    metrics::increment_sops_decryption_total();
-                    metrics::observe_sops_decryption_duration(start.elapsed().as_secs_f64());
-                    return Ok(decrypted);
-                }
-                Err(e) => {
-                    debug!("rops decryption failed: {}, trying sops binary", e);
-                    // Fall through to try sops binary
-                }
-            }
-        }
-
         // Use sops binary (current implementation)
         debug!("Attempting SOPS decryption using sops binary");
         let result = decrypt_with_sops_binary(content, sops_private_key).await;
-        
+
         match &result {
             Ok(_) => {
                 span_clone.record("decryption.method", "sops_binary");
@@ -490,7 +477,7 @@ async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> 
                 metrics::increment_sops_decryption_errors_total();
             }
         }
-        
+
         result
     }
     .instrument(span)
@@ -499,23 +486,33 @@ async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> 
 
 /// Decrypt SOPS content using rops crate with GPG private key
 ///
-/// Note: The rops crate API may require GPG keys to be in the system keyring.
+/// **STATUS: DEACTIVATED** - This implementation is currently deactivated.
 /// We use the sops binary instead, which is more reliable and doesn't require
 /// keys to be in the system keyring.
+///
+/// The rops crate API is complex and requires:
+/// 1. Parsing SOPS file format (YAML/JSON) with proper type system
+/// 2. Handling GPG keys via integration modules
+/// 3. Decrypting with proper file format types (YamlFileFormat, JsonFileFormat, etc.)
+///
+/// For now, we use the sops binary which handles all of this automatically.
+/// This stub is kept for future reference if we decide to implement rops support.
+#[allow(dead_code, reason = "Kept as stub for future rops implementation")]
 fn decrypt_with_rops(_content: &str, _private_key: &str) -> Result<String> {
-    // Note: rops crate decryption is not implemented - we use sops binary instead
-    // The rops crate API needs to be verified - it may require:
-    // 1. GPG keys to be imported into system keyring
-    // 2. Different API than expected
-    //
-    // For now, return an error to fall back to sops binary
+    // DEACTIVATED: rops crate decryption is not implemented
+    // We use sops binary instead (see decrypt_with_sops_binary)
     Err(anyhow::anyhow!(
-        "rops crate decryption not yet implemented - using sops binary fallback"
+        "rops crate decryption is deactivated - using sops binary instead"
     ))
 }
 
-/// Decrypt SOPS content using sops binary (fallback method)
-/// This is more reliable as it uses the actual sops tool
+/// Decrypt SOPS content using sops binary via stdin/stdout
+///
+/// **SECURITY**: This implementation pipes encrypted content directly to SOPS stdin
+/// and captures decrypted output from stdout. This ensures:
+/// - No encrypted content written to disk
+/// - No decrypted content written to disk (SOPS processes in memory)
+/// - Decrypted content only exists in process memory
 async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>) -> Result<String> {
     use std::process::Stdio;
 
@@ -533,21 +530,13 @@ async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>)
         None
     };
 
-    // Create temporary file with encrypted content
-    let temp_dir = std::env::temp_dir();
-    let temp_file = temp_dir.join(format!("sops-decrypt-{}.tmp", uuid::Uuid::new_v4()));
-
-    // Write encrypted content to temp file
-    tokio::fs::write(&temp_file, content)
-        .await
-        .context("Failed to write encrypted content to temp file")?;
-
-    // Prepare sops command
+    // Prepare sops command to read from stdin (/dev/stdin)
+    // This ensures SOPS never writes decrypted content to disk
     let mut cmd = tokio::process::Command::new(sops_path);
     cmd.arg("-d") // Decrypt
-        .arg(&temp_file)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .arg("/dev/stdin") // Read encrypted content from stdin
+        .stdin(Stdio::piped()) // Pipe encrypted content to stdin
+        .stdout(Stdio::piped()) // Capture decrypted content from stdout
         .stderr(Stdio::piped());
 
     // Set GPG home directory if we created a temporary one
@@ -556,14 +545,26 @@ async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>)
         debug!("Using temporary GPG home: {:?}", gpg_home_path);
     }
 
-    // Execute sops command
-    let output = cmd
-        .output()
-        .await
-        .context("Failed to execute sops command")?;
+    // Spawn the process
+    let mut child = cmd.spawn().context("Failed to spawn sops command")?;
 
-    // Clean up temp file
-    let _ = tokio::fs::remove_file(&temp_file).await;
+    // Write encrypted content to stdin (never touches disk)
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(content.as_bytes())
+            .await
+            .context("Failed to write encrypted content to sops stdin")?;
+        stdin
+            .shutdown()
+            .await
+            .context("Failed to close sops stdin")?;
+    }
+
+    // Wait for process to complete and capture output
+    let output = child
+        .wait_with_output()
+        .await
+        .context("Failed to wait for sops command")?;
 
     // Clean up temporary GPG home directory
     if let Some(ref gpg_home_path) = gpg_home {
@@ -571,14 +572,23 @@ async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>)
     }
 
     if output.status.success() {
+        // SECURITY: Decrypted content exists only in memory (from stdout pipe)
+        // Never written to disk - only exists in this String
         let decrypted =
             String::from_utf8(output.stdout).context("sops output is not valid UTF-8")?;
         Ok(decrypted)
     } else {
+        // SECURITY: Only log error message, never log decrypted content
+        // Truncate error message to avoid potential secret leakage in error output
         let error_msg = String::from_utf8_lossy(&output.stderr);
+        let safe_error = if error_msg.len() > 200 {
+            format!("{}... (truncated)", &error_msg[..200])
+        } else {
+            error_msg.to_string()
+        };
         Err(anyhow::anyhow!(
             "sops decryption failed: {} (exit code: {})",
-            error_msg,
+            safe_error,
             output.status.code().unwrap_or(-1)
         ))
     }
@@ -646,5 +656,422 @@ async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>> {
         Err(anyhow::anyhow!(
             "Failed to import GPG private key: {error_msg}"
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    mod normalize_base_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_normalize_base_path_none() {
+            assert_eq!(normalize_base_path(None), None);
+        }
+
+        #[test]
+        fn test_normalize_base_path_empty_string() {
+            assert_eq!(normalize_base_path(Some("")), None);
+        }
+
+        #[test]
+        fn test_normalize_base_path_dot() {
+            assert_eq!(normalize_base_path(Some(".")), None);
+        }
+
+        #[test]
+        fn test_normalize_base_path_valid() {
+            assert_eq!(
+                normalize_base_path(Some("microservices")),
+                Some("microservices")
+            );
+        }
+    }
+
+    mod is_sops_encrypted_tests {
+        use super::*;
+
+        #[test]
+        fn test_is_sops_encrypted_yaml() {
+            let content = r#"sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age: []
+    lastmodified: '2024-01-01T00:00:00Z'
+    mac: ENC[AES256_GCM,data:...,iv:...,tag:...,type:str]
+    pgp: []
+    encrypted_regex: ^(data|stringData)$
+    version: 3.8.1
+database:
+    url: ENC[AES256_GCM,data:...,iv:...,tag:...,type:str]
+"#;
+            assert!(is_sops_encrypted(content));
+        }
+
+        #[test]
+        fn test_is_sops_encrypted_json() {
+            let content = r#"{
+  "sops": {
+    "kms": [],
+    "gcp_kms": [],
+    "lastmodified": "2024-01-01T00:00:00Z",
+    "mac": "ENC[AES256_GCM,data:...,iv:...,tag:...,type:str]",
+    "version": "3.8.1"
+  },
+  "database": {
+    "url": "ENC[AES256_GCM,data:...,iv:...,tag:...,type:str]"
+  }
+}"#;
+            assert!(is_sops_encrypted(content));
+        }
+
+        #[test]
+        fn test_is_sops_encrypted_env_with_metadata() {
+            let content = r#"# sops_version=3.8.1
+# sops_encrypted=true
+DATABASE_URL=ENC[AES256_GCM,data:...,iv:...,tag:...,type:str]
+"#;
+            assert!(is_sops_encrypted(content));
+        }
+
+        #[test]
+        fn test_is_sops_encrypted_plain_yaml() {
+            let content = r#"database:
+    url: postgres://localhost:5432/mydb
+    user: admin
+"#;
+            assert!(!is_sops_encrypted(content));
+        }
+
+        #[test]
+        fn test_is_sops_encrypted_plain_env() {
+            let content = r#"DATABASE_URL=postgres://localhost:5432/mydb
+DATABASE_USER=admin
+"#;
+            assert!(!is_sops_encrypted(content));
+        }
+    }
+
+    mod flatten_yaml_value_tests {
+        use super::*;
+
+        #[test]
+        fn test_flatten_yaml_value_simple() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"database:
+  url: postgres://localhost:5432/mydb
+  user: admin
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, String::new(), &mut result);
+
+            assert_eq!(
+                result.get("database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+            assert_eq!(result.get("database.user"), Some(&"admin".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_nested() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"api:
+  keys:
+    service1: key1
+    service2: key2
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, String::new(), &mut result);
+
+            assert_eq!(result.get("api.keys.service1"), Some(&"key1".to_string()));
+            assert_eq!(result.get("api.keys.service2"), Some(&"key2".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_with_prefix() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"database:
+  url: postgres://localhost:5432/mydb
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, "prefix".to_string(), &mut result);
+
+            assert_eq!(
+                result.get("prefix.database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_array() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"servers:
+  - host: server1
+    port: 8080
+  - host: server2
+    port: 8081
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, String::new(), &mut result);
+
+            // Arrays should be flattened with indices
+            assert!(result.contains_key("servers[0].host"));
+            assert!(result.contains_key("servers[0].port"));
+            assert!(result.contains_key("servers[1].host"));
+            assert!(result.contains_key("servers[1].port"));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_number() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"timeout: 30
+retries: 3
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, String::new(), &mut result);
+
+            assert_eq!(result.get("timeout"), Some(&"30".to_string()));
+            assert_eq!(result.get("retries"), Some(&"3".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_boolean() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"enabled: true
+disabled: false
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, String::new(), &mut result);
+
+            assert_eq!(result.get("enabled"), Some(&"true".to_string()));
+            assert_eq!(result.get("disabled"), Some(&"false".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_null() {
+            let yaml: serde_yaml::Value = serde_yaml::from_str(
+                r#"optional: null
+required: value
+"#,
+            )
+            .unwrap();
+            let mut result = HashMap::new();
+            flatten_yaml_value(&yaml, String::new(), &mut result);
+
+            assert_eq!(result.get("optional"), Some(&String::new()));
+            assert_eq!(result.get("required"), Some(&"value".to_string()));
+        }
+    }
+
+    mod parse_env_file_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_parse_env_file_simple() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(
+                &file_path,
+                "DATABASE_URL=postgres://localhost:5432/mydb\nDATABASE_USER=admin\n",
+            )
+            .unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(
+                result.get("DATABASE_URL"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+            assert_eq!(result.get("DATABASE_USER"), Some(&"admin".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_comments() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(
+                &file_path,
+                "# Database configuration\nDATABASE_URL=postgres://localhost:5432/mydb\n# End of file\n",
+            )
+            .unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(
+                result.get("DATABASE_URL"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+            assert!(!result.contains_key("# Database configuration"));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_empty_lines() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "KEY1=value1\n\nKEY2=value2\n\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(result.get("KEY1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("KEY2"), Some(&"value2".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_whitespace() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "  KEY1  =  value1  \nKEY2=value2\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(result.get("KEY1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("KEY2"), Some(&"value2".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_nonexistent() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("nonexistent.env");
+
+            let result = parse_env_file(&file_path, None).await;
+
+            assert!(result.is_err());
+        }
+    }
+
+    mod parse_properties_file_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_parse_properties_file_simple() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(
+                &file_path,
+                "database.url=postgres://localhost:5432/mydb\ndatabase.user=admin\n",
+            )
+            .unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert_eq!(
+                result.get("database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+            assert_eq!(result.get("database.user"), Some(&"admin".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_file_with_comments() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(
+                &file_path,
+                "# Properties file\ndatabase.url=postgres://localhost:5432/mydb\n",
+            )
+            .unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert_eq!(
+                result.get("database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_file_nonexistent() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("nonexistent.properties");
+
+            let result = parse_properties_file(&file_path).await;
+
+            assert!(result.is_err());
+        }
+    }
+
+    mod parse_yaml_secrets_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_parse_yaml_secrets_simple() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.yaml");
+            fs::write(
+                &file_path,
+                r#"database:
+  url: postgres://localhost:5432/mydb
+  user: admin
+"#,
+            )
+            .unwrap();
+
+            let result = parse_yaml_secrets(&file_path, None).await.unwrap();
+
+            assert_eq!(
+                result.get("database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+            assert_eq!(result.get("database.user"), Some(&"admin".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_yaml_secrets_nested() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.yaml");
+            fs::write(
+                &file_path,
+                r#"api:
+  keys:
+    service1: key1
+    service2: key2
+"#,
+            )
+            .unwrap();
+
+            let result = parse_yaml_secrets(&file_path, None).await.unwrap();
+
+            assert_eq!(result.get("api.keys.service1"), Some(&"key1".to_string()));
+            assert_eq!(result.get("api.keys.service2"), Some(&"key2".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_yaml_secrets_invalid_yaml() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.yaml");
+            fs::write(&file_path, "invalid: yaml: content: [").unwrap();
+
+            let result = parse_yaml_secrets(&file_path, None).await;
+
+            assert!(result.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_parse_yaml_secrets_nonexistent() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("nonexistent.yaml");
+
+            let result = parse_yaml_secrets(&file_path, None).await;
+
+            assert!(result.is_err());
+        }
     }
 }

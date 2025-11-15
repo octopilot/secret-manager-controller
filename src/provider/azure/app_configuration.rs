@@ -153,7 +153,8 @@ struct KeyValue {
 impl ConfigStoreProvider for AzureAppConfiguration {
     async fn create_or_update_config(&self, config_key: &str, config_value: &str) -> Result<bool> {
         let key_name = self.construct_key_name(config_key);
-        let vault_name = self.endpoint
+        let vault_name = self
+            .endpoint
             .strip_prefix("https://")
             .and_then(|s| s.strip_suffix(".azconfig.io"))
             .unwrap_or("unknown");
@@ -164,7 +165,7 @@ impl ConfigStoreProvider for AzureAppConfiguration {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             // Get access token
             let token = self.get_token().await?;
@@ -287,7 +288,8 @@ impl ConfigStoreProvider for AzureAppConfiguration {
 
     async fn get_config_value(&self, config_key: &str) -> Result<Option<String>> {
         let key_name = self.construct_key_name(config_key);
-        let vault_name = self.endpoint
+        let vault_name = self
+            .endpoint
             .strip_prefix("https://")
             .and_then(|s| s.strip_suffix(".azconfig.io"))
             .unwrap_or("unknown");
@@ -298,7 +300,7 @@ impl ConfigStoreProvider for AzureAppConfiguration {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             let token = match self.get_token().await {
                 Ok(t) => t,

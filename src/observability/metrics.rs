@@ -14,9 +14,7 @@
 //! - `secret_manager_gcp_operation_duration_seconds` - Duration of GCP operations
 
 use anyhow::Result;
-use prometheus::{
-    Counter, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry,
-};
+use prometheus::{Counter, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry};
 use std::sync::LazyLock;
 
 // Metrics
@@ -289,11 +287,13 @@ pub fn observe_gcp_operation_duration(duration: f64) {
 // Generic secret operation metrics for multi-provider support
 pub fn record_secret_operation(provider: &str, _operation: &str, duration: f64) {
     // Record provider-specific metrics
-    PROVIDER_OPERATIONS_TOTAL.with_label_values(&[provider]).inc();
+    PROVIDER_OPERATIONS_TOTAL
+        .with_label_values(&[provider])
+        .inc();
     PROVIDER_OPERATION_DURATION
         .with_label_values(&[provider])
         .observe(duration);
-    
+
     // Also maintain backward compatibility with GCP-specific metrics
     // TODO: Consider deprecating GCP-specific metrics in favor of provider-labeled metrics
     if provider == "gcp" {

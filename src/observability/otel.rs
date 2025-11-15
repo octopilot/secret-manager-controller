@@ -66,15 +66,13 @@ pub fn init_otel(config: Option<&OtelConfig>) -> Result<Option<TracerProviderHan
             environment,
             site,
             api_key,
-        }) => {
-            init_datadog(
-                service_name.as_deref(),
-                service_version.as_deref(),
-                environment.as_deref(),
-                site.as_deref(),
-                api_key.as_deref(),
-            )
-        }
+        }) => init_datadog(
+            service_name.as_deref(),
+            service_version.as_deref(),
+            environment.as_deref(),
+            site.as_deref(),
+            api_key.as_deref(),
+        ),
         Some(OtelConfig::Otlp {
             endpoint,
             service_name,
@@ -115,13 +113,13 @@ pub fn init_otel(config: Option<&OtelConfig>) -> Result<Option<TracerProviderHan
                     api_key.as_deref(),
                 );
             }
-            
+
             // Check for OTLP environment variables
             if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
                 info!("OTLP environment variables detected, but OTLP exporter implementation is pending");
                 return Ok(None);
             }
-            
+
             info!("No OpenTelemetry configuration provided, skipping Otel initialization");
             Ok(None)
         }
@@ -132,7 +130,7 @@ pub fn init_otel(config: Option<&OtelConfig>) -> Result<Option<TracerProviderHan
 ///
 /// Sets up Datadog environment variables and initializes the tracer provider.
 /// Uses BUILD_GIT_HASH for DD_VERSION as requested.
-/// 
+///
 /// This function should only be called when DD_API_KEY is present in environment variables,
 /// as DD_API_KEY is the required indicator that Datadog is configured.
 fn init_datadog(
@@ -145,7 +143,7 @@ fn init_datadog(
     // Set Datadog environment variables
     // These are read by datadog-opentelemetry during initialization
     // Note: DD_API_KEY must already be present (checked before calling this function)
-    
+
     // DD_SERVICE - service name
     // Use provided value, or existing env var, or default
     if let Some(name) = service_name {
@@ -153,7 +151,7 @@ fn init_datadog(
     } else if std::env::var("DD_SERVICE").is_err() {
         std::env::set_var("DD_SERVICE", "secret-manager-controller");
     }
-    
+
     // DD_VERSION - use BUILD_GIT_HASH from build.rs as requested
     // Use provided value, or existing env var, or build from BUILD_GIT_HASH
     if let Some(version) = service_version {
@@ -163,13 +161,13 @@ fn init_datadog(
         let build_version = format!("{}-{}", env!("CARGO_PKG_VERSION"), env!("BUILD_GIT_HASH"));
         std::env::set_var("DD_VERSION", build_version);
     }
-    
+
     // DD_ENV - environment (dev, prod, etc.)
     // Only set if provided (don't override existing env var)
     if let Some(env) = environment {
         std::env::set_var("DD_ENV", env);
     }
-    
+
     // DD_SITE - Datadog site
     // Use provided value, or existing env var, or default
     if let Some(dd_site) = site {
@@ -177,18 +175,18 @@ fn init_datadog(
     } else if std::env::var("DD_SITE").is_err() {
         std::env::set_var("DD_SITE", "datadoghq.com");
     }
-    
+
     // DD_API_KEY - API key (should already be set from environment, but set if provided)
     if let Some(key) = api_key {
         std::env::set_var("DD_API_KEY", key);
     }
-    
+
     // Set DD_TRACE_AGENT_URL if not already set
     // Defaults to Datadog Agent on localhost:8126
     if std::env::var("DD_TRACE_AGENT_URL").is_err() {
         std::env::set_var("DD_TRACE_AGENT_URL", "http://localhost:8126");
     }
-    
+
     info!(
         "Initializing Datadog OpenTelemetry tracing: service={}, version={}, env={:?}, site={:?}",
         std::env::var("DD_SERVICE").unwrap_or_default(),
@@ -196,16 +194,18 @@ fn init_datadog(
         std::env::var("DD_ENV").ok(),
         std::env::var("DD_SITE").unwrap_or_default()
     );
-    
+
     // Initialize Datadog tracer provider
     // This sets up OpenTelemetry with Datadog-specific features
     // The init() function returns a TracerProvider that can be shut down later
-    let tracer_provider = datadog_opentelemetry::tracing()
-        .init();
-    
+    let tracer_provider = datadog_opentelemetry::tracing().init();
+
     info!("✅ Datadog OpenTelemetry tracing initialized successfully");
-    info!("   Traces will be sent to: {}", std::env::var("DD_TRACE_AGENT_URL").unwrap_or_default());
-    
+    info!(
+        "   Traces will be sent to: {}",
+        std::env::var("DD_TRACE_AGENT_URL").unwrap_or_default()
+    );
+
     Ok(Some(TracerProviderHandle::Datadog(tracer_provider)))
 }
 

@@ -16,14 +16,14 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use secret_manager_controller::kustomize;
+//! use secret_manager_controller::controller::kustomize;
 //! use std::path::Path;
 //!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let artifact_path = Path::new("/tmp/flux-source-repo");
 //! let kustomize_path = "microservices/idam/deployment-configuration/profiles/dev";
 //!
-//! let secrets = kustomize::extract_secrets_from_kustomize(artifact_path, kustomize_path).await?;
+//! let secrets = kustomize::extract_secrets_from_kustomize(artifact_path, kustomize_path)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -47,13 +47,10 @@ pub fn extract_secrets_from_kustomize(
     kustomize_path: &str,
 ) -> Result<HashMap<String, String>> {
     let full_path = artifact_path.join(kustomize_path);
-    let span = info_span!(
-        "kustomize.build",
-        kustomize.path = kustomize_path
-    );
+    let span = info_span!("kustomize.build", kustomize.path = kustomize_path);
     let span_clone = span.clone();
     let start = Instant::now();
-    
+
     let result = (|| -> Result<HashMap<String, String>> {
         // Construct full path to kustomization.yaml
         if !full_path.exists() {
@@ -91,8 +88,8 @@ pub fn extract_secrets_from_kustomize(
             return Err(anyhow::anyhow!("Kustomize build failed: {stderr}"));
         }
 
-        let yaml_output =
-            String::from_utf8(output.stdout).context("Failed to decode kustomize output as UTF-8")?;
+        let yaml_output = String::from_utf8(output.stdout)
+            .context("Failed to decode kustomize output as UTF-8")?;
 
         debug!("Kustomize build succeeded, parsing output...");
 
@@ -104,17 +101,17 @@ pub fn extract_secrets_from_kustomize(
         span_clone.record("operation.success", true);
         metrics::increment_kustomize_build_total();
         metrics::observe_kustomize_build_duration(start.elapsed().as_secs_f64());
-        
+
         info!("Extracted {} secrets from kustomize output", secrets.len());
         Ok(secrets)
     })();
-    
+
     // Record span attributes even on error
     if let Err(ref e) = result {
         span_clone.record("operation.success", false);
         span_clone.record("error.message", e.to_string());
     }
-    
+
     result
 }
 
@@ -165,6 +162,136 @@ fn parse_kustomize_output(yaml_output: &str) -> HashMap<String, String> {
     }
 
     all_secrets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k8s_openapi::api::core::v1::Secret;
+    use std::collections::BTreeMap;
+
+    mod parse_kustomize_output_tests {
+        use super::*;
+        use base64::{engine::general_purpose, Engine as _};
+
+        #[test]
+        fn test_parse_kustomize_output_single_secret() {
+            let secret = Secret {
+                data: Some(BTreeMap::from([(
+                    "database-url".to_string(),
+                    k8s_openapi::ByteString(
+                        general_purpose::STANDARD
+                            .encode("postgres://localhost:5432/mydb")
+                            .into(),
+                    ),
+                )])),
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+            let yaml_output = format!("---\n{}", yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            assert_eq!(
+                result.get("database-url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_multiple_secrets() {
+            let secret1 = Secret {
+                metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                    name: Some("secret1".to_string()),
+                    ..Default::default()
+                }
+                .into(),
+                data: Some(BTreeMap::from([(
+                    "key1".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value1").into()),
+                )])),
+                ..Secret::default()
+            };
+            let secret2 = Secret {
+                metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                    name: Some("secret2".to_string()),
+                    ..Default::default()
+                }
+                .into(),
+                data: Some(BTreeMap::from([(
+                    "key2".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value2").into()),
+                )])),
+                ..Secret::default()
+            };
+            let yaml1 = serde_yaml::to_string(&secret1).unwrap();
+            let yaml2 = serde_yaml::to_string(&secret2).unwrap();
+            let yaml_output = format!("---\n{}\n---\n{}", yaml1, yaml2);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            assert_eq!(result.get("key1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("key2"), Some(&"value2".to_string()));
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_non_secret_resource() {
+            let yaml_output = r#"---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+data:
+  key: value
+"#;
+
+            let result = parse_kustomize_output(yaml_output);
+
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_invalid_base64() {
+            let secret = Secret {
+                data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    k8s_openapi::ByteString("invalid-base64!!!".as_bytes().to_vec()),
+                )])),
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+            let yaml_output = format!("---\n{}", yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            // Invalid base64 should be skipped
+            assert!(!result.contains_key("key"));
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_empty() {
+            let result = parse_kustomize_output("");
+
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_no_separator() {
+            let secret = Secret {
+                data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value").into()),
+                )])),
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+
+            let result = parse_kustomize_output(&yaml);
+
+            // Should still parse even without --- separator
+            assert_eq!(result.get("key"), Some(&"value".to_string()));
+        }
+    }
 }
 
 /// Extract properties from kustomize output (from `ConfigMap` resources)

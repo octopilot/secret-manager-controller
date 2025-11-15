@@ -29,6 +29,10 @@ path = "src/controller/crdgen.rs"
 name = "msmctl"
 path = "src/cli.rs"
 
+[[bin]]
+name = "test-sops-decrypt"
+path = "src/bin/test_sops_decrypt.rs"
+
 [dependencies]
 # Kubernetes client
 # Enable client feature for Client, Api, etc.
@@ -78,8 +82,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.33"
 dotenv = "0.15"
+dotenvy = "0.15"  # For parsing .env from in-memory buffers
 schemars = "1"
 base64 = "0.22"
+
+# Security: Secure memory handling for secrets (optional - for future hardening)
+# secrecy = "0.10"  # Wrapper types for secret management
+zeroize = { version = "1", features = ["zeroize_derive"] }
 
 # Error handling
 anyhow = "1.0"

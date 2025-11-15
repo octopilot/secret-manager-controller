@@ -90,7 +90,8 @@ impl AzureKeyVault {
 #[async_trait]
 impl SecretManagerProvider for AzureKeyVault {
     async fn create_or_update_secret(&self, secret_name: &str, secret_value: &str) -> Result<bool> {
-        let vault_name = self._vault_url
+        let vault_name = self
+            ._vault_url
             .strip_prefix("https://")
             .and_then(|s| s.strip_suffix(".vault.azure.net/"))
             .unwrap_or("unknown");
@@ -102,7 +103,7 @@ impl SecretManagerProvider for AzureKeyVault {
         let span_clone = span.clone();
         let start = Instant::now();
         let secret_value_clone = secret_value.to_string();
-        
+
         async move {
             // Check if secret exists by trying to get it
             let current_value = self.get_secret_value(secret_name).await?;
@@ -138,7 +139,11 @@ impl SecretManagerProvider for AzureKeyVault {
                 .await
             {
                 Ok(_) => {
-                    metrics::record_secret_operation("azure", operation_type, start.elapsed().as_secs_f64());
+                    metrics::record_secret_operation(
+                        "azure",
+                        operation_type,
+                        start.elapsed().as_secs_f64(),
+                    );
                     span_clone.record("operation.type", operation_type);
                     span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
                     span_clone.record("operation.success", true);
@@ -162,7 +167,8 @@ impl SecretManagerProvider for AzureKeyVault {
     }
 
     async fn get_secret_value(&self, secret_name: &str) -> Result<Option<String>> {
-        let vault_name = self._vault_url
+        let vault_name = self
+            ._vault_url
             .strip_prefix("https://")
             .and_then(|s| s.strip_suffix(".vault.azure.net/"))
             .unwrap_or("unknown");
@@ -173,7 +179,7 @@ impl SecretManagerProvider for AzureKeyVault {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             // Get the latest version of the secret (no version parameter needed - defaults to latest)
             match self.client.get_secret(secret_name, None).await {
@@ -184,17 +190,35 @@ impl SecretManagerProvider for AzureKeyVault {
                         Ok(secret) => {
                             span_clone.record("operation.success", true);
                             span_clone.record("operation.found", secret.value.is_some());
-                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                            metrics::record_secret_operation("azure", "get", start.elapsed().as_secs_f64());
+                            span_clone.record(
+                                "operation.duration_ms",
+                                start.elapsed().as_millis() as u64,
+                            );
+                            metrics::record_secret_operation(
+                                "azure",
+                                "get",
+                                start.elapsed().as_secs_f64(),
+                            );
                             Ok(secret.value)
                         }
                         Err(e) => {
                             let error_msg = e.to_string();
                             span_clone.record("operation.success", false);
-                            span_clone.record("error.message", format!("Failed to deserialize Azure secret response: {}", error_msg));
-                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                            span_clone.record(
+                                "error.message",
+                                format!(
+                                    "Failed to deserialize Azure secret response: {}",
+                                    error_msg
+                                ),
+                            );
+                            span_clone.record(
+                                "operation.duration_ms",
+                                start.elapsed().as_millis() as u64,
+                            );
                             metrics::increment_provider_operation_errors("azure");
-                            Err(anyhow::anyhow!("Failed to deserialize Azure secret response: {e}"))
+                            Err(anyhow::anyhow!(
+                                "Failed to deserialize Azure secret response: {e}"
+                            ))
                         }
                     }
                 }
@@ -206,13 +230,19 @@ impl SecretManagerProvider for AzureKeyVault {
                     {
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", false);
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("azure", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "azure",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(None)
                     } else {
                         span_clone.record("operation.success", false);
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("azure");
                         Err(anyhow::anyhow!("Failed to get Azure secret: {e}"))
                     }

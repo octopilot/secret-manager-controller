@@ -147,7 +147,7 @@ impl ConfigStoreProvider for AwsParameterStore {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             // Check if parameter exists
             let parameter_exists = self
@@ -172,9 +172,14 @@ impl ConfigStoreProvider for AwsParameterStore {
                     .await
                 {
                     Ok(_) => {
-                        metrics::record_secret_operation("aws", "create", start.elapsed().as_secs_f64());
+                        metrics::record_secret_operation(
+                            "aws",
+                            "create",
+                            start.elapsed().as_secs_f64(),
+                        );
                         span_clone.record("operation.type", "create");
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         span_clone.record("operation.success", true);
                         return Ok(true);
                     }
@@ -183,7 +188,8 @@ impl ConfigStoreProvider for AwsParameterStore {
                         span_clone.record("operation.success", false);
                         span_clone.record("operation.type", "create");
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
                         return Err(anyhow::anyhow!(
                             "Failed to create AWS Parameter Store parameter {parameter_name}: {e}"
@@ -200,9 +206,14 @@ impl ConfigStoreProvider for AwsParameterStore {
                             "AWS Parameter Store parameter {} unchanged, skipping update",
                             parameter_name
                         );
-                        metrics::record_secret_operation("aws", "no_change", start.elapsed().as_secs_f64());
+                        metrics::record_secret_operation(
+                            "aws",
+                            "no_change",
+                            start.elapsed().as_secs_f64(),
+                        );
                         span_clone.record("operation.type", "no_change");
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         span_clone.record("operation.success", true);
                         return Ok(false);
                     }
@@ -221,7 +232,11 @@ impl ConfigStoreProvider for AwsParameterStore {
                     .await
                 {
                     Ok(_) => {
-                        metrics::record_secret_operation("aws", "update", start.elapsed().as_secs_f64());
+                        metrics::record_secret_operation(
+                            "aws",
+                            "update",
+                            start.elapsed().as_secs_f64(),
+                        );
                         "update"
                     }
                     Err(e) => {
@@ -229,7 +244,8 @@ impl ConfigStoreProvider for AwsParameterStore {
                         span_clone.record("operation.success", false);
                         span_clone.record("operation.type", "update");
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
                         return Err(anyhow::anyhow!(
                             "Failed to update AWS Parameter Store parameter {parameter_name}: {e}"
@@ -256,7 +272,7 @@ impl ConfigStoreProvider for AwsParameterStore {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             match self
                 .client
@@ -271,14 +287,24 @@ impl ConfigStoreProvider for AwsParameterStore {
                         let value = parameter.value().map(|v| v.to_string());
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", value.is_some());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "aws",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(value)
                     } else {
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", false);
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "aws",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(None)
                     }
                 }
@@ -287,13 +313,19 @@ impl ConfigStoreProvider for AwsParameterStore {
                     if error_msg.contains("ParameterNotFound") {
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", false);
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "aws",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(None)
                     } else {
                         span_clone.record("operation.success", false);
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
                         Err(anyhow::anyhow!(
                             "Failed to get AWS Parameter Store parameter: {e}"

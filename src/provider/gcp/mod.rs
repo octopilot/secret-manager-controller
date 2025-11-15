@@ -103,10 +103,10 @@ impl SecretManager {
             project.id = self.project_id
         );
         let span_clone = span.clone();
-        
+
         async move {
             let start = Instant::now();
-            
+
             // Check if secret already exists
             let secret_name_full = format!("projects/{}/secrets/{}", self.project_id, secret_name);
             let existing_secret = self.get_secret_value(secret_name).await?;
@@ -134,7 +134,8 @@ impl SecretManager {
                         let error_msg = e.to_string();
                         span_clone.record("operation.success", false);
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("gcp");
                         return Err(anyhow::anyhow!(
                             "Failed to create GCP secret {secret_name}: {e}"
@@ -184,7 +185,11 @@ impl SecretManager {
                     span_clone.record("operation.type", operation_type);
                     span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
                     span_clone.record("operation.success", true);
-                    metrics::record_secret_operation("gcp", operation_type, start.elapsed().as_secs_f64());
+                    metrics::record_secret_operation(
+                        "gcp",
+                        operation_type,
+                        start.elapsed().as_secs_f64(),
+                    );
                     Ok(true)
                 }
                 Err(e) => {
@@ -330,10 +335,10 @@ impl SecretManagerProvider for SecretManager {
             project.id = self.project_id
         );
         let span_clone = span.clone();
-        
+
         async move {
             let start = std::time::Instant::now();
-            
+
             // Construct the secret version name: projects/{project}/secrets/{secret}/versions/latest
             let secret_version_name = format!(
                 "projects/{}/secrets/{}/versions/latest",
@@ -358,8 +363,12 @@ impl SecretManagerProvider for SecretManager {
                         let data = payload.data.as_ref();
                         if data.is_empty() {
                             span_clone.record("operation.success", false);
-                            span_clone.record("error.message", "Secret version has no payload data");
-                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                            span_clone
+                                .record("error.message", "Secret version has no payload data");
+                            span_clone.record(
+                                "operation.duration_ms",
+                                start.elapsed().as_millis() as u64,
+                            );
                             metrics::increment_provider_operation_errors("gcp");
                             return Err(anyhow::anyhow!("Secret version has no payload data"));
                         }
@@ -368,17 +377,24 @@ impl SecretManagerProvider for SecretManager {
                         let decoded = general_purpose::STANDARD
                             .decode(data)
                             .context("Failed to decode base64 secret data")?;
-                        let secret_value =
-                            String::from_utf8(decoded).context("Secret value is not valid UTF-8")?;
+                        let secret_value = String::from_utf8(decoded)
+                            .context("Secret value is not valid UTF-8")?;
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", true);
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("gcp", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "gcp",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(Some(secret_value))
                     } else {
                         span_clone.record("operation.success", false);
-                        span_clone.record("error.message", "Secret version response has no payload");
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("error.message", "Secret version response has no payload");
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("gcp");
                         Err(anyhow::anyhow!("Secret version response has no payload"))
                     }
@@ -393,13 +409,19 @@ impl SecretManagerProvider for SecretManager {
                     {
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", false);
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("gcp", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "gcp",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(None)
                     } else {
                         span_clone.record("operation.success", false);
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("gcp");
                         Err(anyhow::anyhow!(
                             "Failed to get GCP secret {secret_name}: {e}"

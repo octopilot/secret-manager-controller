@@ -108,7 +108,7 @@ impl SecretManagerProvider for AwsSecretManager {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             // Check if secret exists
             let secret_exists = self
@@ -131,9 +131,14 @@ impl SecretManagerProvider for AwsSecretManager {
                     .await
                 {
                     Ok(_) => {
-                        metrics::record_secret_operation("aws", "create", start.elapsed().as_secs_f64());
+                        metrics::record_secret_operation(
+                            "aws",
+                            "create",
+                            start.elapsed().as_secs_f64(),
+                        );
                         span_clone.record("operation.type", "create");
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         span_clone.record("operation.success", true);
                         return Ok(true);
                     }
@@ -142,9 +147,12 @@ impl SecretManagerProvider for AwsSecretManager {
                         span_clone.record("operation.success", false);
                         span_clone.record("operation.type", "create");
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
-                        return Err(anyhow::anyhow!("Failed to create AWS secret {secret_name}: {e}"));
+                        return Err(anyhow::anyhow!(
+                            "Failed to create AWS secret {secret_name}: {e}"
+                        ));
                     }
                 }
             } else {
@@ -154,9 +162,14 @@ impl SecretManagerProvider for AwsSecretManager {
                 if let Some(current) = current_value {
                     if current == secret_value {
                         debug!("AWS secret {} unchanged, skipping update", secret_name);
-                        metrics::record_secret_operation("aws", "no_change", start.elapsed().as_secs_f64());
+                        metrics::record_secret_operation(
+                            "aws",
+                            "no_change",
+                            start.elapsed().as_secs_f64(),
+                        );
                         span_clone.record("operation.type", "no_change");
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         span_clone.record("operation.success", true);
                         return Ok(false);
                     }
@@ -173,7 +186,11 @@ impl SecretManagerProvider for AwsSecretManager {
                     .await
                 {
                     Ok(_) => {
-                        metrics::record_secret_operation("aws", "update", start.elapsed().as_secs_f64());
+                        metrics::record_secret_operation(
+                            "aws",
+                            "update",
+                            start.elapsed().as_secs_f64(),
+                        );
                         "update"
                     }
                     Err(e) => {
@@ -181,9 +198,12 @@ impl SecretManagerProvider for AwsSecretManager {
                         span_clone.record("operation.success", false);
                         span_clone.record("operation.type", "update");
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
-                        return Err(anyhow::anyhow!("Failed to update AWS secret {secret_name}: {e}"));
+                        return Err(anyhow::anyhow!(
+                            "Failed to update AWS secret {secret_name}: {e}"
+                        ));
                     }
                 }
             };
@@ -205,7 +225,7 @@ impl SecretManagerProvider for AwsSecretManager {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             match self
                 .client
@@ -228,14 +248,25 @@ impl SecretManagerProvider for AwsSecretManager {
                         Some(v) => {
                             span_clone.record("operation.success", true);
                             span_clone.record("operation.found", true);
-                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                            metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                            span_clone.record(
+                                "operation.duration_ms",
+                                start.elapsed().as_millis() as u64,
+                            );
+                            metrics::record_secret_operation(
+                                "aws",
+                                "get",
+                                start.elapsed().as_secs_f64(),
+                            );
                             Ok(Some(v))
                         }
                         None => {
                             span_clone.record("operation.success", false);
-                            span_clone.record("error.message", "Secret has no string or binary value");
-                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                            span_clone
+                                .record("error.message", "Secret has no string or binary value");
+                            span_clone.record(
+                                "operation.duration_ms",
+                                start.elapsed().as_millis() as u64,
+                            );
                             metrics::increment_provider_operation_errors("aws");
                             Err(anyhow::anyhow!("Secret has no string or binary value"))
                         }
@@ -246,13 +277,19 @@ impl SecretManagerProvider for AwsSecretManager {
                     if error_msg.contains("ResourceNotFoundException") {
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", false);
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
-                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation(
+                            "aws",
+                            "get",
+                            start.elapsed().as_secs_f64(),
+                        );
                         Ok(None)
                     } else {
                         span_clone.record("operation.success", false);
                         span_clone.record("error.message", error_msg.clone());
-                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone
+                            .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
                         Err(anyhow::anyhow!("Failed to get AWS secret: {e}"))
                     }

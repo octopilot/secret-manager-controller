@@ -264,7 +264,7 @@ impl Reconciler {
     ) -> Result<Action, ReconcilerError> {
         let start = Instant::now();
         let name = config.metadata.name.as_deref().unwrap_or("unknown");
-        
+
         // Create OpenTelemetry span for this reconciliation
         // This provides distributed tracing when Datadog/OTel is configured
         // The span will automatically be exported to Datadog if configured
@@ -896,10 +896,12 @@ impl Reconciler {
                 // Reset any parsing error count by clearing the annotation if it exists
                 // This resets backoff when parsing succeeds again for this specific resource
                 let _ = ctx.clear_parsing_error_count(&config).await;
-                
+
                 debug!(
                     "Requeueing reconciliation for {} after {}s (reconcileInterval: {})",
-                    name, duration.as_secs(), config.spec.reconcile_interval
+                    name,
+                    duration.as_secs(),
+                    config.spec.reconcile_interval
                 );
                 Ok(Action::requeue(duration))
             }
@@ -908,21 +910,23 @@ impl Reconciler {
                 // Each resource tracks its own error count independently via annotations
                 // Track parsing errors in metrics and use Fibonacci backoff (1m -> 1m -> 2m -> 3m -> 5m -> ... -> 60m max)
                 observability::metrics::increment_duration_parsing_errors();
-                
+
                 // Get current parsing error count for THIS resource from its annotations
                 // Each resource maintains its own error count, so resources don't affect each other
                 let error_count = Reconciler::get_parsing_error_count(&config);
                 let backoff_duration = Reconciler::calculate_progressive_backoff(error_count);
-                
+
                 // Update error count in THIS resource's annotations for next reconciliation
                 // This persists the error count across controller restarts, per resource
-                let _ = ctx.increment_parsing_error_count(&config, error_count).await;
-                
+                let _ = ctx
+                    .increment_parsing_error_count(&config, error_count)
+                    .await;
+
                 error!(
                     "Failed to parse reconcileInterval '{}' for resource {}: {}. Using Fibonacci backoff: {}s (error count: {})",
                     config.spec.reconcile_interval, name, e, backoff_duration.as_secs(), error_count + 1
                 );
-                
+
                 Ok(Action::requeue(backoff_duration))
             }
         }
@@ -947,7 +951,7 @@ impl Reconciler {
         );
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         async move {
             let ar = ApiResource::from_gvk(&kube::core::GroupVersionKind {
                 group: "source.toolkit.fluxcd.io".to_string(),
@@ -1142,7 +1146,7 @@ impl Reconciler {
         let span_clone_for_match = span.clone();
         let span_clone = span.clone();
         let start = Instant::now();
-        
+
         let clone_result = async move {
             info!(
                 "Cloning ArgoCD repository: {} (revision: {})",
@@ -1230,15 +1234,16 @@ impl Reconciler {
                     ));
                 }
             }
-            
+
             Ok(())
         }
         .instrument(span)
         .await;
-        
+
         match clone_result {
             Ok(_) => {
-                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match
+                    .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                 span_clone_for_match.record("operation.success", true);
                 observability::metrics::increment_git_clone_total();
                 observability::metrics::observe_git_clone_duration(start.elapsed().as_secs_f64());
@@ -1249,7 +1254,8 @@ impl Reconciler {
                 Ok(path_buf_for_match)
             }
             Err(e) => {
-                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match
+                    .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                 span_clone_for_match.record("operation.success", false);
                 Err(e)
             }
@@ -1274,13 +1280,10 @@ impl Reconciler {
             .prefix
             .as_deref()
             .unwrap_or(&app_files.service_name);
-        let span = info_span!(
-            "files.process",
-            service.name = service_name
-        );
+        let span = info_span!("files.process", service.name = service_name);
         let span_clone_for_match = span.clone();
         let start = Instant::now();
-        
+
         let result = async move {
             let secret_prefix = service_name;
 
@@ -1489,20 +1492,22 @@ impl Reconciler {
         }
         .instrument(span)
         .await;
-        
+
         match &result {
             Ok(count) => {
                 span_clone_for_match.record("files.count", *count as u64);
-                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match
+                    .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                 span_clone_for_match.record("operation.success", true);
             }
             Err(e) => {
-                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match
+                    .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                 span_clone_for_match.record("operation.success", false);
                 span_clone_for_match.record("error.message", e.to_string());
             }
         }
-        
+
         result
     }
 
@@ -1564,11 +1569,12 @@ impl Reconciler {
 
         // CRITICAL: Check if status actually changed before updating
         // This prevents unnecessary status updates that trigger watch events
-        let current_phase = config.status.as_ref()
-            .and_then(|s| s.phase.as_deref());
-        let current_description = config.status.as_ref()
+        let current_phase = config.status.as_ref().and_then(|s| s.phase.as_deref());
+        let current_description = config
+            .status
+            .as_ref()
             .and_then(|s| s.description.as_deref());
-        
+
         // Only update if phase or description actually changed
         if current_phase == Some(phase) && current_description == message.as_deref() {
             debug!(
@@ -1632,19 +1638,19 @@ impl Reconciler {
         // Fibonacci sequence for backoff (in minutes): 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, then cap at 60
         // This provides exponential growth that naturally slows down as errors accumulate
         let backoff_minutes = match error_count {
-            0 => 1,   // First error: 1 minute
-            1 => 1,   // Second error: 1 minute
-            2 => 2,   // Third error: 2 minutes
-            3 => 3,   // Fourth error: 3 minutes
-            4 => 5,   // Fifth error: 5 minutes
-            5 => 8,   // Sixth error: 8 minutes
-            6 => 13,  // Seventh error: 13 minutes
-            7 => 21,  // Eighth error: 21 minutes
-            8 => 34,  // Ninth error: 34 minutes
-            9 => 55,  // Tenth error: 55 minutes
-            _ => 60,  // Eleventh+ error: 60 minutes (1 hour max)
+            0 => 1,  // First error: 1 minute
+            1 => 1,  // Second error: 1 minute
+            2 => 2,  // Third error: 2 minutes
+            3 => 3,  // Fourth error: 3 minutes
+            4 => 5,  // Fifth error: 5 minutes
+            5 => 8,  // Sixth error: 8 minutes
+            6 => 13, // Seventh error: 13 minutes
+            7 => 21, // Eighth error: 21 minutes
+            8 => 34, // Ninth error: 34 minutes
+            9 => 55, // Tenth error: 55 minutes
+            _ => 60, // Eleventh+ error: 60 minutes (1 hour max)
         };
-        
+
         std::time::Duration::from_secs(backoff_minutes * 60)
     }
 
@@ -1704,10 +1710,7 @@ impl Reconciler {
     /// Clear parsing error count from resource annotations
     /// Called when parsing succeeds to reset the backoff for THIS resource
     /// Each resource's error count is cleared independently
-    async fn clear_parsing_error_count(
-        &self,
-        config: &SecretManagerConfig,
-    ) -> Result<()> {
+    async fn clear_parsing_error_count(&self, config: &SecretManagerConfig) -> Result<()> {
         use kube::api::PatchParams;
 
         // Each resource is patched individually, so clearing is per-resource
@@ -1744,10 +1747,7 @@ impl Reconciler {
     /// Clear manual trigger annotation after reconciliation completes
     /// This prevents the annotation from triggering repeated reconciliations
     /// Called after successful reconciliation when manual trigger was detected
-    async fn clear_manual_trigger_annotation(
-        &self,
-        config: &SecretManagerConfig,
-    ) -> Result<()> {
+    async fn clear_manual_trigger_annotation(&self, config: &SecretManagerConfig) -> Result<()> {
         use kube::api::PatchParams;
 
         let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
@@ -1781,11 +1781,7 @@ impl Reconciler {
     /// Suspend or resume GitRepository pulls
     /// Patches the FluxCD GitRepository resource to control Git pulls independently from reconciliation
     /// When suspended, FluxCD stops fetching new commits but the last artifact remains available
-    async fn suspend_git_repository(
-        &self,
-        source_ref: &SourceRef,
-        suspend: bool,
-    ) -> Result<()> {
+    async fn suspend_git_repository(&self, source_ref: &SourceRef, suspend: bool) -> Result<()> {
         use kube::api::{ApiResource, Patch, PatchParams};
         use kube::core::DynamicObject;
 
@@ -1872,11 +1868,9 @@ impl Reconciler {
 
         // CRITICAL: Check if status actually changed before updating
         // This prevents unnecessary status updates that trigger watch events
-        let current_phase = config.status.as_ref()
-            .and_then(|s| s.phase.as_deref());
-        let current_secrets_synced = config.status.as_ref()
-            .and_then(|s| s.secrets_synced);
-        
+        let current_phase = config.status.as_ref().and_then(|s| s.phase.as_deref());
+        let current_secrets_synced = config.status.as_ref().and_then(|s| s.secrets_synced);
+
         // Only update if phase changed (not Ready) or secrets_synced count changed
         if current_phase == Some("Ready") && current_secrets_synced == Some(secrets_synced) {
             debug!(
@@ -1962,20 +1956,31 @@ impl Reconciler {
         let number_str = captures
             .name("number")
             .ok_or_else(|| {
-                anyhow::anyhow!("Failed to extract number from duration '{}'", duration_trimmed)
+                anyhow::anyhow!(
+                    "Failed to extract number from duration '{}'",
+                    duration_trimmed
+                )
             })?
             .as_str();
 
         let unit = captures
             .name("unit")
             .ok_or_else(|| {
-                anyhow::anyhow!("Failed to extract unit from duration '{}'", duration_trimmed)
+                anyhow::anyhow!(
+                    "Failed to extract unit from duration '{}'",
+                    duration_trimmed
+                )
             })?
             .as_str();
 
         // Parse number safely
         let number: u64 = number_str.parse().map_err(|e| {
-            anyhow::anyhow!("Invalid duration number '{}' in '{}': {}", number_str, duration_trimmed, e)
+            anyhow::anyhow!(
+                "Invalid duration number '{}' in '{}': {}",
+                number_str,
+                duration_trimmed,
+                e
+            )
         })?;
 
         if number == 0 {
