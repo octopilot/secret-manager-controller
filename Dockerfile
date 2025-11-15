@@ -4,7 +4,7 @@
 
 # Stage 1: Build the Rust binary
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM rust:1.75-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.82-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -28,7 +28,7 @@ RUN cargo build --release --bin secret-manager-controller
 
 # Stage 2: Runtime image
 ARG TARGETPLATFORM=linux/amd64
-FROM --platform=${TARGETPLATFORM} debian:bookworm-slim
+FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 
 # Install runtime dependencies
 # git: Required for ArgoCD support (cloning repositories)
