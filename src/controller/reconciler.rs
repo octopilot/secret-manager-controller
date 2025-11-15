@@ -38,7 +38,7 @@ use regex::Regex;
 use std::path::PathBuf;
 use std::time::Instant;
 use thiserror::Error;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Construct secret name with prefix, key, and suffix
 /// Matches kustomize-google-secret-manager naming convention for drop-in replacement
@@ -800,7 +800,47 @@ impl Reconciler {
             "✅ Reconciliation complete for {}: {} secrets synced successfully",
             name, secrets_synced
         );
-        Ok(Action::await_change())
+
+        // Honor the reconcile interval from the resource spec
+        // Each resource has its own reconcileInterval and maintains its own error count
+        // Parse the reconcile interval and requeue after that duration
+        // This ensures we don't reconcile more frequently than specified per resource
+        match Self::parse_kubernetes_duration(&config.spec.reconcile_interval) {
+            Ok(duration) => {
+                // Successfully parsed - use the specified interval for THIS resource
+                // Reset any parsing error count by clearing the annotation if it exists
+                // This resets backoff when parsing succeeds again for this specific resource
+                let _ = ctx.clear_parsing_error_count(&config).await;
+                
+                debug!(
+                    "Requeueing reconciliation for {} after {}s (reconcileInterval: {})",
+                    name, duration.as_secs(), config.spec.reconcile_interval
+                );
+                Ok(Action::requeue(duration))
+            }
+            Err(e) => {
+                // Parsing failed for THIS resource - use Fibonacci-based progressive backoff
+                // Each resource tracks its own error count independently via annotations
+                // Track parsing errors in metrics and use Fibonacci backoff (1m -> 1m -> 2m -> 3m -> 5m -> ... -> 60m max)
+                observability::metrics::increment_duration_parsing_errors();
+                
+                // Get current parsing error count for THIS resource from its annotations
+                // Each resource maintains its own error count, so resources don't affect each other
+                let error_count = Reconciler::get_parsing_error_count(&config);
+                let backoff_duration = Reconciler::calculate_progressive_backoff(error_count);
+                
+                // Update error count in THIS resource's annotations for next reconciliation
+                // This persists the error count across controller restarts, per resource
+                let _ = ctx.increment_parsing_error_count(&config, error_count).await;
+                
+                error!(
+                    "Failed to parse reconcileInterval '{}' for resource {}: {}. Using Fibonacci backoff: {}s (error count: {})",
+                    config.spec.reconcile_interval, name, e, backoff_duration.as_secs(), error_count + 1
+                );
+                
+                Ok(Action::requeue(backoff_duration))
+            }
+        }
     }
 
     /// Get FluxCD GitRepository resource
@@ -1405,6 +1445,123 @@ impl Reconciler {
         Ok(())
     }
 
+    /// Calculate progressive backoff duration based on error count using Fibonacci sequence
+    /// Fibonacci backoff: 1m -> 1m -> 2m -> 3m -> 5m -> 8m -> 13m -> 21m -> 34m -> 55m -> 60m (1 hour max)
+    /// This prevents controller overload when parsing errors occur
+    /// Each resource maintains its own error count independently
+    fn calculate_progressive_backoff(error_count: u32) -> std::time::Duration {
+        // Fibonacci sequence for backoff (in minutes): 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, then cap at 60
+        // This provides exponential growth that naturally slows down as errors accumulate
+        let backoff_minutes = match error_count {
+            0 => 1,   // First error: 1 minute
+            1 => 1,   // Second error: 1 minute
+            2 => 2,   // Third error: 2 minutes
+            3 => 3,   // Fourth error: 3 minutes
+            4 => 5,   // Fifth error: 5 minutes
+            5 => 8,   // Sixth error: 8 minutes
+            6 => 13,  // Seventh error: 13 minutes
+            7 => 21,  // Eighth error: 21 minutes
+            8 => 34,  // Ninth error: 34 minutes
+            9 => 55,  // Tenth error: 55 minutes
+            _ => 60,  // Eleventh+ error: 60 minutes (1 hour max)
+        };
+        
+        std::time::Duration::from_secs(backoff_minutes * 60)
+    }
+
+    /// Get parsing error count from resource annotations
+    /// Each resource maintains its own error count independently
+    /// Returns the current error count for THIS resource or 0 if not set
+    fn get_parsing_error_count(config: &SecretManagerConfig) -> u32 {
+        // Each resource has its own annotations, so error counts are per-resource
+        config
+            .metadata
+            .annotations
+            .as_ref()
+            .and_then(|ann| {
+                ann.get("secret-management.microscaler.io/duration-parsing-errors")
+                    .and_then(|v| v.parse::<u32>().ok())
+            })
+            .unwrap_or(0)
+    }
+
+    /// Increment parsing error count in resource annotations
+    /// Each resource maintains its own error count independently
+    /// This persists the error count across reconciliations and controller restarts
+    async fn increment_parsing_error_count(
+        &self,
+        config: &SecretManagerConfig,
+        current_count: u32,
+    ) -> Result<()> {
+        use kube::api::PatchParams;
+
+        // Each resource is patched individually, so error counts are per-resource
+        let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
+            self.client.clone(),
+            config.metadata.namespace.as_deref().unwrap_or("default"),
+        );
+
+        let new_count = current_count + 1;
+        let patch = serde_json::json!({
+            "metadata": {
+                "annotations": {
+                    "secret-management.microscaler.io/duration-parsing-errors": new_count.to_string()
+                }
+            }
+        });
+
+        // Patch THIS specific resource's annotations
+        // Other resources are unaffected
+        api.patch(
+            config.metadata.name.as_deref().unwrap_or("unknown"),
+            &PatchParams::apply("secret-manager-controller"),
+            &kube::api::Patch::Merge(patch),
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    /// Clear parsing error count from resource annotations
+    /// Called when parsing succeeds to reset the backoff for THIS resource
+    /// Each resource's error count is cleared independently
+    async fn clear_parsing_error_count(
+        &self,
+        config: &SecretManagerConfig,
+    ) -> Result<()> {
+        use kube::api::PatchParams;
+
+        // Each resource is patched individually, so clearing is per-resource
+        let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
+            self.client.clone(),
+            config.metadata.namespace.as_deref().unwrap_or("default"),
+        );
+
+        // Only clear if annotation exists for THIS resource
+        if let Some(ann) = &config.metadata.annotations {
+            if ann.contains_key("secret-management.microscaler.io/duration-parsing-errors") {
+                let patch = serde_json::json!({
+                    "metadata": {
+                        "annotations": {
+                            "secret-management.microscaler.io/duration-parsing-errors": null
+                        }
+                    }
+                });
+
+                // Clear annotation for THIS specific resource only
+                // Other resources' error counts remain unchanged
+                api.patch(
+                    config.metadata.name.as_deref().unwrap_or("unknown"),
+                    &PatchParams::apply("secret-manager-controller"),
+                    &kube::api::Patch::Merge(patch),
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn update_status(&self, config: &SecretManagerConfig, secrets_synced: i32) -> Result<()> {
         use kube::api::PatchParams;
 
@@ -1464,6 +1621,80 @@ impl Reconciler {
     /// * `field_name` - Name of the field for error messages
     /// * `min_seconds` - Minimum allowed duration in seconds
     ///
+    /// Parse Kubernetes duration string into std::time::Duration
+    /// Supports formats: "30s", "1m", "5m", "1h", "2h", "1d"
+    /// Returns Duration or error if format is invalid
+    fn parse_kubernetes_duration(duration_str: &str) -> Result<std::time::Duration> {
+        let duration_trimmed = duration_str.trim();
+
+        if duration_trimmed.is_empty() {
+            return Err(anyhow::anyhow!("Duration string cannot be empty"));
+        }
+
+        // Regex pattern for Kubernetes duration format
+        // Matches: <number><unit> where:
+        //   - number: one or more digits
+        //   - unit: s, m, h, d (case insensitive)
+        let duration_regex = Regex::new(r"^(?P<number>\d+)(?P<unit>[smhd])$")
+            .map_err(|e| anyhow::anyhow!("Failed to compile regex: {e}"))?;
+
+        // Match against trimmed, lowercase version
+        let interval_lower = duration_trimmed.to_lowercase();
+
+        let captures = duration_regex
+            .captures(&interval_lower)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid duration format '{}'. Expected format: <number><unit> (e.g., '1m', '5m', '1h')",
+                    duration_trimmed
+                )
+            })?;
+
+        // Extract number and unit from regex captures
+        let number_str = captures
+            .name("number")
+            .ok_or_else(|| {
+                anyhow::anyhow!("Failed to extract number from duration '{}'", duration_trimmed)
+            })?
+            .as_str();
+
+        let unit = captures
+            .name("unit")
+            .ok_or_else(|| {
+                anyhow::anyhow!("Failed to extract unit from duration '{}'", duration_trimmed)
+            })?
+            .as_str();
+
+        // Parse number safely
+        let number: u64 = number_str.parse().map_err(|e| {
+            anyhow::anyhow!("Invalid duration number '{}' in '{}': {}", number_str, duration_trimmed, e)
+        })?;
+
+        if number == 0 {
+            return Err(anyhow::anyhow!(
+                "Duration number must be greater than 0, got '{}'",
+                duration_trimmed
+            ));
+        }
+
+        // Convert to seconds based on unit
+        let seconds = match unit {
+            "s" => number,
+            "m" => number * 60,
+            "h" => number * 3600,
+            "d" => number * 86400,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Invalid unit '{}' in duration '{}'. Expected: s, m, h, or d",
+                    unit,
+                    duration_trimmed
+                ));
+            }
+        };
+
+        Ok(std::time::Duration::from_secs(seconds))
+    }
+
     /// # Returns
     /// * `Ok(())` if valid
     /// * `Err` with descriptive error message if invalid
@@ -1479,72 +1710,20 @@ impl Reconciler {
             return Err(anyhow::anyhow!("{field_name} cannot be empty"));
         }
 
-        // Regex pattern for Kubernetes duration format
-        // Matches: <number><unit> where:
-        //   - number: one or more digits
-        //   - unit: s, m, h, d (case insensitive)
-        // Examples: "1m", "5m", "1h", "30m", "2h", "1d"
-        // Does NOT match: "30s" (if min_seconds >= 60), "abc", "1", "m", etc.
-        let duration_regex = Regex::new(r"^(?P<number>\d+)(?P<unit>[smhd])$")
-            .map_err(|e| anyhow::anyhow!("Failed to compile regex: {e}"))?;
+        // Parse the duration to validate format
+        let duration = Self::parse_kubernetes_duration(interval_trimmed)?;
 
-        // Match against trimmed, lowercase version
-        let interval_lower = interval_trimmed.to_lowercase();
-
-        let captures = duration_regex.captures(&interval_lower)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Invalid duration format '{interval_trimmed}': must match pattern <number><unit> where unit is s, m, h, or d (e.g., '1m', '5m', '1h')"
-            ))?;
-
-        // Extract number and unit from regex captures
-        let number_str = captures
-            .name("number")
-            .ok_or_else(|| {
-                anyhow::anyhow!("Failed to extract number from duration '{interval_trimmed}'")
-            })?
-            .as_str();
-
-        let unit = captures
-            .name("unit")
-            .ok_or_else(|| {
-                anyhow::anyhow!("Failed to extract unit from duration '{interval_trimmed}'")
-            })?
-            .as_str();
-
-        // Parse number safely
-        let number: u64 = number_str.parse().map_err(|e| {
-            anyhow::anyhow!("Invalid duration number '{number_str}' in '{interval_trimmed}': {e}")
-        })?;
-
-        if number == 0 {
-            return Err(anyhow::anyhow!(
-                "Duration number must be greater than 0, got '{interval_trimmed}'"
-            ));
-        }
-
-        // Convert to seconds based on unit
-        let seconds = match unit {
-            "s" => number,
-            "m" => number * 60,
-            "h" => number * 3600,
-            "d" => number * 86400,
-            _ => {
-                // This should never happen due to regex, but handle it safely
-                return Err(anyhow::anyhow!(
-                    "Invalid duration unit '{unit}' in '{interval_trimmed}': expected s, m, h, or d"
-                ));
-            }
-        };
-
-        // Enforce minimum
-        if seconds < min_seconds {
+        // Check minimum duration
+        if duration.as_secs() < min_seconds {
             let min_duration = if min_seconds == 60 {
                 "1 minute (60 seconds)"
             } else {
                 &format!("{min_seconds} seconds")
             };
             return Err(anyhow::anyhow!(
-                "{field_name} must be at least {min_duration} to avoid API rate limits. Got: '{interval_trimmed}' ({seconds} seconds)"
+                "{field_name} must be at least {min_duration} to avoid API rate limits. Got: '{}' ({} seconds)",
+                interval_trimmed,
+                duration.as_secs()
             ));
         }
 

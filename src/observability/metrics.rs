@@ -94,6 +94,14 @@ static GCP_SECRET_MANAGER_OPERATION_DURATION: LazyLock<Histogram> = LazyLock::ne
     )
 });
 
+static DURATION_PARSING_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_duration_parsing_errors_total",
+        "Total number of duration parsing errors (reconcileInterval parsing failures)",
+    )
+    .expect("Failed to create DURATION_PARSING_ERRORS_TOTAL metric - this should never happen")
+});
+
 #[allow(
     clippy::missing_errors_doc,
     reason = "Error documentation is provided in doc comments"
@@ -107,6 +115,7 @@ pub fn register_metrics() -> Result<()> {
     REGISTRY.register(Box::new(SECRETS_MANAGED.clone()))?;
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATIONS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATION_DURATION.clone()))?;
+    REGISTRY.register(Box::new(DURATION_PARSING_ERRORS_TOTAL.clone()))?;
 
     Ok(())
 }
@@ -153,4 +162,8 @@ pub fn record_secret_operation(_provider: &str, _operation: &str, duration: f64)
     // In the future, we might want provider-specific metrics
     GCP_SECRET_MANAGER_OPERATIONS_TOTAL.inc();
     GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
+}
+
+pub fn increment_duration_parsing_errors() {
+    DURATION_PARSING_ERRORS_TOTAL.inc();
 }

@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -45,18 +45,18 @@ def main():
             path.unlink()
     
     # Clean Cargo build artifacts
+    # Note: cargo clean doesn't support --bin flag, so we clean the entire package/target
     print("🧹 Cleaning Cargo build artifacts...")
     clean_commands = [
         ["cargo", "clean", "-p", "secret-manager-controller", "--target", "x86_64-unknown-linux-musl"],
-        ["cargo", "clean", "-p", "secret-manager-controller", "--bin", "crdgen", "--target", "x86_64-unknown-linux-musl"],
-        ["cargo", "clean", "-p", "secret-manager-controller", "--bin", "crdgen"],
+        ["cargo", "clean", "-p", "secret-manager-controller"],  # Clean native target as well
     ]
     for cmd in clean_commands:
         run_command(cmd, check=False)
     
     # Generate fresh timestamp for this build
     build_timestamp = str(int(time.time()))
-    build_datetime = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    build_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     
     # Get git hash
     try:
