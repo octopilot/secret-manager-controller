@@ -39,7 +39,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub mod controller;
 pub mod observability;
@@ -123,6 +123,20 @@ pub struct SecretManagerConfigSpec {
     /// Default: true (enabled)
     #[serde(default = "default_true")]
     pub trigger_update: bool,
+    /// Suspend reconciliation
+    /// When true, the controller will skip reconciliation for this resource
+    /// Useful for troubleshooting or during intricate CI/CD transitions where secrets need to be carefully managed
+    /// Manual reconciliation via msmctl will also be blocked when suspended
+    /// Default: false (reconciliation enabled)
+    #[serde(default = "default_false")]
+    pub suspend: bool,
+    /// Suspend GitRepository pulls
+    /// When true, suspends Git pulls from the referenced GitRepository but continues reconciliation with the last pulled commit
+    /// This is useful when you want to freeze the Git state but keep syncing secrets from the current commit
+    /// The controller will automatically patch the GitRepository resource to set suspend: true/false
+    /// Default: false (Git pulls enabled)
+    #[serde(default = "default_false")]
+    pub suspend_git_pulls: bool,
 }
 
 /// Cloud provider configuration
@@ -461,6 +475,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_false() -> bool {
+    false
+}
+
 /// Status of the SecretManagerConfig resource
 ///
 /// Tracks reconciliation state, errors, and metrics.
@@ -528,6 +546,7 @@ async fn main() -> Result<()> {
         observability::otel::init_otel(None).context("Failed to initialize OpenTelemetry")?;
 
     // If Otel wasn't initialized, use standard tracing subscriber
+    // When Datadog is configured, datadog-opentelemetry sets up the tracing subscriber automatically
     if otel_tracer_provider.is_none() {
         tracing_subscriber::fmt()
             .with_env_filter(
@@ -535,6 +554,21 @@ async fn main() -> Result<()> {
                     .unwrap_or_else(|_| "secret_manager_controller=info".into()),
             )
             .init();
+    } else {
+        // When Otel is initialized, we still need to set up the tracing subscriber
+        // datadog-opentelemetry handles this automatically, but we ensure env filter is applied
+        // The tracing-opentelemetry layer is already set up by datadog-opentelemetry
+        if let Err(e) = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "secret_manager_controller=info".into()),
+            )
+            .try_init()
+        {
+            // If init fails, it might already be initialized by datadog-opentelemetry
+            // This is fine - datadog-opentelemetry sets up its own subscriber
+            warn!("Tracing subscriber init returned error (may already be initialized by Datadog): {}", e);
+        }
     }
 
     info!("Starting Secret Manager Controller v2");
@@ -610,21 +644,116 @@ async fn main() -> Result<()> {
     // This allows developers to deploy SecretManagerConfig resources in any namespace
     let configs: Api<SecretManagerConfig> = Api::all(client.clone());
 
-    // Check if CRD is queryable before starting the controller
-    // This ensures the CRD is installed and the controller can watch for resources
-    match configs.list(&ListParams::default().limit(1)).await {
+    // Create reconciler context
+    let reconciler = Arc::new(Reconciler::new(client.clone()).await?);
+
+    // Check if CRD is queryable and reconcile existing resources before starting the watch
+    // This ensures existing resources are reconciled when the controller starts
+    // CRITICAL: Without this, resources created before controller deployment won't be reconciled
+    let existing_resources_span = tracing::span!(
+        tracing::Level::INFO,
+        "controller.startup.reconcile_existing",
+        operation = "reconcile_existing_resources"
+    );
+    let _guard = existing_resources_span.enter();
+    
+    match configs.list(&ListParams::default()).await {
         Ok(list) => {
-            info!("CRD is queryable, starting controller watch");
-            info!(
-                "Found {} existing SecretManagerConfig resources",
-                list.items.len()
-            );
-            for item in &list.items {
-                info!(
-                    "  - {} in namespace {}",
-                    item.metadata.name.as_deref().unwrap_or("unknown"),
-                    item.metadata.namespace.as_deref().unwrap_or("default")
-                );
+            info!("CRD is queryable, found {} existing SecretManagerConfig resources", list.items.len());
+            
+            if !list.items.is_empty() {
+                // Tabulate resources by namespace for operations visibility
+                use std::collections::HashMap;
+                let mut resources_by_namespace: HashMap<String, Vec<String>> = HashMap::new();
+                
+                for item in &list.items {
+                    let namespace = item.metadata.namespace.as_deref().unwrap_or("default").to_string();
+                    let name = item.metadata.name.as_deref().unwrap_or("unknown").to_string();
+                    resources_by_namespace
+                        .entry(namespace)
+                        .or_insert_with(Vec::new)
+                        .push(name);
+                }
+                
+                // Sort namespaces for consistent output
+                let mut sorted_namespaces: Vec<_> = resources_by_namespace.keys().collect();
+                sorted_namespaces.sort();
+                
+                // Output startup summary table
+                info!("");
+                info!("╔════════════════════════════════════════════════════════════════════════════╗");
+                info!("║              Secret Manager Controller - Startup Resource Summary         ║");
+                info!("╠════════════════════════════════════════════════════════════════════════════╣");
+                info!("║ Resource Kind: SecretManagerConfig                                        ║");
+                info!("║ Total Resources: {:<58} ║", list.items.len());
+                info!("║ Namespaces: {:<62} ║", resources_by_namespace.len());
+                info!("╠════════════════════════════════════════════════════════════════════════════╣");
+                
+                for (idx, namespace) in sorted_namespaces.iter().enumerate() {
+                    let resources = resources_by_namespace.get(*namespace).unwrap();
+                    let namespace_display = if **namespace == "default" { 
+                        format!("{} (default)", namespace) 
+                    } else { 
+                        (*namespace).clone() 
+                    };
+                    
+                    // Sort resource names within each namespace for consistent output
+                    let mut sorted_resources = resources.clone();
+                    sorted_resources.sort();
+                    
+                    info!("║ Namespace: {:<66} ║", namespace_display);
+                    info!("║   Resources ({:2}): {:<60} ║", 
+                        sorted_resources.len(),
+                        if sorted_resources.len() <= 3 {
+                            sorted_resources.join(", ")
+                        } else {
+                            format!("{}, ... ({} total)", sorted_resources[..3].join(", "), sorted_resources.len())
+                        }
+                    );
+                    
+                    if idx < sorted_namespaces.len() - 1 {
+                        info!("╠════════════════════════════════════════════════════════════════════════════╣");
+                    }
+                }
+                
+                info!("╚════════════════════════════════════════════════════════════════════════════╝");
+                info!("");
+                info!("Reconciling {} existing SecretManagerConfig resources before starting watch...", list.items.len());
+                
+                // Explicitly reconcile each existing resource
+                // This ensures resources created before controller deployment are processed
+                for item in &list.items {
+                    let name = item.metadata.name.as_deref().unwrap_or("unknown");
+                    let namespace = item.metadata.namespace.as_deref().unwrap_or("default");
+                    
+                    info!("Reconciling existing resource: {} in namespace {}", name, namespace);
+                    
+                    // Create a reconciliation span for each resource
+                    let resource_span = tracing::span!(
+                        tracing::Level::INFO,
+                        "controller.startup.reconcile_resource",
+                        resource.name = name,
+                        resource.namespace = namespace,
+                        resource.kind = "SecretManagerConfig"
+                    );
+                    let _resource_guard = resource_span.enter();
+                    
+                    match Reconciler::reconcile(Arc::new(item.clone()), reconciler.clone()).await {
+                        Ok(_action) => {
+                            info!("Successfully reconciled existing resource: {} in namespace {}", name, namespace);
+                            info!(resource.name = name, resource.namespace = namespace, "reconciliation.success");
+                        }
+                        Err(e) => {
+                            error!("Failed to reconcile existing resource {} in namespace {}: {}", name, namespace, e);
+                            error!(resource.name = name, resource.namespace = namespace, error = %e, "reconciliation.error");
+                            // Continue with other resources even if one fails
+                        }
+                    }
+                }
+                
+                info!("Completed reconciliation of {} existing resources", list.items.len());
+            } else {
+                info!("No existing SecretManagerConfig resources found, watch will pick up new resources");
             }
         }
         Err(e) => {
@@ -632,11 +761,9 @@ async fn main() -> Result<()> {
             error!("Installation: kubectl apply -f config/crd/secretmanagerconfig.yaml");
             // Don't exit - let the controller start and it will handle the error gracefully
             warn!("Continuing despite CRD queryability check failure - controller will retry");
+                            warn!(error = %e, "CRD queryability check failed");
         }
     }
-
-    // Create reconciler context
-    let reconciler = Arc::new(Reconciler::new(client.clone()).await?);
 
     // Server is already marked as ready by start_server() once it binds
     // This ensures readiness probes pass before we start reconciling
@@ -678,21 +805,132 @@ async fn main() -> Result<()> {
         }
 
         let backoff_clone = backoff_duration_ms.clone();
+        let watch_span = tracing::span!(
+            tracing::Level::INFO,
+            "controller.watch",
+            operation = "watch_loop"
+        );
+        let _watch_guard = watch_span.enter();
+        
+        info!("Starting controller watch loop...");
         let controller_future = Controller::new(configs.clone(), watcher::Config::default().any_semantic())
             .shutdown_on_signal()
             .run(
                 |obj, ctx| {
                     let reconciler = ctx.clone();
+                    let name = obj.metadata.name.as_deref().unwrap_or("unknown").to_string();
+                    let namespace = obj.metadata.namespace.as_deref().unwrap_or("default").to_string();
+                    let resource_version = obj.metadata.resource_version.as_deref().unwrap_or("unknown").to_string();
+                    let generation = obj.metadata.generation.unwrap_or(0);
+                    let observed_generation = obj.status.as_ref()
+                        .and_then(|s| s.observed_generation)
+                        .unwrap_or(0);
+                    
+                    // Create span for each reconciliation triggered by watch
+                    let reconcile_span = tracing::span!(
+                        tracing::Level::INFO,
+                        "controller.watch.reconcile",
+                        resource.name = name.as_str(),
+                        resource.namespace = namespace.as_str(),
+                        resource.version = resource_version.as_str(),
+                        resource.generation = generation,
+                        resource.observed_generation = observed_generation,
+                        event.r#type = "watch_triggered"
+                    );
+                    let _reconcile_guard = reconcile_span.enter();
+                    
                     async move {
-                        info!("Reconciling SecretManagerConfig: {}",
-obj.metadata.name.as_deref().unwrap_or("unknown"));
-                        Reconciler::reconcile(obj, reconciler.clone()).await
+                        // CRITICAL: Check if reconciliation is suspended BEFORE any other checks
+                        // Suspended resources skip reconciliation entirely, even for manual triggers
+                        // This check happens early to avoid unnecessary processing
+                        if obj.spec.suspend {
+                            debug!(
+                                resource.name = name.as_str(),
+                                resource.namespace = namespace.as_str(),
+                                "Skipping reconciliation - resource is suspended"
+                            );
+                            // Return Action::await_change() to wait for suspend to be cleared
+                            // The reconciler will update status to Suspended
+                            return Ok(Action::await_change());
+                        }
+                        
+                        // Check if this is a manual reconciliation trigger (via msmctl annotation)
+                        // Manual triggers should always be honored, even if generation hasn't changed
+                        let is_manual_trigger = obj.metadata.annotations.as_ref()
+                            .and_then(|ann| ann.get("secret-management.microscaler.io/reconcile"))
+                            .is_some();
+                        
+                        // CRITICAL: Only reconcile if spec changed (generation != observed_generation)
+                        // This prevents infinite loops from status updates triggering reconciliations
+                        // Status-only updates don't change generation, so we skip them
+                        // Exceptions:
+                        // 1. Always reconcile if observed_generation is 0 (first reconciliation)
+                        // 2. Always reconcile if manual trigger annotation is present (msmctl reconcile)
+                        if generation == observed_generation && observed_generation > 0 && !is_manual_trigger {
+                            debug!(
+                                resource.name = name.as_str(),
+                                resource.namespace = namespace.as_str(),
+                                generation = generation,
+                                observed_generation = observed_generation,
+                                "Skipping reconciliation - only status changed, spec unchanged (no manual trigger)"
+                            );
+                            // Return Action::await_change() to wait for next spec change
+                            return Ok(Action::await_change());
+                        }
+                        
+                        if is_manual_trigger {
+                            debug!(
+                                resource.name = name.as_str(),
+                                resource.namespace = namespace.as_str(),
+                                generation = generation,
+                                observed_generation = observed_generation,
+                                "Manual reconciliation trigger detected (msmctl) - proceeding despite generation match"
+                            );
+                        }
+                        
+                        info!(
+                            "Reconciling SecretManagerConfig: {} (triggered by watch event, generation={}, observed_generation={})",
+                            name, generation, observed_generation
+                        );
+                        debug!(
+                            resource.name = name.as_str(),
+                            resource.namespace = namespace.as_str(),
+                            generation = generation,
+                            observed_generation = observed_generation,
+                            "watch.event.received"
+                        );
+                        
+                        let result = Reconciler::reconcile(obj, reconciler.clone()).await;
+                        
+                        match &result {
+                            Ok(action) => {
+                                debug!(resource.name = name.as_str(), action = ?action, "watch.event.reconciled");
+                            }
+                            Err(e) => {
+                                error!(resource.name = name.as_str(), error = %e, "watch.event.reconciliation_failed");
+                            }
+                        }
+                        
+                        result
                     }
                 },
                 |obj, error, _ctx| {
+                    let name = obj.metadata.name.as_deref().unwrap_or("unknown");
+                    let namespace = obj.metadata.namespace.as_deref().unwrap_or("default");
+                    
+                    // Create error span for reconciliation errors
+                    let error_span = tracing::span!(
+                        tracing::Level::ERROR,
+                        "controller.watch.reconciliation_error",
+                        resource.name = name,
+                        resource.namespace = namespace,
+                        error = %error
+                    );
+                    let _error_guard = error_span.enter();
+                    
                     error!(
                         "Reconciliation error for {}: {:?}",
-                        obj.metadata.name.as_deref().unwrap_or("unknown"),
+                        name,
                         error
                     );
                     observability::metrics::increment_reconciliation_errors();
@@ -705,27 +943,37 @@ obj.metadata.name.as_deref().unwrap_or("unknown"));
                 async move {
                     match &x {
                         Ok(_) => {
-// Successful event, reset backoff on success
-backoff.store(constants::DEFAULT_BACKOFF_START_MS, std::sync::atomic::Ordering::Relaxed);
-Some(x)
+                            // Successful event, reset backoff on success
+                            backoff.store(constants::DEFAULT_BACKOFF_START_MS, std::sync::atomic::Ordering::Relaxed);
+                            debug!("watch.event.success");
+                            Some(x)
                         }
                         Err(e) => {
-// Handle watch errors with proper classification
-let error_string = format!("{e:?}");
-// Check for specific error types
-let is_410 = error_string.contains("410")
-    || error_string.contains("too old resource version")
-    || error_string.contains("Expired")
-    || error_string.contains("Gone");
-let is_429 = error_string.contains("429")
-    || error_string.contains("storage is (re)initializing")
-    || error_string.contains("TooManyRequests");
-let is_not_found = error_string.contains("ObjectNotFound")
-    || (error_string.contains("404") && error_string.contains("not found"));
-if is_410 {
-    // Resource version expired - this is normal during pod restarts
-    warn!("Watch resource version expired (410) - this is normal during pod restarts, watch will restart");
-    None // Filter out to allow restart
+                            // Handle watch errors with proper classification
+                            let error_string = format!("{e:?}");
+                            let error_span = tracing::span!(
+                                tracing::Level::WARN,
+                                "controller.watch.error",
+                                error = error_string.as_str()
+                            );
+                            let _error_guard = error_span.enter();
+                            
+                            // Check for specific error types
+                            let is_410 = error_string.contains("410")
+                                || error_string.contains("too old resource version")
+                                || error_string.contains("Expired")
+                                || error_string.contains("Gone");
+                            let is_429 = error_string.contains("429")
+                                || error_string.contains("storage is (re)initializing")
+                                || error_string.contains("TooManyRequests");
+                            let is_not_found = error_string.contains("ObjectNotFound")
+                                || (error_string.contains("404") && error_string.contains("not found"));
+                            
+                            if is_410 {
+                                // Resource version expired - this is normal during pod restarts
+                                warn!("Watch resource version expired (410) - this is normal during pod restarts, watch will restart");
+                                warn!(error_type = "410", "watch.error.resource_version_expired");
+                                None // Filter out to allow restart
 } else if is_429 {
     // Storage reinitializing - back off and let it restart
     let current_backoff = backoff.load(std::sync::atomic::Ordering::Relaxed);

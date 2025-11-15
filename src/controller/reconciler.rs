@@ -38,7 +38,7 @@ use regex::Regex;
 use std::path::PathBuf;
 use std::time::Instant;
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 
 /// Construct secret name with prefix, key, and suffix
 /// Matches kustomize-google-secret-manager naming convention for drop-in replacement
@@ -264,6 +264,24 @@ impl Reconciler {
     ) -> Result<Action, ReconcilerError> {
         let start = Instant::now();
         let name = config.metadata.name.as_deref().unwrap_or("unknown");
+        
+        // Create OpenTelemetry span for this reconciliation
+        // This provides distributed tracing when Datadog/OTel is configured
+        // The span will automatically be exported to Datadog if configured
+        let provider_type = match &config.spec.provider {
+            crate::ProviderConfig::Gcp(_) => "gcp",
+            crate::ProviderConfig::Aws(_) => "aws",
+            crate::ProviderConfig::Azure(_) => "azure",
+        };
+        let span = tracing::span!(
+            tracing::Level::INFO,
+            "reconcile",
+            resource.name = name,
+            resource.namespace = config.metadata.namespace.as_deref().unwrap_or("default"),
+            resource.kind = "SecretManagerConfig",
+            resource.provider = provider_type
+        );
+        let _guard = span.enter();
 
         // Comprehensive validation of all CRD fields
         if let Err(e) = Self::validate_secret_manager_config(&config) {
@@ -319,6 +337,30 @@ impl Reconciler {
                 )
                 .await;
             return Err(ReconcilerError::ReconciliationFailed(err));
+        }
+
+        // Check if reconciliation is suspended
+        // Suspended resources skip reconciliation entirely, even for manual triggers
+        // This is useful for troubleshooting or during intricate CI/CD transitions
+        if config.spec.suspend {
+            info!(
+                "Reconciliation suspended for SecretManagerConfig: {} - skipping reconciliation",
+                name
+            );
+            // Update status to indicate suspended state
+            if let Err(e) = ctx
+                .update_status_phase(
+                    &config,
+                    "Suspended",
+                    Some("Reconciliation is suspended - no secrets will be synced"),
+                )
+                .await
+            {
+                warn!("Failed to update status to Suspended: {}", e);
+            }
+            // Return Action::await_change() to wait for suspend to be cleared
+            // This ensures we don't reconcile until suspend is set to false
+            return Ok(Action::await_change());
         }
 
         // Check if this is a manual reconciliation trigger (via annotation)
@@ -388,6 +430,38 @@ impl Reconciler {
             "GitRepository" => {
                 // FluxCD GitRepository: Extract artifact path from GitRepository status
                 // The GitRepository controller clones the repo and exposes the path in status.artifact.path
+
+                // Check if Git pulls should be suspended
+                // If suspendGitPulls is true, we need to ensure the GitRepository is suspended
+                // This allows reconciliation to continue with the last pulled commit
+                if config.spec.suspend_git_pulls {
+                    info!(
+                        "⏸️  Git pulls suspended - ensuring GitRepository {}/{} is suspended",
+                        config.spec.source_ref.namespace, config.spec.source_ref.name
+                    );
+                    if let Err(e) = ctx
+                        .suspend_git_repository(
+                            &config.spec.source_ref,
+                            true, // suspend
+                        )
+                        .await
+                    {
+                        warn!("Failed to suspend GitRepository: {}", e);
+                        // Continue anyway - GitRepository might already be suspended
+                    }
+                } else {
+                    // Ensure GitRepository is not suspended if suspendGitPulls is false
+                    if let Err(e) = ctx
+                        .suspend_git_repository(
+                            &config.spec.source_ref,
+                            false, // resume
+                        )
+                        .await
+                    {
+                        warn!("Failed to resume GitRepository: {}", e);
+                        // Continue anyway - GitRepository might already be active
+                    }
+                }
 
                 // Update status to Cloning - indicates we're fetching the GitRepository
                 if let Err(e) = ctx
@@ -792,6 +866,17 @@ impl Reconciler {
             return Err(ReconcilerError::ReconciliationFailed(e));
         }
 
+        // Clear manual trigger annotation if present (msmctl reconcile)
+        // This prevents the annotation from triggering repeated reconciliations
+        if is_manual_trigger {
+            if let Err(e) = ctx.clear_manual_trigger_annotation(&config).await {
+                warn!("Failed to clear manual trigger annotation: {}", e);
+                // Don't fail reconciliation if annotation clearing fails
+            } else {
+                debug!("Cleared manual trigger annotation after successful reconciliation");
+            }
+        }
+
         // Update metrics
         observability::metrics::observe_reconciliation_duration(start.elapsed().as_secs_f64());
         observability::metrics::set_secrets_managed(i64::from(secrets_synced));
@@ -855,21 +940,35 @@ impl Reconciler {
         use kube::api::ApiResource;
         use kube::core::DynamicObject;
 
-        let ar = ApiResource::from_gvk(&kube::core::GroupVersionKind {
-            group: "source.toolkit.fluxcd.io".to_string(),
-            version: "v1beta2".to_string(),
-            kind: "GitRepository".to_string(),
-        });
+        let span = info_span!(
+            "gitrepository.get_artifact",
+            gitrepository.name = source_ref.name,
+            namespace = source_ref.namespace
+        );
+        let span_clone = span.clone();
+        let start = Instant::now();
+        
+        async move {
+            let ar = ApiResource::from_gvk(&kube::core::GroupVersionKind {
+                group: "source.toolkit.fluxcd.io".to_string(),
+                version: "v1beta2".to_string(),
+                kind: "GitRepository".to_string(),
+            });
 
-        let api: kube::Api<DynamicObject> =
-            kube::Api::namespaced_with(self.client.clone(), &source_ref.namespace, &ar);
+            let api: kube::Api<DynamicObject> =
+                kube::Api::namespaced_with(self.client.clone(), &source_ref.namespace, &ar);
 
-        let git_repo = api.get(&source_ref.name).await.context(format!(
-            "Failed to get FluxCD GitRepository: {}/{}",
-            source_ref.namespace, source_ref.name
-        ))?;
+            let git_repo = api.get(&source_ref.name).await.context(format!(
+                "Failed to get FluxCD GitRepository: {}/{}",
+                source_ref.namespace, source_ref.name
+            ))?;
 
-        Ok(serde_json::to_value(git_repo)?)
+            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+            span_clone.record("operation.success", true);
+            Ok(serde_json::to_value(git_repo)?)
+        }
+        .instrument(span)
+        .await
     }
 
     /// Get artifact path from FluxCD GitRepository status
@@ -1032,42 +1131,42 @@ impl Reconciler {
         }
 
         // Clone the repository using git command
-        info!(
-            "Cloning ArgoCD repository: {} (revision: {})",
-            repo_url, target_revision
+        let clone_path_for_match = clone_path.clone();
+        let path_buf_for_match = path_buf.clone();
+        let span = info_span!(
+            "git.clone",
+            repository.url = repo_url,
+            clone.path = clone_path,
+            revision = target_revision
         );
+        let span_clone_for_match = span.clone();
+        let span_clone = span.clone();
+        let start = Instant::now();
+        
+        let clone_result = async move {
+            info!(
+                "Cloning ArgoCD repository: {} (revision: {})",
+                repo_url, target_revision
+            );
 
-        // Create parent directory
-        let parent_dir = path_buf.parent().ok_or_else(|| {
-            anyhow::anyhow!("Cannot determine parent directory for path: {clone_path}")
-        })?;
-        tokio::fs::create_dir_all(parent_dir)
-            .await
-            .context(format!(
-                "Failed to create parent directory for {clone_path}"
-            ))?;
+            // Create parent directory
+            let parent_dir = path_buf.parent().ok_or_else(|| {
+                anyhow::anyhow!("Cannot determine parent directory for path: {clone_path}")
+            })?;
+            tokio::fs::create_dir_all(parent_dir)
+                .await
+                .context(format!(
+                    "Failed to create parent directory for {clone_path}"
+                ))?;
 
-        // Clone repository (shallow clone for efficiency)
-        // First try shallow clone with branch (works for branch/tag names)
-        let clone_output = tokio::process::Command::new("git")
-            .arg("clone")
-            .arg("--depth")
-            .arg("1")
-            .arg("--branch")
-            .arg(target_revision)
-            .arg(repo_url)
-            .arg(&clone_path)
-            .output()
-            .await
-            .context(format!("Failed to execute git clone for {repo_url}"))?;
-
-        if !clone_output.status.success() {
-            // If branch clone fails, clone default branch and checkout specific revision
-            // This handles commit SHAs and other revision types
+            // Clone repository (shallow clone for efficiency)
+            // First try shallow clone with branch (works for branch/tag names)
             let clone_output = tokio::process::Command::new("git")
                 .arg("clone")
                 .arg("--depth")
-                .arg("50") // Deeper clone to ensure revision is available
+                .arg("1")
+                .arg("--branch")
+                .arg(target_revision)
                 .arg(repo_url)
                 .arg(&clone_path)
                 .output()
@@ -1075,49 +1174,86 @@ impl Reconciler {
                 .context(format!("Failed to execute git clone for {repo_url}"))?;
 
             if !clone_output.status.success() {
-                let error_msg = String::from_utf8_lossy(&clone_output.stderr);
-                return Err(anyhow::anyhow!(
-                    "Failed to clone repository {repo_url}: {error_msg}"
-                ));
+                // If branch clone fails, clone default branch and checkout specific revision
+                // This handles commit SHAs and other revision types
+                let clone_output = tokio::process::Command::new("git")
+                    .arg("clone")
+                    .arg("--depth")
+                    .arg("50") // Deeper clone to ensure revision is available
+                    .arg(repo_url)
+                    .arg(&clone_path)
+                    .output()
+                    .await
+                    .context(format!("Failed to execute git clone for {repo_url}"))?;
+
+                if !clone_output.status.success() {
+                    let error_msg = String::from_utf8_lossy(&clone_output.stderr);
+                    span_clone.record("operation.success", false);
+                    span_clone.record("error.message", error_msg.to_string());
+                    observability::metrics::increment_git_clone_errors_total();
+                    return Err(anyhow::anyhow!(
+                        "Failed to clone repository {repo_url}: {error_msg}"
+                    ));
+                }
+
+                // Fetch the specific revision if needed
+                let _fetch_output = tokio::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&clone_path)
+                    .arg("fetch")
+                    .arg("--depth")
+                    .arg("50")
+                    .arg("origin")
+                    .arg(target_revision)
+                    .output()
+                    .await;
+
+                // Checkout specific revision
+                let checkout_output = tokio::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&clone_path)
+                    .arg("checkout")
+                    .arg(target_revision)
+                    .output()
+                    .await
+                    .context(format!(
+                        "Failed to checkout revision {target_revision} in repository {repo_url}"
+                    ))?;
+
+                if !checkout_output.status.success() {
+                    let error_msg = String::from_utf8_lossy(&checkout_output.stderr);
+                    span_clone.record("operation.success", false);
+                    span_clone.record("error.message", error_msg.to_string());
+                    observability::metrics::increment_git_clone_errors_total();
+                    return Err(anyhow::anyhow!(
+                        "Failed to checkout revision {target_revision} in repository {repo_url}: {error_msg}"
+                    ));
+                }
             }
-
-            // Fetch the specific revision if needed
-            let _fetch_output = tokio::process::Command::new("git")
-                .arg("-C")
-                .arg(&clone_path)
-                .arg("fetch")
-                .arg("--depth")
-                .arg("50")
-                .arg("origin")
-                .arg(target_revision)
-                .output()
-                .await;
-
-            // Checkout specific revision
-            let checkout_output = tokio::process::Command::new("git")
-                .arg("-C")
-                .arg(&clone_path)
-                .arg("checkout")
-                .arg(target_revision)
-                .output()
-                .await
-                .context(format!(
-                    "Failed to checkout revision {target_revision} in repository {repo_url}"
-                ))?;
-
-            if !checkout_output.status.success() {
-                let error_msg = String::from_utf8_lossy(&checkout_output.stderr);
-                return Err(anyhow::anyhow!(
-                    "Failed to checkout revision {target_revision} in repository {repo_url}: {error_msg}"
-                ));
+            
+            Ok(())
+        }
+        .instrument(span)
+        .await;
+        
+        match clone_result {
+            Ok(_) => {
+                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match.record("operation.success", true);
+                observability::metrics::increment_git_clone_total();
+                observability::metrics::observe_git_clone_duration(start.elapsed().as_secs_f64());
+                info!(
+                    "Successfully cloned ArgoCD repository to {} (revision: {})",
+                    clone_path_for_match, target_revision
+                );
+                Ok(path_buf_for_match)
+            }
+            Err(e) => {
+                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match.record("operation.success", false);
+                Err(e)
             }
         }
-
-        info!(
-            "Successfully cloned ArgoCD repository to {} (revision: {})",
-            clone_path, target_revision
-        );
-        Ok(path_buf)
     }
 
     #[allow(
@@ -1132,16 +1268,25 @@ impl Reconciler {
         app_files: &parser::ApplicationFiles,
         ctx: &Reconciler,
     ) -> Result<i32> {
-        let secret_prefix = config
+        let service_name = config
             .spec
             .secrets
             .prefix
             .as_deref()
             .unwrap_or(&app_files.service_name);
+        let span = info_span!(
+            "files.process",
+            service.name = service_name
+        );
+        let span_clone_for_match = span.clone();
+        let start = Instant::now();
+        
+        let result = async move {
+            let secret_prefix = service_name;
 
-        // Parse secrets from files (with SOPS decryption if needed)
-        let secrets = parser::parse_secrets(app_files, self.sops_private_key.as_deref()).await?;
-        let properties = parser::parse_properties(app_files).await?;
+            // Parse secrets from files (with SOPS decryption if needed)
+            let secrets = parser::parse_secrets(app_files, self.sops_private_key.as_deref()).await?;
+            let properties = parser::parse_properties(app_files).await?;
 
         // Store secrets in cloud provider (GitOps: Git is source of truth)
         let mut count = 0;
@@ -1339,8 +1484,26 @@ impl Reconciler {
             }
         }
 
-        observability::metrics::increment_secrets_synced(i64::from(count));
-        Ok(count)
+            observability::metrics::increment_secrets_synced(i64::from(count));
+            Ok(count)
+        }
+        .instrument(span)
+        .await;
+        
+        match &result {
+            Ok(count) => {
+                span_clone_for_match.record("files.count", *count as u64);
+                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match.record("operation.success", true);
+            }
+            Err(e) => {
+                span_clone_for_match.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone_for_match.record("operation.success", false);
+                span_clone_for_match.record("error.message", e.to_string());
+            }
+        }
+        
+        result
     }
 
     async fn process_kustomize_secrets(
@@ -1398,6 +1561,22 @@ impl Reconciler {
         message: Option<&str>,
     ) -> Result<()> {
         use kube::api::PatchParams;
+
+        // CRITICAL: Check if status actually changed before updating
+        // This prevents unnecessary status updates that trigger watch events
+        let current_phase = config.status.as_ref()
+            .and_then(|s| s.phase.as_deref());
+        let current_description = config.status.as_ref()
+            .and_then(|s| s.description.as_deref());
+        
+        // Only update if phase or description actually changed
+        if current_phase == Some(phase) && current_description == message.as_deref() {
+            debug!(
+                "Skipping status update - phase and description unchanged: phase={:?}, description={:?}",
+                phase, message
+            );
+            return Ok(());
+        }
 
         let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
             self.client.clone(),
@@ -1562,13 +1741,121 @@ impl Reconciler {
         Ok(())
     }
 
-    async fn update_status(&self, config: &SecretManagerConfig, secrets_synced: i32) -> Result<()> {
+    /// Clear manual trigger annotation after reconciliation completes
+    /// This prevents the annotation from triggering repeated reconciliations
+    /// Called after successful reconciliation when manual trigger was detected
+    async fn clear_manual_trigger_annotation(
+        &self,
+        config: &SecretManagerConfig,
+    ) -> Result<()> {
         use kube::api::PatchParams;
 
         let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
             self.client.clone(),
             config.metadata.namespace.as_deref().unwrap_or("default"),
         );
+
+        // Only clear if annotation exists
+        if let Some(ann) = &config.metadata.annotations {
+            if ann.contains_key("secret-management.microscaler.io/reconcile") {
+                let patch = serde_json::json!({
+                    "metadata": {
+                        "annotations": {
+                            "secret-management.microscaler.io/reconcile": null
+                        }
+                    }
+                });
+
+                api.patch(
+                    config.metadata.name.as_deref().unwrap_or("unknown"),
+                    &PatchParams::apply("secret-manager-controller"),
+                    &kube::api::Patch::Merge(patch),
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Suspend or resume GitRepository pulls
+    /// Patches the FluxCD GitRepository resource to control Git pulls independently from reconciliation
+    /// When suspended, FluxCD stops fetching new commits but the last artifact remains available
+    async fn suspend_git_repository(
+        &self,
+        source_ref: &SourceRef,
+        suspend: bool,
+    ) -> Result<()> {
+        use kube::api::{ApiResource, Patch, PatchParams};
+        use kube::core::DynamicObject;
+
+        let ar = ApiResource::from_gvk(&kube::core::GroupVersionKind {
+            group: "source.toolkit.fluxcd.io".to_string(),
+            version: "v1beta2".to_string(),
+            kind: "GitRepository".to_string(),
+        });
+
+        let api: kube::Api<DynamicObject> =
+            kube::Api::namespaced_with(self.client.clone(), &source_ref.namespace, &ar);
+
+        // Check current suspend status
+        let git_repo = api.get(&source_ref.name).await.context(format!(
+            "Failed to get GitRepository: {}/{}",
+            source_ref.namespace, source_ref.name
+        ))?;
+
+        let current_suspend = git_repo
+            .data
+            .get("spec")
+            .and_then(|s| s.get("suspend"))
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false);
+
+        // Only patch if status needs to change
+        if current_suspend == suspend {
+            debug!(
+                "GitRepository {}/{} already {}",
+                source_ref.namespace,
+                source_ref.name,
+                if suspend { "suspended" } else { "active" }
+            );
+            return Ok(());
+        }
+
+        // Patch GitRepository to set suspend status
+        let patch = serde_json::json!({
+            "spec": {
+                "suspend": suspend
+            }
+        });
+
+        let patch_params = PatchParams::apply("secret-manager-controller").force();
+
+        api.patch(&source_ref.name, &patch_params, &Patch::Merge(patch))
+            .await
+            .context(format!(
+                "Failed to {} GitRepository: {}/{}",
+                if suspend { "suspend" } else { "resume" },
+                source_ref.namespace,
+                source_ref.name
+            ))?;
+
+        info!(
+            "✅ GitRepository {}/{} {}",
+            source_ref.namespace,
+            source_ref.name,
+            if suspend {
+                "suspended (pulls paused, using last commit)"
+            } else {
+                "resumed (pulls enabled)"
+            }
+        );
+
+        Ok(())
+    }
+
+    async fn update_status(&self, config: &SecretManagerConfig, secrets_synced: i32) -> Result<()> {
+        use kube::api::PatchParams;
 
         // Determine what was synced for the description
         let is_configs_enabled = config
@@ -1582,6 +1869,27 @@ impl Reconciler {
         } else {
             format!("Synced {secrets_synced} secrets to secret store")
         };
+
+        // CRITICAL: Check if status actually changed before updating
+        // This prevents unnecessary status updates that trigger watch events
+        let current_phase = config.status.as_ref()
+            .and_then(|s| s.phase.as_deref());
+        let current_secrets_synced = config.status.as_ref()
+            .and_then(|s| s.secrets_synced);
+        
+        // Only update if phase changed (not Ready) or secrets_synced count changed
+        if current_phase == Some("Ready") && current_secrets_synced == Some(secrets_synced) {
+            debug!(
+                "Skipping status update - already Ready with same secrets_synced count: {}",
+                secrets_synced
+            );
+            return Ok(());
+        }
+
+        let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
+            self.client.clone(),
+            config.metadata.namespace.as_deref().unwrap_or("default"),
+        );
 
         let status = SecretManagerConfigStatus {
             phase: Some("Ready".to_string()),

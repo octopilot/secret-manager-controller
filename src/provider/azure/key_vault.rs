@@ -16,7 +16,8 @@ use azure_core::credentials::TokenCredential;
 use azure_identity::{ManagedIdentityCredential, WorkloadIdentityCredential};
 use azure_security_keyvault_secrets::{models::SetSecretParameters, SecretClient};
 use std::sync::Arc;
-use tracing::{debug, info};
+use std::time::Instant;
+use tracing::{debug, info, info_span, Instrument};
 
 /// Azure Key Vault provider implementation
 pub struct AzureKeyVault {
@@ -89,66 +90,137 @@ impl AzureKeyVault {
 #[async_trait]
 impl SecretManagerProvider for AzureKeyVault {
     async fn create_or_update_secret(&self, secret_name: &str, secret_value: &str) -> Result<bool> {
-        let start = std::time::Instant::now();
+        let vault_name = self._vault_url
+            .strip_prefix("https://")
+            .and_then(|s| s.strip_suffix(".vault.azure.net/"))
+            .unwrap_or("unknown");
+        let span = info_span!(
+            "azure.keyvault.secret.create_or_update",
+            secret.name = secret_name,
+            vault.name = vault_name
+        );
+        let span_clone = span.clone();
+        let start = Instant::now();
+        let secret_value_clone = secret_value.to_string();
+        
+        async move {
+            // Check if secret exists by trying to get it
+            let current_value = self.get_secret_value(secret_name).await?;
 
-        // Check if secret exists by trying to get it
-        let current_value = self.get_secret_value(secret_name).await?;
+            let operation_type = if let Some(current) = current_value {
+                if current == secret_value_clone {
+                    debug!("Azure secret {} unchanged, skipping update", secret_name);
+                    metrics::record_secret_operation(
+                        "azure",
+                        "no_change",
+                        start.elapsed().as_secs_f64(),
+                    );
+                    span_clone.record("operation.type", "no_change");
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    span_clone.record("operation.success", true);
+                    return Ok(false);
+                }
+                "update"
+            } else {
+                "create"
+            };
 
-        if let Some(current) = current_value {
-            if current == secret_value {
-                debug!("Azure secret {} unchanged, skipping update", secret_name);
-                metrics::record_secret_operation(
-                    "azure",
-                    "no_change",
-                    start.elapsed().as_secs_f64(),
-                );
-                return Ok(false);
-            }
-        }
-
-        // Create or update secret
-        // Azure Key Vault automatically creates a new version when updating
-        info!("Creating/updating Azure secret: {}", secret_name);
-        let parameters = SetSecretParameters {
-            value: Some(secret_value.to_string()),
-            ..Default::default()
-        };
-        self.client
-            .set_secret(secret_name, parameters.try_into()?, None)
-            .await
-            .context(format!(
-                "Failed to create/update Azure secret: {secret_name}"
-            ))?;
-
-        metrics::record_secret_operation("azure", "update", start.elapsed().as_secs_f64());
-        Ok(true)
-    }
-
-    async fn get_secret_value(&self, secret_name: &str) -> Result<Option<String>> {
-        // Get the latest version of the secret (no version parameter needed - defaults to latest)
-        match self.client.get_secret(secret_name, None).await {
-            Ok(response) => {
-                // Response body needs to be deserialized into the Secret model
-                use azure_security_keyvault_secrets::models::Secret;
-                let body = response.into_body();
-                // Try to deserialize the body - ResponseBody might implement Deserialize or have a method
-                // Check if we can use serde_json or if there's a specific method
-                let secret: Secret = serde_json::from_slice(&body)
-                    .context("Failed to deserialize Azure secret response")?;
-                Ok(secret.value)
-            }
-            Err(e) => {
-                let error_msg = e.to_string();
-                if error_msg.contains("SecretNotFound")
-                    || error_msg.contains("404")
-                    || error_msg.contains("not found")
-                {
-                    Ok(None)
-                } else {
-                    Err(anyhow::anyhow!("Failed to get Azure secret: {e}"))
+            // Create or update secret
+            // Azure Key Vault automatically creates a new version when updating
+            info!("Creating/updating Azure secret: {}", secret_name);
+            let parameters = SetSecretParameters {
+                value: Some(secret_value_clone),
+                ..Default::default()
+            };
+            match self
+                .client
+                .set_secret(secret_name, parameters.try_into()?, None)
+                .await
+            {
+                Ok(_) => {
+                    metrics::record_secret_operation("azure", operation_type, start.elapsed().as_secs_f64());
+                    span_clone.record("operation.type", operation_type);
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    span_clone.record("operation.success", true);
+                    Ok(true)
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    span_clone.record("operation.success", false);
+                    span_clone.record("operation.type", operation_type);
+                    span_clone.record("error.message", error_msg.clone());
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    metrics::increment_provider_operation_errors("azure");
+                    Err(anyhow::anyhow!(
+                        "Failed to create/update Azure secret {secret_name}: {e}"
+                    ))
                 }
             }
         }
+        .instrument(span)
+        .await
+    }
+
+    async fn get_secret_value(&self, secret_name: &str) -> Result<Option<String>> {
+        let vault_name = self._vault_url
+            .strip_prefix("https://")
+            .and_then(|s| s.strip_suffix(".vault.azure.net/"))
+            .unwrap_or("unknown");
+        let span = tracing::debug_span!(
+            "azure.keyvault.secret.get",
+            secret.name = secret_name,
+            vault.name = vault_name
+        );
+        let span_clone = span.clone();
+        let start = Instant::now();
+        
+        async move {
+            // Get the latest version of the secret (no version parameter needed - defaults to latest)
+            match self.client.get_secret(secret_name, None).await {
+                Ok(response) => {
+                    // Response body needs to be deserialized into the Secret model
+                    use azure_security_keyvault_secrets::models::Secret;
+                    match serde_json::from_slice::<Secret>(&response.into_body()) {
+                        Ok(secret) => {
+                            span_clone.record("operation.success", true);
+                            span_clone.record("operation.found", secret.value.is_some());
+                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                            metrics::record_secret_operation("azure", "get", start.elapsed().as_secs_f64());
+                            Ok(secret.value)
+                        }
+                        Err(e) => {
+                            let error_msg = e.to_string();
+                            span_clone.record("operation.success", false);
+                            span_clone.record("error.message", format!("Failed to deserialize Azure secret response: {}", error_msg));
+                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                            metrics::increment_provider_operation_errors("azure");
+                            Err(anyhow::anyhow!("Failed to deserialize Azure secret response: {e}"))
+                        }
+                    }
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("SecretNotFound")
+                        || error_msg.contains("404")
+                        || error_msg.contains("not found")
+                    {
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", false);
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation("azure", "get", start.elapsed().as_secs_f64());
+                        Ok(None)
+                    } else {
+                        span_clone.record("operation.success", false);
+                        span_clone.record("error.message", error_msg.clone());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("azure");
+                        Err(anyhow::anyhow!("Failed to get Azure secret: {e}"))
+                    }
+                }
+            }
+        }
+        .instrument(span)
+        .await
     }
 
     async fn delete_secret(&self, secret_name: &str) -> Result<()> {

@@ -689,10 +689,14 @@ spec:
 
 ```bash
 cd hack/controllers/secret-manager-controller
-cargo build --release --bin msmctl
+cargo build --bin msmctl
 ```
 
-The binary will be available at `target/release/msmctl`.
+The binary will be available at:
+- Debug build: `target/debug/msmctl`
+- Release build: `target/release/msmctl` (run `cargo build --release --bin msmctl`)
+
+The build scripts (`scripts/tilt/build_binaries.py`) automatically build `msmctl` alongside the controller binaries.
 
 #### Prerequisites
 
@@ -718,24 +722,30 @@ Trigger a manual reconciliation for a SecretManagerConfig resource.
 
 **Usage:**
 ```bash
-msmctl reconcile --name <name> [--namespace <namespace>] [--force]
+msmctl reconcile secretmanagerconfig <name> [--namespace <namespace>] [--force]
 ```
 
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+- `<name>`: Name of the SecretManagerConfig resource (required, positional)
+
 **Options:**
-- `--name, -n`: Name of the SecretManagerConfig resource (required)
-- `--namespace, -N`: Namespace of the resource (defaults to "default")
+- `--namespace, -n`: Namespace of the resource (defaults to current context namespace)
 - `--force`: Force reconciliation by deleting and waiting for GitOps to recreate the resource (useful when resources get stuck)
 
 **Example:**
 ```bash
 # Trigger reconciliation in default namespace
-msmctl reconcile --name idam-dev-secrets
+msmctl reconcile secretmanagerconfig idam-dev-secrets
 
 # Trigger reconciliation in specific namespace
-msmctl reconcile --name idam-dev-secrets --namespace pricewhisperer
+msmctl reconcile secretmanagerconfig idam-dev-secrets --namespace pricewhisperer
+
+# Using short form 'smc'
+msmctl reconcile smc idam-dev-secrets
 
 # Force reconciliation (delete and wait for GitOps recreation)
-msmctl reconcile --name idam-dev-secrets --namespace pricewhisperer --force
+msmctl reconcile secretmanagerconfig idam-dev-secrets --namespace pricewhisperer --force
 ```
 
 **How it works:**
@@ -778,27 +788,37 @@ List all SecretManagerConfig resources.
 
 **Usage:**
 ```bash
-msmctl list [--namespace <namespace>]
+msmctl list secretmanagerconfig [--namespace <namespace>]
 ```
 
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+
 **Options:**
-- `--namespace, -N`: Namespace to list resources in (defaults to all namespaces)
+- `--namespace, -n`: Namespace to list resources in (defaults to all namespaces)
 
 **Example:**
 ```bash
 # List all resources in all namespaces
-msmctl list
+msmctl list secretmanagerconfig
 
 # List resources in specific namespace
-msmctl list --namespace pricewhisperer
+msmctl list secretmanagerconfig --namespace pricewhisperer
+
+# Using short form 'smc'
+msmctl list smc
 ```
 
 **Output:**
 ```
-NAME                          NAMESPACE            READY           SECRETS SYNCED
-idam-dev-secrets             pricewhisperer       True            5
-idam-prd-secrets             pricewhisperer       True            5
+NAME                           NAMESPACE            SUSPEND      READY           SECRETS SYNCED 
+--------------------------------------------------------------------------------------------
+test-sops-config               default              No           False           -              
+test-sops-config-prod          default              No           False           -              
+test-sops-config-stage         default              No           False           -              
 ```
+
+**Note:** The `SUSPEND` column shows whether reconciliation is paused for each resource.
 
 #### `msmctl status`
 
@@ -806,34 +826,43 @@ Show detailed status of a SecretManagerConfig resource.
 
 **Usage:**
 ```bash
-msmctl status --name <name> [--namespace <namespace>]
+msmctl status secretmanagerconfig <name> [--namespace <namespace>]
 ```
 
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+- `<name>`: Name of the SecretManagerConfig resource (required, positional)
+
 **Options:**
-- `--name, -n`: Name of the SecretManagerConfig resource (required)
-- `--namespace, -N`: Namespace of the resource (defaults to "default")
+- `--namespace, -n`: Namespace of the resource (defaults to current context namespace)
 
 **Example:**
 ```bash
-msmctl status --name idam-dev-secrets --namespace pricewhisperer
+msmctl status secretmanagerconfig idam-dev-secrets --namespace pricewhisperer
+
+# Using short form 'smc'
+msmctl status smc idam-dev-secrets
 ```
 
 **Output:**
 ```
-Status for SecretManagerConfig 'pricewhisperer/idam-dev-secrets':
+Status for SecretManagerConfig 'default/test-sops-config':
 
 Metadata:
-  Name: idam-dev-secrets
-  Namespace: pricewhisperer
+  Name: test-sops-config
+  Namespace: default
   Generation: 1
 
 Spec:
-  GCP Project ID: pricewhisperer-dev
+  Provider: GCP
+  GCP Project ID: my-project-id
   Environment: dev
-  Source: GitRepository/pricewhisperer-manifests
-  Kustomize Path: microservices/idam/deployment-configuration/profiles/dev
-  Secret Prefix: idam-dev
-  Secret Suffix: -prod
+  Source: GitRepository/test-repo
+  Kustomize Path: deployment-configuration/profiles/dev
+  Base Path: 
+  Secret Prefix: test-service
+  Secret Suffix: 
+  Suspend: false (active)
 
 Status:
   Observed Generation: 1
@@ -845,6 +874,148 @@ Conditions:
     Reason: ReconciliationSucceeded
     Message: Synced 5 secrets
     Last Transition: 2024-01-15T10:30:00Z
+```
+
+#### `msmctl suspend`
+
+Suspend reconciliation for a SecretManagerConfig resource. Useful for troubleshooting or during intricate CI/CD transitions where secrets need to be carefully managed.
+
+**Usage:**
+```bash
+msmctl suspend secretmanagerconfig <name> [--namespace <namespace>]
+```
+
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+- `<name>`: Name of the SecretManagerConfig resource (required, positional)
+
+**Options:**
+- `--namespace, -n`: Namespace of the resource (defaults to current context namespace)
+
+**Example:**
+```bash
+msmctl suspend secretmanagerconfig test-sops-config --namespace default
+
+# Using short form 'smc'
+msmctl suspend smc test-sops-config
+```
+
+**Output:**
+```
+⏸️  Suspending reconciliation for SecretManagerConfig 'default/test-sops-config'...
+✅ Reconciliation suspended successfully
+   Resource: default/test-sops-config
+   Status: Suspended (no secrets will be synced)
+
+To resume reconciliation, run:
+   msmctl resume secretmanagerconfig test-sops-config --namespace default
+```
+
+**Note:** When suspended, the controller will skip reconciliation entirely, even for manual triggers. The resource status will show "Suspended" phase.
+
+#### `msmctl resume`
+
+Resume reconciliation for a suspended SecretManagerConfig resource.
+
+**Usage:**
+```bash
+msmctl resume secretmanagerconfig <name> [--namespace <namespace>]
+```
+
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+- `<name>`: Name of the SecretManagerConfig resource (required, positional)
+
+**Options:**
+- `--namespace, -n`: Namespace of the resource (defaults to current context namespace)
+
+**Example:**
+```bash
+msmctl resume secretmanagerconfig test-sops-config --namespace default
+
+# Using short form 'smc'
+msmctl resume smc test-sops-config
+```
+
+**Output:**
+```
+▶️  Resuming reconciliation for SecretManagerConfig 'default/test-sops-config'...
+✅ Reconciliation resumed successfully
+   Resource: default/test-sops-config
+   Status: Active (reconciliation will proceed)
+
+The controller will reconcile this resource shortly.
+```
+
+#### `msmctl suspend-git-pulls`
+
+Suspend Git pulls for a SecretManagerConfig resource. This suspends GitRepository pulls but continues reconciliation with the last pulled commit. Useful when you want to freeze the Git state but keep syncing secrets from the current commit.
+
+**Usage:**
+```bash
+msmctl suspend-git-pulls secretmanagerconfig <name> [--namespace <namespace>]
+```
+
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+- `<name>`: Name of the SecretManagerConfig resource (required, positional)
+
+**Options:**
+- `--namespace, -n`: Namespace of the resource (defaults to current context namespace)
+
+**Example:**
+```bash
+msmctl suspend-git-pulls secretmanagerconfig test-sops-config --namespace default
+
+# Using short form 'smc'
+msmctl suspend-git-pulls smc test-sops-config
+```
+
+**Output:**
+```
+⏸️  Suspending Git pulls for SecretManagerConfig 'default/test-sops-config'...
+✅ Git pulls suspended successfully
+   Resource: default/test-sops-config
+   Status: Git pulls paused (reconciliation continues with last commit)
+
+To resume Git pulls, run:
+   msmctl resume-git-pulls secretmanagerconfig test-sops-config --namespace default
+```
+
+**Note:** When Git pulls are suspended, FluxCD stops fetching new commits but the last artifact remains available. The controller continues reconciling secrets from the last pulled commit.
+
+#### `msmctl resume-git-pulls`
+
+Resume Git pulls for a SecretManagerConfig resource. This resumes GitRepository pulls and allows new commits to be fetched.
+
+**Usage:**
+```bash
+msmctl resume-git-pulls secretmanagerconfig <name> [--namespace <namespace>]
+```
+
+**Arguments:**
+- `secretmanagerconfig` (or `smc`): Resource type (required)
+- `<name>`: Name of the SecretManagerConfig resource (required, positional)
+
+**Options:**
+- `--namespace, -n`: Namespace of the resource (defaults to current context namespace)
+
+**Example:**
+```bash
+msmctl resume-git-pulls secretmanagerconfig test-sops-config --namespace default
+
+# Using short form 'smc'
+msmctl resume-git-pulls smc test-sops-config
+```
+
+**Output:**
+```
+▶️  Resuming Git pulls for SecretManagerConfig 'default/test-sops-config'...
+✅ Git pulls resumed successfully
+   Resource: default/test-sops-config
+   Status: Git pulls enabled (will fetch new commits)
+
+The controller will resume pulling from Git shortly.
 ```
 
 ### Security
@@ -880,6 +1051,8 @@ rules:
 | **Trigger Reconciliation** | ✅ | ✅ |
 | **List Resources** | ✅ | ✅ |
 | **Show Status** | ✅ | ✅ |
+| **Suspend/Resume** | ❌ | ✅ |
+| **Suspend/Resume Git Pulls** | ❌ | ✅ |
 | **Authentication** | kubeconfig | kubeconfig |
 | **Method** | HTTP endpoint | Annotation-based |
 
@@ -918,10 +1091,10 @@ export KUBECONFIG=/path/to/kubeconfig
 **Solution:**
 ```bash
 # List resources to verify name and namespace
-msmctl list
+msmctl list secretmanagerconfig
 
 # Use correct namespace
-msmctl reconcile --name <name> --namespace <correct-namespace>
+msmctl reconcile secretmanagerconfig <name> --namespace <correct-namespace>
 ```
 
 ### Examples
@@ -938,7 +1111,7 @@ Trigger reconciliation after deploying secrets:
 kubectl apply -f secret-manager-config.yaml
 
 # Trigger immediate reconciliation
-msmctl reconcile --name my-secrets --namespace default
+msmctl reconcile secretmanagerconfig my-secrets --namespace default
 
 # Wait for reconciliation to complete
 kubectl wait --for=condition=Ready \
@@ -954,9 +1127,9 @@ Check status of all resources:
 #!/bin/bash
 # check-status.sh
 
-for config in $(msmctl list --namespace pricewhisperer | awk 'NR>2 {print $1}'); do
+for config in $(msmctl list secretmanagerconfig --namespace pricewhisperer | awk 'NR>2 {print $1}'); do
   echo "Checking $config..."
-  msmctl status --name "$config" --namespace pricewhisperer
+  msmctl status secretmanagerconfig "$config" --namespace pricewhisperer
   echo ""
 done
 ```

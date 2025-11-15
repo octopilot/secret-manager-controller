@@ -232,17 +232,24 @@ local_resource(
 # ====================
 # Test Resource Management
 # ====================
-# Delete and reapply test SecretManagerConfig resource
+# Install/update CRD (if changed) and apply test SecretManagerConfig resource
 # Independent resource - can be run separately for testing
+# Note: CRD is applied (not deleted) - kubectl apply handles install/update automatically
 
 local_resource(
-    'test-resource-reset',
+    'test-resource-update',
     cmd='python3 scripts/tilt/reset_test_resource.py',
     deps=[
         'examples/test-sops-config.yaml',
+        'examples/test-sops-config-stage.yaml',
+        'examples/test-sops-config-prod.yaml',
+        'config/crd/secretmanagerconfig.yaml',
         './scripts/tilt/reset_test_resource.py',
     ],
-    resource_deps=[],
+    env={
+        'CONTROLLER_DIR': CONTROLLER_DIR,
+    },
+    resource_deps=['secret-manager-controller-crd-gen'],
     labels=['test'],
     allow_parallel=True,
 )

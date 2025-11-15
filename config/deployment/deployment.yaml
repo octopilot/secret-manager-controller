@@ -27,6 +27,33 @@ spec:
               fieldPath: metadata.namespace
         - name: METRICS_PORT
           value: "5000"
+        # Datadog OpenTelemetry configuration (optional)
+        # Only initialize Datadog tracing if DD_API_KEY is present
+        # These environment variables are read from Kubernetes secrets or ConfigMaps
+        - name: DD_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: datadog-credentials
+              key: api-key
+              optional: true
+        - name: DD_SITE
+          valueFrom:
+            configMapKeyRef:
+              name: datadog-config
+              key: site
+              optional: true
+        - name: DD_SERVICE
+          valueFrom:
+            configMapKeyRef:
+              name: datadog-config
+              key: service
+              optional: true
+        - name: DD_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: datadog-config
+              key: env
+              optional: true
         ports:
         - name: metrics
           containerPort: 5000

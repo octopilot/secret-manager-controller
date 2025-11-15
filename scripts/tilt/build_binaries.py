@@ -36,11 +36,13 @@ def main():
     # Paths
     linux_binary = Path(controller_dir) / "target/x86_64-unknown-linux-musl/debug" / binary_name
     linux_crdgen = Path(controller_dir) / "target/x86_64-unknown-linux-musl/debug/crdgen"
+    linux_msmctl = Path(controller_dir) / "target/x86_64-unknown-linux-musl/debug/msmctl"
     native_crdgen = Path(controller_dir) / "target/debug/crdgen"
+    native_msmctl = Path(controller_dir) / "target/debug/msmctl"
     
     # Delete old binaries to force fresh build
     print("🧹 Cleaning old binaries from target directory...")
-    for path in [linux_binary, linux_crdgen, native_crdgen]:
+    for path in [linux_binary, linux_crdgen, linux_msmctl, native_crdgen, native_msmctl]:
         if path.exists():
             path.unlink()
     
@@ -91,7 +93,7 @@ def main():
         sys.exit(1)
     
     build_result = run_command(
-        ["python3", str(build_script), "--bin", binary_name, "--bin", "crdgen"],
+        ["python3", str(build_script), "--bin", binary_name, "--bin", "crdgen", "--bin", "msmctl"],
         check=False,
         env=build_env
     )
@@ -99,20 +101,20 @@ def main():
         print("❌ Error: Failed to build Linux binaries", file=sys.stderr)
         sys.exit(1)
     
-    # Build native crdgen for host execution
-    print("🔨 Building native crdgen (debug mode)...")
+    # Build native binaries for host execution (crdgen and msmctl)
+    print("🔨 Building native binaries (crdgen, msmctl) (debug mode)...")
     cargo_build_env = os.environ.copy()
     cargo_build_env["BUILD_TIMESTAMP"] = build_timestamp
     cargo_build_env["BUILD_DATETIME"] = build_datetime
     cargo_build_env["BUILD_GIT_HASH"] = f"{build_git_hash}{build_git_dirty}"
     
     cargo_build_result = run_command(
-        ["cargo", "build", "--bin", "crdgen"],
+        ["cargo", "build", "--bin", "crdgen", "--bin", "msmctl"],
         check=False,
         env=cargo_build_env
     )
     if cargo_build_result.returncode != 0:
-        print("❌ Error: Failed to build native crdgen", file=sys.stderr)
+        print("❌ Error: Failed to build native binaries", file=sys.stderr)
         sys.exit(1)
     
     # Verify binaries were created
@@ -131,11 +133,23 @@ def main():
     else:
         print("  ✅ crdgen (Linux) built successfully")
     
+    if not linux_msmctl.exists():
+        print(f"❌ Error: msmctl (Linux) not found at {linux_msmctl}", file=sys.stderr)
+        build_error = True
+    else:
+        print("  ✅ msmctl (Linux) built successfully")
+    
     if not native_crdgen.exists():
         print(f"❌ Error: Native crdgen not found at {native_crdgen}", file=sys.stderr)
         build_error = True
     else:
         print("  ✅ crdgen (native) built successfully")
+    
+    if not native_msmctl.exists():
+        print(f"❌ Error: Native msmctl not found at {native_msmctl}", file=sys.stderr)
+        build_error = True
+    else:
+        print("  ✅ msmctl (native) built successfully")
     
     if build_error:
         print("❌ Build failed - some binaries are missing", file=sys.stderr)

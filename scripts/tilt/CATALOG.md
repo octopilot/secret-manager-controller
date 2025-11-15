@@ -107,18 +107,26 @@ This document catalogs all inline shell scripts in the Tiltfile and their Python
 
 ---
 
-### 6. `test-resource-reset` (Lines 404-423)
-**Purpose:** Reset test SecretManagerConfig resource  
+### 6. `test-resource-update` (Lines 404-423)
+**Purpose:** Update test SecretManagerConfig resources (dev, stage, prod)  
 **Replacement:** `scripts/tilt/reset_test_resource.py`
 
 **Original Script Location:** Tiltfile lines 404-423  
 **Functionality:**
-- Deletes existing test resource
-- Waits for deletion to complete
-- Applies test resource from YAML
+- Installs/updates CRD if it has changed (without deleting first)
+- Optionally deletes existing test resources (with `--delete` flag, default: False)
+- Waits for deletion to complete (if --delete flag used)
+- Applies multiple test resources from YAML with different reconcile intervals
+
+**Resources managed:**
+- `test-sops-config` (dev): reconcileInterval=1m
+- `test-sops-config-stage`: reconcileInterval=3m
+- `test-sops-config-prod`: reconcileInterval=5m
 
 **Dependencies:**
 - `examples/test-sops-config.yaml`
+- `examples/test-sops-config-stage.yaml`
+- `examples/test-sops-config-prod.yaml`
 
 ---
 

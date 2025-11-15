@@ -15,7 +15,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use base64::{engine::general_purpose, Engine as _};
 use google_cloud_secretmanager_v1::client::SecretManagerService;
-use tracing::info;
+use std::time::Instant;
+use tracing::{info, info_span, Instrument};
 
 pub struct SecretManager {
     client: SecretManagerService,
@@ -96,61 +97,111 @@ impl SecretManager {
             AddSecretVersionRequest, CreateSecretRequest, Secret, SecretPayload,
         };
 
-        // Check if secret already exists
-        let secret_name_full = format!("projects/{}/secrets/{}", self.project_id, secret_name);
-        let existing_secret = self.get_secret_value(secret_name).await?;
+        let span = info_span!(
+            "gcp.secret.create_or_update",
+            secret.name = secret_name,
+            project.id = self.project_id
+        );
+        let span_clone = span.clone();
+        
+        async move {
+            let start = Instant::now();
+            
+            // Check if secret already exists
+            let secret_name_full = format!("projects/{}/secrets/{}", self.project_id, secret_name);
+            let existing_secret = self.get_secret_value(secret_name).await?;
 
-        // If secret doesn't exist, create it
-        if existing_secret.is_none() {
-            info!("Creating new GCP secret: {}", secret_name);
+            // If secret doesn't exist, create it
+            if existing_secret.is_none() {
+                info!("Creating new GCP secret: {}", secret_name);
 
-            // Create the secret resource first
-            let secret = Secret::default();
-            let create_request = CreateSecretRequest::default()
-                .set_parent(format!("projects/{}", self.project_id))
-                .set_secret_id(secret_name.to_string())
-                .set_secret(secret);
+                // Create the secret resource first
+                let secret = Secret::default();
+                let create_request = CreateSecretRequest::default()
+                    .set_parent(format!("projects/{}", self.project_id))
+                    .set_secret_id(secret_name.to_string())
+                    .set_secret(secret);
 
-            self.client
-                .create_secret()
-                .with_request(create_request)
+                match self
+                    .client
+                    .create_secret()
+                    .with_request(create_request)
+                    .send()
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        span_clone.record("operation.success", false);
+                        span_clone.record("error.message", error_msg.clone());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("gcp");
+                        return Err(anyhow::anyhow!(
+                            "Failed to create GCP secret {secret_name}: {e}"
+                        ));
+                    }
+                }
+            }
+
+            // Check if the value has changed
+            let operation_type = if existing_secret.is_none() {
+                "create"
+            } else if let Some(existing_value) = &existing_secret {
+                if existing_value == secret_value {
+                    // Value hasn't changed, no update needed
+                    span_clone.record("operation.type", "no_change");
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    span_clone.record("operation.success", true);
+                    return Ok(false);
+                }
+                // Value changed - we'll create a new version below
+                info!("Secret value changed, updating GCP secret: {}", secret_name);
+                "update"
+            } else {
+                "create"
+            };
+
+            // Add new secret version with the value
+            // Secret Manager expects raw bytes (not base64-encoded)
+            // The SDK will handle base64 encoding automatically
+            // Convert to owned bytes to avoid lifetime issues
+            let secret_bytes: Vec<u8> = secret_value.as_bytes().to_vec();
+            let mut payload = SecretPayload::default();
+            payload.data = secret_bytes.into();
+
+            let add_version_request = AddSecretVersionRequest::default()
+                .set_parent(secret_name_full.clone())
+                .set_payload(payload);
+
+            match self
+                .client
+                .add_secret_version()
+                .with_request(add_version_request)
                 .send()
                 .await
-                .context(format!("Failed to create GCP secret: {secret_name}"))?;
-        }
-
-        // Check if the value has changed
-        if let Some(existing_value) = existing_secret {
-            if existing_value == secret_value {
-                // Value hasn't changed, no update needed
-                return Ok(false);
+            {
+                Ok(_) => {
+                    span_clone.record("operation.type", operation_type);
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    span_clone.record("operation.success", true);
+                    metrics::record_secret_operation("gcp", operation_type, start.elapsed().as_secs_f64());
+                    Ok(true)
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    span_clone.record("operation.success", false);
+                    span_clone.record("operation.type", operation_type);
+                    span_clone.record("error.message", error_msg.clone());
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    metrics::increment_provider_operation_errors("gcp");
+                    Err(anyhow::anyhow!(
+                        "Failed to add version to GCP secret {secret_name}: {e}"
+                    ))
+                }
             }
-            // Value changed - we'll create a new version below
-            info!("Secret value changed, updating GCP secret: {}", secret_name);
         }
-
-        // Add new secret version with the value
-        // Secret Manager expects raw bytes (not base64-encoded)
-        // The SDK will handle base64 encoding automatically
-        // Convert to owned bytes to avoid lifetime issues
-        let secret_bytes: Vec<u8> = secret_value.as_bytes().to_vec();
-        let mut payload = SecretPayload::default();
-        payload.data = secret_bytes.into();
-
-        let add_version_request = AddSecretVersionRequest::default()
-            .set_parent(secret_name_full.clone())
-            .set_payload(payload);
-
-        self.client
-            .add_secret_version()
-            .with_request(add_version_request)
-            .send()
-            .await
-            .context(format!(
-                "Failed to add version to GCP secret: {secret_name}"
-            ))?;
-
-        Ok(true)
+        .instrument(span)
+        .await
     }
 
     /// Get the latest secret version value
@@ -273,59 +324,92 @@ impl SecretManagerProvider for SecretManager {
     async fn get_secret_value(&self, secret_name: &str) -> Result<Option<String>> {
         use google_cloud_secretmanager_v1::model::AccessSecretVersionRequest;
 
-        // Construct the secret version name: projects/{project}/secrets/{secret}/versions/latest
-        let secret_version_name = format!(
-            "projects/{}/secrets/{}/versions/latest",
-            self.project_id, secret_name
+        let span = tracing::debug_span!(
+            "gcp.secret.get",
+            secret.name = secret_name,
+            project.id = self.project_id
         );
+        let span_clone = span.clone();
+        
+        async move {
+            let start = std::time::Instant::now();
+            
+            // Construct the secret version name: projects/{project}/secrets/{secret}/versions/latest
+            let secret_version_name = format!(
+                "projects/{}/secrets/{}/versions/latest",
+                self.project_id, secret_name
+            );
 
-        let request = AccessSecretVersionRequest::default();
-        let request_for_send = request.clone().set_name(secret_version_name.clone()); // set_name returns Self
+            let request = AccessSecretVersionRequest::default();
+            let request_for_send = request.clone().set_name(secret_version_name.clone()); // set_name returns Self
 
-        match self
-            .client
-            .access_secret_version()
-            .with_request(request_for_send)
-            .send()
-            .await
-        {
-            Ok(response) => {
-                // Extract the secret value from the response
-                // The payload.data field contains base64-encoded secret data (as bytes)
-                if let Some(payload) = response.payload {
-                    // payload.data is bytes::Bytes, decode from base64
-                    let data = payload.data.as_ref();
-                    if data.is_empty() {
-                        return Err(anyhow::anyhow!("Secret version has no payload data"));
+            match self
+                .client
+                .access_secret_version()
+                .with_request(request_for_send)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    // Extract the secret value from the response
+                    // The payload.data field contains base64-encoded secret data (as bytes)
+                    if let Some(payload) = response.payload {
+                        // payload.data is bytes::Bytes, decode from base64
+                        let data = payload.data.as_ref();
+                        if data.is_empty() {
+                            span_clone.record("operation.success", false);
+                            span_clone.record("error.message", "Secret version has no payload data");
+                            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                            metrics::increment_provider_operation_errors("gcp");
+                            return Err(anyhow::anyhow!("Secret version has no payload data"));
+                        }
+
+                        // Decode base64 to get the actual secret value
+                        let decoded = general_purpose::STANDARD
+                            .decode(data)
+                            .context("Failed to decode base64 secret data")?;
+                        let secret_value =
+                            String::from_utf8(decoded).context("Secret value is not valid UTF-8")?;
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", true);
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation("gcp", "get", start.elapsed().as_secs_f64());
+                        Ok(Some(secret_value))
+                    } else {
+                        span_clone.record("operation.success", false);
+                        span_clone.record("error.message", "Secret version response has no payload");
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("gcp");
+                        Err(anyhow::anyhow!("Secret version response has no payload"))
                     }
-
-                    // Decode base64 to get the actual secret value
-                    let decoded = general_purpose::STANDARD
-                        .decode(data)
-                        .context("Failed to decode base64 secret data")?;
-                    let secret_value =
-                        String::from_utf8(decoded).context("Secret value is not valid UTF-8")?;
-                    Ok(Some(secret_value))
-                } else {
-                    Err(anyhow::anyhow!("Secret version response has no payload"))
                 }
-            }
-            Err(e) => {
-                // Check if it's a "not found" error (404)
-                let error_msg = e.to_string();
-                if error_msg.contains("404")
-                    || error_msg.contains("NOT_FOUND")
-                    || error_msg.contains("not found")
-                    || (error_msg.contains("Secret") && error_msg.contains("not found"))
-                {
-                    Ok(None)
-                } else {
-                    Err(anyhow::anyhow!(
-                        "Failed to get GCP secret {secret_name}: {e}"
-                    ))
+                Err(e) => {
+                    // Check if it's a "not found" error (404)
+                    let error_msg = e.to_string();
+                    if error_msg.contains("404")
+                        || error_msg.contains("NOT_FOUND")
+                        || error_msg.contains("not found")
+                        || (error_msg.contains("Secret") && error_msg.contains("not found"))
+                    {
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", false);
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation("gcp", "get", start.elapsed().as_secs_f64());
+                        Ok(None)
+                    } else {
+                        span_clone.record("operation.success", false);
+                        span_clone.record("error.message", error_msg.clone());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("gcp");
+                        Err(anyhow::anyhow!(
+                            "Failed to get GCP secret {secret_name}: {e}"
+                        ))
+                    }
                 }
             }
         }
+        .instrument(span)
+        .await
     }
 
     async fn delete_secret(&self, secret_name: &str) -> Result<()> {

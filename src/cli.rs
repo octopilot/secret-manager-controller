@@ -9,17 +9,29 @@
 //!
 //! ```bash
 //! # Trigger reconciliation for a specific SecretManagerConfig
-//! msmctl reconcile --namespace default --name my-secrets
+//! msmctl reconcile secretmanagerconfig my-secrets
 //!
 //! # List all SecretManagerConfig resources
-//! msmctl list
+//! msmctl list secretmanagerconfig
 //!
 //! # Show status of a SecretManagerConfig
-//! msmctl status --namespace default --name my-secrets
+//! msmctl status secretmanagerconfig my-secrets
+//!
+//! # Suspend reconciliation
+//! msmctl suspend secretmanagerconfig my-secrets
+//!
+//! # Resume reconciliation
+//! msmctl resume secretmanagerconfig my-secrets
+//!
+//! # Suspend Git pulls
+//! msmctl suspend-git-pulls secretmanagerconfig my-secrets
+//!
+//! # Resume Git pulls
+//! msmctl resume-git-pulls secretmanagerconfig my-secrets
 //! ```
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use kube::{
     api::{Api, Patch, PatchParams},
     Client,
@@ -28,77 +40,25 @@ use serde_json::json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
-// Re-define types inline for CLI (avoids circular dependencies)
-use kube::CustomResource;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
-#[derive(CustomResource, Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[kube(
-    kind = "SecretManagerConfig",
-    group = "secret-management.microscaler.io",
-    version = "v1",
-    namespaced,
-    status = "SecretManagerConfigStatus"
-)]
-#[serde(rename_all = "camelCase")]
-struct SecretManagerConfigSpec {
-    source_ref: SourceRef,
-    gcp_project_id: String,
-    environment: String,
-    #[serde(default)]
-    kustomize_path: Option<String>,
-    #[serde(default)]
-    base_path: Option<String>,
-    #[serde(default)]
-    secret_prefix: Option<String>,
-    #[serde(default)]
-    secret_suffix: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-struct SourceRef {
-    #[serde(default = "default_source_kind")]
-    kind: String,
-    name: String,
-    namespace: String,
-}
-
-fn default_source_kind() -> String {
-    "GitRepository".to_string()
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-struct SecretManagerConfigStatus {
-    #[serde(default)]
-    conditions: Vec<Condition>,
-    #[serde(default)]
-    observed_generation: Option<i64>,
-    #[serde(default)]
-    last_reconcile_time: Option<String>,
-    #[serde(default)]
-    secrets_synced: Option<i32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-struct Condition {
-    r#type: String,
-    status: String,
-    #[serde(default)]
-    last_transition_time: Option<String>,
-    #[serde(default)]
-    reason: Option<String>,
-    #[serde(default)]
-    message: Option<String>,
-}
+// Use types from the main library to ensure consistency with CRD
+use secret_manager_controller::SecretManagerConfig;
 
 /// Microscaler Secret Manager Controller CLI
 #[derive(Parser)]
 #[command(name = "msmctl")]
-#[command(about = "Microscaler Secret Manager Controller CLI", long_about = None)]
+#[command(
+    about = "Microscaler Secret Manager Controller CLI",
+    long_about = None,
+    after_help = "\
+Available resource types:
+  secretmanagerconfig (or 'smc') - SecretManagerConfig resource
+
+Examples:
+  msmctl list secretmanagerconfig
+  msmctl reconcile smc my-secrets
+  msmctl status secretmanagerconfig my-secrets --namespace default
+"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -116,13 +76,18 @@ struct Cli {
 enum Commands {
     /// Trigger reconciliation for a SecretManagerConfig resource
     Reconcile {
-        /// Name of the SecretManagerConfig resource
-        #[arg(short, long)]
-        name: String,
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: ResourceType,
 
-        /// Namespace of the SecretManagerConfig resource
-        #[arg(short, long)]
-        namespace: Option<String>,
+        /// Name of the SecretManagerConfig resource
+        #[arg(value_name = "NAME")]
+        name: String,
 
         /// Force reconciliation by deleting and waiting for GitOps to recreate
         /// Useful when resources get stuck. Deletes the resource, waits for Flux/GitOps
@@ -132,24 +97,116 @@ enum Commands {
     },
     /// List all SecretManagerConfig resources
     List {
-        /// Namespace to list resources in (defaults to all namespaces)
-        #[arg(short, long)]
-        namespace: Option<String>,
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: Option<ResourceType>,
     },
     /// Show status of a SecretManagerConfig resource
     Status {
-        /// Name of the SecretManagerConfig resource
-        #[arg(short, long)]
-        name: String,
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: ResourceType,
 
-        /// Namespace of the SecretManagerConfig resource
-        #[arg(short, long)]
-        namespace: Option<String>,
+        /// Name of the SecretManagerConfig resource
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Suspend reconciliation for a SecretManagerConfig resource
+    Suspend {
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: ResourceType,
+
+        /// Name of the SecretManagerConfig resource
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Resume reconciliation for a SecretManagerConfig resource
+    Resume {
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: ResourceType,
+
+        /// Name of the SecretManagerConfig resource
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Suspend Git pulls for a SecretManagerConfig resource
+    /// Suspends GitRepository pulls but continues reconciliation with the last pulled commit
+    #[command(name = "suspend-git-pulls")]
+    SuspendGitPulls {
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: ResourceType,
+
+        /// Name of the SecretManagerConfig resource
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Resume Git pulls for a SecretManagerConfig resource
+    #[command(name = "resume-git-pulls")]
+    ResumeGitPulls {
+        /// Resource type
+        /// Available types: secretmanagerconfig (or 'smc' for short)
+        #[arg(
+            value_enum,
+            value_name = "RESOURCE_TYPE",
+            help = "Resource type\nAvailable types:\n  secretmanagerconfig (or 'smc') - SecretManagerConfig resource"
+        )]
+        resource_type: ResourceType,
+
+        /// Name of the SecretManagerConfig resource
+        #[arg(value_name = "NAME")]
+        name: String,
     },
 }
 
+/// Resource types supported by msmctl
+#[derive(Clone, ValueEnum)]
+enum ResourceType {
+    /// SecretManagerConfig resource (full name)
+    /// Short form: 'smc'
+    #[value(name = "secretmanagerconfig", alias = "smc")]
+    SecretManagerConfig,
+}
+
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Configure rustls crypto provider FIRST, before any other operations
+    // Required for rustls 0.23+ when no default provider is set via features
+    // This must be called synchronously before any async operations that use rustls
+    // We use ring as the crypto provider (matches main controller)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -167,14 +224,53 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Reconcile {
+            resource_type,
             name,
-            namespace,
             force,
-        } => reconcile_command(client, name, namespace.or(cli.namespace), force).await,
-        Commands::List { namespace } => list_command(client, namespace.or(cli.namespace)).await,
-        Commands::Status { name, namespace } => {
-            status_command(client, name, namespace.or(cli.namespace)).await
+        } => {
+            validate_resource_type(&resource_type)?;
+            reconcile_command(client, name, cli.namespace, force).await
         }
+        Commands::List { resource_type } => {
+            let rt = resource_type.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Resource type is required.\n\n\
+                    Available resource types:\n\
+                      secretmanagerconfig (or 'smc') - SecretManagerConfig resource\n\n\
+                    Example: msmctl list secretmanagerconfig\n\
+                    Example: msmctl list smc"
+                )
+            })?;
+            validate_resource_type(&rt)?;
+            list_command(client, cli.namespace).await
+        }
+        Commands::Status { resource_type, name } => {
+            validate_resource_type(&resource_type)?;
+            status_command(client, name, cli.namespace).await
+        }
+        Commands::Suspend { resource_type, name } => {
+            validate_resource_type(&resource_type)?;
+            suspend_command(client, name, cli.namespace).await
+        }
+        Commands::Resume { resource_type, name } => {
+            validate_resource_type(&resource_type)?;
+            resume_command(client, name, cli.namespace).await
+        }
+        Commands::SuspendGitPulls { resource_type, name } => {
+            validate_resource_type(&resource_type)?;
+            suspend_git_pulls_command(client, name, cli.namespace).await
+        }
+        Commands::ResumeGitPulls { resource_type, name } => {
+            validate_resource_type(&resource_type)?;
+            resume_git_pulls_command(client, name, cli.namespace).await
+        }
+    }
+}
+
+/// Validate that the resource type is supported
+fn validate_resource_type(resource_type: &ResourceType) -> Result<()> {
+    match resource_type {
+        ResourceType::SecretManagerConfig => Ok(()),
     }
 }
 
@@ -236,74 +332,70 @@ async fn reconcile_command(
         // After deletion, wait a moment for deletion to complete
         sleep(Duration::from_secs(1)).await;
 
-        while SystemTime::now().duration_since(start).unwrap() < timeout {
-            // Check if resource exists again (recreated by GitOps)
-            match api.get(&name).await {
-                Ok(resource) => {
-                    // Resource exists - it's been recreated
-                    recreated = true;
-                    let gen = resource.metadata.generation.unwrap_or(0);
-                    println!("   ✅ Resource recreated (generation: {gen})");
-                    break;
-                }
-                Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
-                    // Resource still doesn't exist, continue waiting
-                }
-                Err(e) => {
-                    // Log error but continue waiting
-                    let elapsed_since_log = SystemTime::now()
-                        .duration_since(last_log)
-                        .unwrap_or(Duration::from_secs(0));
-                    if elapsed_since_log > Duration::from_secs(10) {
-                        eprintln!("   ⚠️  Error checking resource: {e}");
-                        last_log = SystemTime::now();
-                    }
-                }
+        while !recreated {
+            // Check timeout
+            if start.elapsed().unwrap_or(Duration::MAX) > timeout {
+                return Err(anyhow::anyhow!(
+                    "Timeout waiting for resource '{ns}/{name}' to be recreated by GitOps. \
+                     Resource may not exist in Git, or GitOps sync interval is too long."
+                ));
             }
 
             // Log progress every 10 seconds
-            let elapsed = SystemTime::now().duration_since(start).unwrap();
-            let elapsed_since_log = SystemTime::now()
-                .duration_since(last_log)
-                .unwrap_or(Duration::from_secs(0));
-            if elapsed_since_log > Duration::from_secs(10) {
-                println!("   ⏳ Still waiting... ({}s elapsed)", elapsed.as_secs());
+            if last_log.elapsed().unwrap_or(Duration::MAX) > Duration::from_secs(10) {
+                let elapsed = start.elapsed().unwrap_or(Duration::ZERO).as_secs();
+                println!("   ⏳ Still waiting... ({elapsed}s elapsed)");
                 last_log = SystemTime::now();
             }
 
-            sleep(Duration::from_millis(500)).await;
+            // Check if resource exists
+            match api.get(&name).await {
+                Ok(_) => {
+                    recreated = true;
+                    println!("   ✅ Resource recreated by GitOps");
+                }
+                Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
+                    // Resource doesn't exist yet, continue waiting
+                    sleep(Duration::from_secs(2)).await;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "Error checking for resource '{ns}/{name}': {e}"
+                    ));
+                }
+            }
         }
 
-        if !recreated {
-            return Err(anyhow::anyhow!(
-                "Timeout waiting for resource '{ns}/{name}' to be recreated by GitOps. \
-                The resource may not be managed by GitOps, or the sync interval is too long."
-            ));
-        }
-
-        // Step 4: Wait a moment for the resource to stabilize
-        println!();
-        println!("⏳ Waiting for resource to stabilize...");
+        // Step 4: Wait a moment for resource to be fully ready
+        println!("   ⏳ Waiting for resource to be ready...");
         sleep(Duration::from_secs(2)).await;
     }
 
-    // Step 5: Trigger reconciliation
-    println!();
     println!("🔄 Triggering reconciliation for SecretManagerConfig '{ns}/{name}'...");
 
-    // Get current timestamp for annotation
+    // Get current resource to check if it exists
+    let resource = api
+        .get(&name)
+        .await
+        .with_context(|| format!("Failed to get SecretManagerConfig '{ns}/{name}'"))?;
+
+    // Check if resource is suspended
+    if resource.spec.suspend {
+        println!("   ⚠️  Warning: Resource is suspended. Reconciliation will be skipped.");
+        println!("   Use 'msmctl resume secretmanagerconfig {name}' to resume reconciliation.");
+    }
+
+    // Add or update the reconciliation annotation
+    // The controller watches for this annotation and triggers reconciliation
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs()
-        .to_string();
+        .as_secs();
 
-    // Patch the resource with a reconciliation annotation
-    // The controller watches for changes to this annotation and triggers reconciliation
     let patch = json!({
         "metadata": {
             "annotations": {
-                "secret-management.microscaler.io/reconcile": timestamp
+                "secret-management.microscaler.io/reconcile": timestamp.to_string()
             }
         }
     });
@@ -312,28 +404,21 @@ async fn reconcile_command(
 
     api.patch(&name, &patch_params, &Patch::Merge(patch))
         .await
-        .with_context(|| format!("Failed to trigger reconciliation for '{ns}/{name}'"))?;
+        .with_context(|| format!("Failed to trigger reconciliation for SecretManagerConfig '{ns}/{name}'"))?;
 
     println!("✅ Reconciliation triggered successfully");
     println!("   Resource: {ns}/{name}");
-    println!("   Timestamp: {timestamp}");
-
-    if force {
-        println!();
-        println!("📊 Watching reconciliation logs...");
-        println!("   (Use 'kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)");
-    } else {
-        println!("\nThe controller will reconcile this resource shortly.");
-    }
+    println!("   Annotation: secret-management.microscaler.io/reconcile={timestamp}");
+    println!("\nThe controller will reconcile this resource shortly.");
 
     Ok(())
 }
 
 /// List all SecretManagerConfig resources
 async fn list_command(client: Client, namespace: Option<String>) -> Result<()> {
-    let api: Api<SecretManagerConfig> = if let Some(ns) = namespace {
+    let api: Api<SecretManagerConfig> = if let Some(ns) = &namespace {
         println!("Listing SecretManagerConfig resources in namespace '{ns}'...");
-        Api::namespaced(client, &ns)
+        Api::namespaced(client, ns)
     } else {
         println!("Listing SecretManagerConfig resources in all namespaces...");
         Api::all(client)
@@ -350,14 +435,17 @@ async fn list_command(client: Client, namespace: Option<String>) -> Result<()> {
     }
 
     println!(
-        "\n{:<30} {:<20} {:<15} {:<15}",
-        "NAME", "NAMESPACE", "READY", "SECRETS SYNCED"
+        "\n{:<30} {:<20} {:<12} {:<15} {:<15}",
+        "NAME", "NAMESPACE", "SUSPEND", "READY", "SECRETS SYNCED"
     );
-    println!("{}", "-".repeat(80));
+    println!("{}", "-".repeat(92));
 
     for config in configs.items {
         let name = config.metadata.name.as_deref().unwrap_or("<unknown>");
         let ns = config.metadata.namespace.as_deref().unwrap_or("<unknown>");
+
+        // Get suspend status
+        let suspend = if config.spec.suspend { "Yes" } else { "No" };
 
         // Get status
         let ready = config
@@ -381,7 +469,7 @@ async fn list_command(client: Client, namespace: Option<String>) -> Result<()> {
             .map(|n| n.to_string())
             .unwrap_or_else(|| "-".to_string());
 
-        println!("{name:<30} {ns:<20} {ready:<15} {secrets_synced:<15}");
+        println!("{name:<30} {ns:<20} {suspend:<12} {ready:<15} {secrets_synced:<15}");
     }
 
     Ok(())
@@ -391,7 +479,8 @@ async fn list_command(client: Client, namespace: Option<String>) -> Result<()> {
 async fn status_command(client: Client, name: String, namespace: Option<String>) -> Result<()> {
     let ns = namespace.as_deref().unwrap_or("default");
 
-    println!("Status for SecretManagerConfig '{ns}/{name}':\n");
+    println!("📊 Status for SecretManagerConfig '{ns}/{name}'");
+    println!();
 
     let api: Api<SecretManagerConfig> = Api::namespaced(client, ns);
 
@@ -400,75 +489,279 @@ async fn status_command(client: Client, name: String, namespace: Option<String>)
         .await
         .with_context(|| format!("Failed to get SecretManagerConfig '{ns}/{name}'"))?;
 
-    // Print basic info
-    println!("Metadata:");
-    println!(
-        "  Name: {}",
-        config.metadata.name.as_deref().unwrap_or("<unknown>")
-    );
-    println!(
-        "  Namespace: {}",
-        config.metadata.namespace.as_deref().unwrap_or("<unknown>")
-    );
-    if let Some(gen) = config.metadata.generation {
-        println!("  Generation: {gen}");
+    // Basic info
+    println!("Resource Information:");
+    println!("  Name: {}", config.metadata.name.as_deref().unwrap_or("<unknown>"));
+    println!("  Namespace: {}", config.metadata.namespace.as_deref().unwrap_or("<unknown>"));
+    if let Some(uid) = &config.metadata.uid {
+        println!("  UID: {}", uid);
     }
 
-    // Print spec
-    println!("\nSpec:");
-    println!("  GCP Project ID: {}", config.spec.gcp_project_id);
-    println!("  Environment: {}", config.spec.environment);
-    println!(
-        "  Source: {}/{}",
-        config.spec.source_ref.kind, config.spec.source_ref.name
-    );
-    if let Some(ref kustomize_path) = config.spec.kustomize_path {
-        println!("  Kustomize Path: {kustomize_path}");
+    // Spec info
+    println!();
+    println!("Spec:");
+    println!("  Suspend: {}", config.spec.suspend);
+    println!("  Suspend Git Pulls: {}", config.spec.suspend_git_pulls);
+    println!("  Reconcile Interval: {}", config.spec.reconcile_interval);
+    println!("  Git Repository Pull Interval: {}", config.spec.git_repository_pull_interval);
+    println!("  Environment: {}", config.spec.secrets.environment);
+    if let Some(prefix) = &config.spec.secrets.prefix {
+        println!("  Prefix: {}", prefix);
     }
-    if let Some(ref base_path) = config.spec.base_path {
-        println!("  Base Path: {base_path}");
-    }
-    if let Some(ref prefix) = config.spec.secret_prefix {
-        println!("  Secret Prefix: {prefix}");
-    }
-    if let Some(ref suffix) = config.spec.secret_suffix {
-        println!("  Secret Suffix: {suffix}");
+    if let Some(base_path) = &config.spec.secrets.base_path {
+        println!("  Base Path: {}", base_path);
     }
 
-    // Print status
-    if let Some(ref status) = config.status {
-        println!("\nStatus:");
+    // Provider info
+    println!();
+    println!("Provider:");
+    match &config.spec.provider {
+        secret_manager_controller::ProviderConfig::Gcp(gcp) => {
+            println!("  Type: GCP");
+            println!("  Project ID: {}", gcp.project_id);
+        }
+        secret_manager_controller::ProviderConfig::Aws(aws) => {
+            println!("  Type: AWS");
+            println!("  Region: {}", aws.region);
+        }
+        secret_manager_controller::ProviderConfig::Azure(azure) => {
+            println!("  Type: Azure");
+            println!("  Vault Name: {}", azure.vault_name);
+        }
+    }
 
-        if let Some(gen) = status.observed_generation {
-            println!("  Observed Generation: {gen}");
+    // Source ref
+    println!();
+    println!("Source:");
+    println!("  Kind: {}", config.spec.source_ref.kind);
+    println!("  Name: {}", config.spec.source_ref.name);
+    println!("  Namespace: {}", config.spec.source_ref.namespace);
+
+    // Status info
+    if let Some(status) = &config.status {
+        println!();
+        println!("Status:");
+        if let Some(phase) = &status.phase {
+            println!("  Phase: {}", phase);
+        }
+        if let Some(description) = &status.description {
+            println!("  Description: {}", description);
+        }
+        if let Some(secrets_synced) = status.secrets_synced {
+            println!("  Secrets Synced: {}", secrets_synced);
+        }
+        if let Some(observed_generation) = status.observed_generation {
+            println!("  Observed Generation: {}", observed_generation);
+        }
+        if let Some(last_reconcile_time) = &status.last_reconcile_time {
+            println!("  Last Reconcile Time: {}", last_reconcile_time);
         }
 
-        if let Some(ref time) = status.last_reconcile_time {
-            println!("  Last Reconcile Time: {time}");
-        }
-
-        if let Some(count) = status.secrets_synced {
-            println!("  Secrets Synced: {count}");
-        }
-
+        // Conditions
         if !status.conditions.is_empty() {
-            println!("\nConditions:");
+            println!();
+            println!("Conditions:");
             for condition in &status.conditions {
                 println!("  {}: {}", condition.r#type, condition.status);
-                if let Some(ref reason) = condition.reason {
-                    println!("    Reason: {reason}");
+                if let Some(reason) = &condition.reason {
+                    println!("    Reason: {}", reason);
                 }
-                if let Some(ref message) = condition.message {
-                    println!("    Message: {message}");
+                if let Some(message) = &condition.message {
+                    println!("    Message: {}", message);
                 }
-                if let Some(ref time) = condition.last_transition_time {
-                    println!("    Last Transition: {time}");
+                if let Some(last_transition_time) = &condition.last_transition_time {
+                    println!("    Last Transition: {}", last_transition_time);
                 }
             }
         }
     } else {
-        println!("\nStatus: No status available (resource may not have been reconciled yet)");
+        println!();
+        println!("Status: No status available (resource may not have been reconciled yet)");
     }
+
+    Ok(())
+}
+
+/// Suspend reconciliation for a SecretManagerConfig resource
+async fn suspend_command(
+    client: Client,
+    name: String,
+    namespace: Option<String>,
+) -> Result<()> {
+    let ns = namespace.as_deref().unwrap_or("default");
+
+    println!("⏸️  Suspending reconciliation for SecretManagerConfig '{ns}/{name}'...");
+
+    let api: Api<SecretManagerConfig> = Api::namespaced(client, ns);
+
+    // Check if resource exists
+    let resource = api
+        .get(&name)
+        .await
+        .with_context(|| format!("Failed to get SecretManagerConfig '{ns}/{name}'"))?;
+
+    // Check if already suspended
+    if resource.spec.suspend {
+        println!("   ℹ️  Resource is already suspended");
+        return Ok(());
+    }
+
+    // Patch the resource to set suspend: true
+    let patch = json!({
+        "spec": {
+            "suspend": true
+        }
+    });
+
+    let patch_params = PatchParams::apply("msmctl").force();
+
+    api.patch(&name, &patch_params, &Patch::Merge(patch))
+        .await
+        .with_context(|| format!("Failed to suspend SecretManagerConfig '{ns}/{name}'"))?;
+
+    println!("✅ Reconciliation suspended successfully");
+    println!("   Resource: {ns}/{name}");
+    println!("   Status: Suspended (reconciliation paused)");
+    println!("\nTo resume reconciliation, run:");
+    println!("   msmctl resume secretmanagerconfig {name} --namespace {ns}");
+
+    Ok(())
+}
+
+/// Resume reconciliation for a SecretManagerConfig resource
+async fn resume_command(
+    client: Client,
+    name: String,
+    namespace: Option<String>,
+) -> Result<()> {
+    let ns = namespace.as_deref().unwrap_or("default");
+
+    println!("▶️  Resuming reconciliation for SecretManagerConfig '{ns}/{name}'...");
+
+    let api: Api<SecretManagerConfig> = Api::namespaced(client, ns);
+
+    // Check if resource exists
+    let resource = api
+        .get(&name)
+        .await
+        .with_context(|| format!("Failed to get SecretManagerConfig '{ns}/{name}'"))?;
+
+    // Check if already resumed
+    if !resource.spec.suspend {
+        println!("   ℹ️  Resource is already active (not suspended)");
+        return Ok(());
+    }
+
+    // Patch the resource to set suspend: false
+    let patch = json!({
+        "spec": {
+            "suspend": false
+        }
+    });
+
+    let patch_params = PatchParams::apply("msmctl").force();
+
+    api.patch(&name, &patch_params, &Patch::Merge(patch))
+        .await
+        .with_context(|| format!("Failed to resume SecretManagerConfig '{ns}/{name}'"))?;
+
+    println!("✅ Reconciliation resumed successfully");
+    println!("   Resource: {ns}/{name}");
+    println!("   Status: Active (reconciliation will proceed)");
+    println!("\nThe controller will reconcile this resource shortly.");
+
+    Ok(())
+}
+
+/// Suspend Git pulls for a SecretManagerConfig resource
+/// Sets suspendGitPulls: true in the spec, which suspends GitRepository pulls but continues reconciliation
+async fn suspend_git_pulls_command(
+    client: Client,
+    name: String,
+    namespace: Option<String>,
+) -> Result<()> {
+    let ns = namespace.as_deref().unwrap_or("default");
+
+    println!("⏸️  Suspending Git pulls for SecretManagerConfig '{ns}/{name}'...");
+
+    let api: Api<SecretManagerConfig> = Api::namespaced(client, ns);
+
+    // Check if resource exists
+    let resource = api
+        .get(&name)
+        .await
+        .with_context(|| format!("Failed to get SecretManagerConfig '{ns}/{name}'"))?;
+
+    // Check if already suspended
+    if resource.spec.suspend_git_pulls {
+        println!("   ℹ️  Git pulls are already suspended");
+        return Ok(());
+    }
+
+    // Patch the resource to set suspendGitPulls: true
+    let patch = json!({
+        "spec": {
+            "suspendGitPulls": true
+        }
+    });
+
+    let patch_params = PatchParams::apply("msmctl").force();
+
+    api.patch(&name, &patch_params, &Patch::Merge(patch))
+        .await
+        .with_context(|| format!("Failed to suspend Git pulls for SecretManagerConfig '{ns}/{name}'"))?;
+
+    println!("✅ Git pulls suspended successfully");
+    println!("   Resource: {ns}/{name}");
+    println!("   Status: Git pulls paused (reconciliation continues with last commit)");
+    println!("\nTo resume Git pulls, run:");
+    println!("   msmctl resume-git-pulls secretmanagerconfig {name} --namespace {ns}");
+
+    Ok(())
+}
+
+/// Resume Git pulls for a SecretManagerConfig resource
+/// Sets suspendGitPulls: false in the spec, which resumes GitRepository pulls
+async fn resume_git_pulls_command(
+    client: Client,
+    name: String,
+    namespace: Option<String>,
+) -> Result<()> {
+    let ns = namespace.as_deref().unwrap_or("default");
+
+    println!("▶️  Resuming Git pulls for SecretManagerConfig '{ns}/{name}'...");
+
+    let api: Api<SecretManagerConfig> = Api::namespaced(client, ns);
+
+    // Check if resource exists
+    let resource = api
+        .get(&name)
+        .await
+        .with_context(|| format!("Failed to get SecretManagerConfig '{ns}/{name}'"))?;
+
+    // Check if already resumed
+    if !resource.spec.suspend_git_pulls {
+        println!("   ℹ️  Git pulls are already active");
+        return Ok(());
+    }
+
+    // Patch the resource to set suspendGitPulls: false
+    let patch = json!({
+        "spec": {
+            "suspendGitPulls": false
+        }
+    });
+
+    let patch_params = PatchParams::apply("msmctl").force();
+
+    api.patch(&name, &patch_params, &Patch::Merge(patch))
+        .await
+        .with_context(|| format!("Failed to resume Git pulls for SecretManagerConfig '{ns}/{name}'"))?;
+
+    println!("✅ Git pulls resumed successfully");
+    println!("   Resource: {ns}/{name}");
+    println!("   Status: Git pulls enabled (will fetch new commits)");
+    println!("\nThe controller will resume pulling from Git shortly.");
 
     Ok(())
 }

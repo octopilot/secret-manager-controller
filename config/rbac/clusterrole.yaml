@@ -19,7 +19,8 @@ rules:
   verbs:
   - update
   - patch
-# Watch FluxCD GitRepository resources
+# Watch and patch FluxCD GitRepository resources
+# Patch permission is needed to suspend/resume Git pulls via suspendGitPulls field
 - apiGroups:
   - source.toolkit.fluxcd.io
   resources:
@@ -28,6 +29,7 @@ rules:
   - get
   - list
   - watch
+  - patch
 # Watch ArgoCD Application resources
 - apiGroups:
   - argoproj.io

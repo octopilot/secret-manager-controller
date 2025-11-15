@@ -1,7 +1,7 @@
 apiVersion: secret-management.microscaler.io/v1
 kind: SecretManagerConfig
 metadata:
-  name: test-sops-config
+  name: test-sops-config-prod
   namespace: default
 spec:
   # Source reference - points to a GitRepository
@@ -14,7 +14,7 @@ spec:
   # Secrets configuration
   secrets:
     # Environment name - must match the directory name under profiles/
-    environment: dev
+    environment: prod
     
     # Optional: Base path within the repository
     # Leave empty for single-service structure
@@ -25,10 +25,10 @@ spec:
     # defaultServiceName: "test-service"
     
     # Secret prefix for cloud provider
-    prefix: "test-service"
+    prefix: "test-service-prod"
     
     # Optional: Suffix for secret names
-    # suffix: "dev"
+    # suffix: "prod"
   
   # Config store routing (optional)
   # When enabled, application.properties routes to config stores instead of secrets
@@ -49,11 +49,11 @@ spec:
       #   serviceAccountEmail: secret-manager-controller@your-project.iam.gserviceaccount.com
   
   # Reconcile interval - how often to reconcile secrets between Git and cloud providers
-  # Dev environment: 1 minute (default)
-  reconcileInterval: "1m"
+  # Production environment: 5 minutes
+  reconcileInterval: "5m"
   
   # GitRepository pull update interval
   # How often to check for updates from the GitRepository source
-  # Dev environment: 1 minute (default)
-  gitRepositoryPullInterval: "1m"
+  # Production environment: 5 minutes
+  gitRepositoryPullInterval: "5m"
 

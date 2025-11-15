@@ -90,9 +90,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # OpenTelemetry
-# Note: Full Otel implementation pending API stabilization
-# Dependencies will be added when implementing full Otel support
-# For now, we support Otel configuration via CRD and log the settings
+opentelemetry = "0.31"
+opentelemetry_sdk = "0.31"
+tracing-opentelemetry = "0.25"
+
+# Datadog OpenTelemetry integration
+# Provides full APM/tracing support with Datadog-specific features
+# Using git dependency as crate is in preview and not yet on crates.io
+datadog-opentelemetry = { git = "https://github.com/DataDog/dd-trace-rs", package = "datadog-opentelemetry" }
 
 # File system operations
 walkdir = "2"

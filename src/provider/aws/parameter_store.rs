@@ -17,7 +17,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_ssm::Client as SsmClient;
-use tracing::{debug, info};
+use std::time::Instant;
+use tracing::{debug, info, info_span, Instrument};
 
 /// AWS Parameter Store provider implementation
 pub struct AwsParameterStore {
@@ -138,105 +139,171 @@ impl AwsParameterStore {
 #[async_trait]
 impl ConfigStoreProvider for AwsParameterStore {
     async fn create_or_update_config(&self, config_key: &str, config_value: &str) -> Result<bool> {
-        let start = std::time::Instant::now();
         let parameter_name = self.construct_parameter_name(config_key);
-
-        // Check if parameter exists
-        let parameter_exists = self
-            .client
-            .get_parameter()
-            .name(&parameter_name)
-            .send()
-            .await
-            .is_ok();
-
-        if !parameter_exists {
-            // Create parameter
-            info!("Creating AWS Parameter Store parameter: {}", parameter_name);
-            self.client
-                .put_parameter()
+        let span = info_span!(
+            "aws.parameter.create_or_update",
+            parameter.name = parameter_name,
+            region = self._region
+        );
+        let span_clone = span.clone();
+        let start = Instant::now();
+        
+        async move {
+            // Check if parameter exists
+            let parameter_exists = self
+                .client
+                .get_parameter()
                 .name(&parameter_name)
-                .value(config_value)
-                .r#type(aws_sdk_ssm::types::ParameterType::String)
-                .overwrite(false)
                 .send()
                 .await
-                .context("Failed to create AWS Parameter Store parameter")?;
+                .is_ok();
 
-            metrics::record_secret_operation(
-                "aws_parameter_store",
-                "create",
-                start.elapsed().as_secs_f64(),
-            );
-            return Ok(true);
+            let operation_type = if !parameter_exists {
+                // Create parameter
+                info!("Creating AWS Parameter Store parameter: {}", parameter_name);
+                match self
+                    .client
+                    .put_parameter()
+                    .name(&parameter_name)
+                    .value(config_value)
+                    .r#type(aws_sdk_ssm::types::ParameterType::String)
+                    .overwrite(false)
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        metrics::record_secret_operation("aws", "create", start.elapsed().as_secs_f64());
+                        span_clone.record("operation.type", "create");
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone.record("operation.success", true);
+                        return Ok(true);
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        span_clone.record("operation.success", false);
+                        span_clone.record("operation.type", "create");
+                        span_clone.record("error.message", error_msg.clone());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("aws");
+                        return Err(anyhow::anyhow!(
+                            "Failed to create AWS Parameter Store parameter {parameter_name}: {e}"
+                        ));
+                    }
+                }
+            } else {
+                // Get current parameter value
+                let current_value = self.get_config_value(config_key).await?;
+
+                if let Some(current) = current_value {
+                    if current == config_value {
+                        debug!(
+                            "AWS Parameter Store parameter {} unchanged, skipping update",
+                            parameter_name
+                        );
+                        metrics::record_secret_operation("aws", "no_change", start.elapsed().as_secs_f64());
+                        span_clone.record("operation.type", "no_change");
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        span_clone.record("operation.success", true);
+                        return Ok(false);
+                    }
+                }
+
+                // Update parameter (overwrite existing)
+                info!("Updating AWS Parameter Store parameter: {}", parameter_name);
+                match self
+                    .client
+                    .put_parameter()
+                    .name(&parameter_name)
+                    .value(config_value)
+                    .r#type(aws_sdk_ssm::types::ParameterType::String)
+                    .overwrite(true)
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        metrics::record_secret_operation("aws", "update", start.elapsed().as_secs_f64());
+                        "update"
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        span_clone.record("operation.success", false);
+                        span_clone.record("operation.type", "update");
+                        span_clone.record("error.message", error_msg.clone());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("aws");
+                        return Err(anyhow::anyhow!(
+                            "Failed to update AWS Parameter Store parameter {parameter_name}: {e}"
+                        ));
+                    }
+                }
+            };
+
+            span_clone.record("operation.type", operation_type);
+            span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+            span_clone.record("operation.success", true);
+            Ok(true)
         }
-
-        // Get current parameter value
-        let current_value = self.get_config_value(config_key).await?;
-
-        if let Some(current) = current_value {
-            if current == config_value {
-                debug!(
-                    "AWS Parameter Store parameter {} unchanged, skipping update",
-                    parameter_name
-                );
-                metrics::record_secret_operation(
-                    "aws_parameter_store",
-                    "no_change",
-                    start.elapsed().as_secs_f64(),
-                );
-                return Ok(false);
-            }
-        }
-
-        // Update parameter (overwrite existing)
-        info!("Updating AWS Parameter Store parameter: {}", parameter_name);
-        self.client
-            .put_parameter()
-            .name(&parameter_name)
-            .value(config_value)
-            .r#type(aws_sdk_ssm::types::ParameterType::String)
-            .overwrite(true)
-            .send()
-            .await
-            .context("Failed to update AWS Parameter Store parameter")?;
-
-        metrics::record_secret_operation(
-            "aws_parameter_store",
-            "update",
-            start.elapsed().as_secs_f64(),
-        );
-        Ok(true)
+        .instrument(span)
+        .await
     }
 
     async fn get_config_value(&self, config_key: &str) -> Result<Option<String>> {
         let parameter_name = self.construct_parameter_name(config_key);
-
-        match self
-            .client
-            .get_parameter()
-            .name(&parameter_name)
-            .with_decryption(true) // Decrypt SecureString parameters if needed
-            .send()
-            .await
-        {
-            Ok(response) => {
-                if let Some(parameter) = response.parameter() {
-                    Ok(parameter.value().map(|v| v.to_string()))
-                } else {
-                    Ok(None)
+        let span = tracing::debug_span!(
+            "aws.parameter.get",
+            parameter.name = parameter_name,
+            region = self._region
+        );
+        let span_clone = span.clone();
+        let start = Instant::now();
+        
+        async move {
+            match self
+                .client
+                .get_parameter()
+                .name(&parameter_name)
+                .with_decryption(true) // Decrypt SecureString parameters if needed
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    if let Some(parameter) = response.parameter() {
+                        let value = parameter.value().map(|v| v.to_string());
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", value.is_some());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        Ok(value)
+                    } else {
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", false);
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        Ok(None)
+                    }
                 }
-            }
-            Err(e) => {
-                if e.to_string().contains("ParameterNotFound") {
-                    Ok(None)
-                } else {
-                    Err(anyhow::anyhow!(
-                        "Failed to get AWS Parameter Store parameter: {e}"
-                    ))
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("ParameterNotFound") {
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", false);
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::record_secret_operation("aws", "get", start.elapsed().as_secs_f64());
+                        Ok(None)
+                    } else {
+                        span_clone.record("operation.success", false);
+                        span_clone.record("error.message", error_msg.clone());
+                        span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                        metrics::increment_provider_operation_errors("aws");
+                        Err(anyhow::anyhow!(
+                            "Failed to get AWS Parameter Store parameter: {e}"
+                        ))
+                    }
                 }
             }
         }
+        .instrument(span)
+        .await
     }
 
     async fn delete_config(&self, config_key: &str) -> Result<()> {

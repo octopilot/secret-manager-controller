@@ -23,11 +23,13 @@
 //! - **Single Service**: `deployment-configuration/profiles/{env}/`
 //! - **Backward Compatible**: `deployment-configuration/{env}/` (without profiles)
 
+use crate::observability::metrics;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, warn};
+use tracing::{debug, info_span, warn, Instrument};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
@@ -434,26 +436,65 @@ fn is_sops_encrypted(content: &str) -> bool {
 /// 1. Using rops crate with GPG private key (future implementation)
 /// 2. Using sops binary (current implementation - more reliable)
 async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> Result<String> {
-    // Try rops crate first if private key is provided (future enhancement)
-    if let Some(private_key) = sops_private_key {
-        debug!("Attempting SOPS decryption with provided GPG private key");
+    let content_size = content.len();
+    let encryption_method = if sops_private_key.is_some() { "gpg" } else { "system_keyring" };
+    
+    let span = info_span!(
+        "sops.decrypt",
+        file.size = content_size,
+        encryption.method = encryption_method
+    );
+    let span_clone = span.clone();
+    let start = Instant::now();
+    
+    async move {
+        // Try rops crate first if private key is provided (future enhancement)
+        if let Some(private_key) = sops_private_key {
+            debug!("Attempting SOPS decryption with provided GPG private key");
 
-        // Try using rops crate (currently falls back to sops binary)
-        match decrypt_with_rops(content, private_key) {
-            Ok(decrypted) => {
-                debug!("Successfully decrypted SOPS content using rops");
-                return Ok(decrypted);
-            }
-            Err(e) => {
-                debug!("rops decryption failed: {}, trying sops binary", e);
-                // Fall through to try sops binary
+            // Try using rops crate (currently falls back to sops binary)
+            match decrypt_with_rops(content, private_key) {
+                Ok(decrypted) => {
+                    debug!("Successfully decrypted SOPS content using rops");
+                    span_clone.record("decryption.method", "rops");
+                    span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                    span_clone.record("operation.success", true);
+                    metrics::increment_sops_decryption_total();
+                    metrics::observe_sops_decryption_duration(start.elapsed().as_secs_f64());
+                    return Ok(decrypted);
+                }
+                Err(e) => {
+                    debug!("rops decryption failed: {}, trying sops binary", e);
+                    // Fall through to try sops binary
+                }
             }
         }
-    }
 
-    // Use sops binary (current implementation)
-    debug!("Attempting SOPS decryption using sops binary");
-    decrypt_with_sops_binary(content, sops_private_key).await
+        // Use sops binary (current implementation)
+        debug!("Attempting SOPS decryption using sops binary");
+        let result = decrypt_with_sops_binary(content, sops_private_key).await;
+        
+        match &result {
+            Ok(_) => {
+                span_clone.record("decryption.method", "sops_binary");
+                span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone.record("operation.success", true);
+                metrics::increment_sops_decryption_total();
+                metrics::observe_sops_decryption_duration(start.elapsed().as_secs_f64());
+            }
+            Err(e) => {
+                span_clone.record("decryption.method", "sops_binary");
+                span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
+                span_clone.record("operation.success", false);
+                span_clone.record("error.message", e.to_string());
+                metrics::increment_sops_decryption_errors_total();
+            }
+        }
+        
+        result
+    }
+    .instrument(span)
+    .await
 }
 
 /// Decrypt SOPS content using rops crate with GPG private key

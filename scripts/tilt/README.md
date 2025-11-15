@@ -57,11 +57,30 @@ Replaces the inline script for `custom_build` command.
 - `EXPECTED_REF` - Expected image reference (default: `{IMAGE_NAME}:tilt`)
 
 ### `reset_test_resource.py`
-Replaces the inline script for `test-resource-reset` resource.
-- Deletes existing test resource
-- Applies test resource from YAML
+Replaces the inline script for `test-resource-update` resource.
+- Installs/updates CRD if it has changed (without deleting first)
+- Optionally deletes existing test resources (with `--delete` flag)
+- Applies multiple test resources from YAML (dev, stage, prod)
 
-**No environment variables required.**
+**Resources managed:**
+- `test-sops-config` (dev): reconcileInterval=1m
+- `test-sops-config-stage`: reconcileInterval=3m
+- `test-sops-config-prod`: reconcileInterval=5m
+
+**Arguments:**
+- `--delete` - Delete existing test resources before applying (default: False)
+
+**Environment variables:**
+- `CONTROLLER_DIR` - Controller directory (default: `.`)
+
+**Usage:**
+```bash
+# Update all resources without deleting (default)
+python3 scripts/tilt/reset_test_resource.py
+
+# Delete all resources before applying (clean reset)
+python3 scripts/tilt/reset_test_resource.py --delete
+```
 
 ## Usage
 

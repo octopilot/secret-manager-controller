@@ -38,15 +38,17 @@ def main():
     # Paths
     binary_path = Path(controller_dir) / "target/x86_64-unknown-linux-musl/debug" / binary_name
     crdgen_path = Path(controller_dir) / "target/x86_64-unknown-linux-musl/debug/crdgen"
+    msmctl_path = Path(controller_dir) / "target/x86_64-unknown-linux-musl/debug/msmctl"
     artifact_path = Path("build_artifacts") / binary_name
     crdgen_artifact_path = Path("build_artifacts/crdgen")
+    msmctl_artifact_path = Path("build_artifacts/msmctl")
     
     # Ensure build_artifacts directory exists
     Path("build_artifacts").mkdir(parents=True, exist_ok=True)
     
     # Delete old binaries to ensure fresh copy
     print("🧹 Cleaning old binaries from build_artifacts...")
-    for path in [artifact_path, crdgen_artifact_path]:
+    for path in [artifact_path, crdgen_artifact_path, msmctl_artifact_path]:
         if path.exists():
             path.unlink()
     
@@ -85,11 +87,24 @@ def main():
             print(crdgen_copy_result.stderr, file=sys.stderr)
         copy_error = True
     
+    # Copy msmctl
+    msmctl_copy_result = subprocess.run(
+        ["python3", str(copy_script), str(msmctl_path), str(msmctl_artifact_path), "msmctl"],
+        capture_output=True,
+        text=True
+    )
+    if msmctl_copy_result.returncode != 0:
+        print("❌ Error: Failed to copy msmctl", file=sys.stderr)
+        if msmctl_copy_result.stderr:
+            print(msmctl_copy_result.stderr, file=sys.stderr)
+        copy_error = True
+    
     # Output hashes to verify what was copied
     print("")
     print("📊 Binary Hashes (verify what was built):")
     binary_ok = False
     crdgen_ok = False
+    msmctl_ok = False
     
     if artifact_path.exists():
         md5_hash = get_md5_hash(artifact_path)
@@ -111,8 +126,18 @@ def main():
         print("  ❌ crdgen not found!", file=sys.stderr)
         copy_error = True
     
-    # Only report success if both binaries exist
-    if copy_error or not binary_ok or not crdgen_ok:
+    if msmctl_artifact_path.exists():
+        md5_hash = get_md5_hash(msmctl_artifact_path)
+        file_size = get_file_size(msmctl_artifact_path)
+        print(f"  msmctl: {md5_hash}")
+        print(f"    Size: {file_size} bytes")
+        msmctl_ok = True
+    else:
+        print("  ❌ msmctl not found!", file=sys.stderr)
+        copy_error = True
+    
+    # Only report success if all binaries exist
+    if copy_error or not binary_ok or not crdgen_ok or not msmctl_ok:
         print("❌ Binary copy failed - check errors above", file=sys.stderr)
         sys.exit(1)
     

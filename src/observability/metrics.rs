@@ -14,7 +14,9 @@
 //! - `secret_manager_gcp_operation_duration_seconds` - Duration of GCP operations
 
 use anyhow::Result;
-use prometheus::{Counter, Histogram, IntCounter, IntGauge, Registry};
+use prometheus::{
+    Counter, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry,
+};
 use std::sync::LazyLock;
 
 // Metrics
@@ -102,6 +104,122 @@ static DURATION_PARSING_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     .expect("Failed to create DURATION_PARSING_ERRORS_TOTAL metric - this should never happen")
 });
 
+static SOPS_DECRYPTION_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_sops_decryption_total",
+        "Total number of SOPS decryption operations",
+    )
+    .expect("Failed to create SOPS_DECRYPTION_TOTAL metric - this should never happen")
+});
+
+static SOPS_DECRYPTION_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+    Histogram::with_opts(
+        prometheus::HistogramOpts::new(
+            "secret_manager_sops_decryption_duration_seconds",
+            "Duration of SOPS decryption operations in seconds",
+        )
+        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0]),
+    )
+    .expect("Failed to create SOPS_DECRYPTION_DURATION metric - this should never happen")
+});
+
+static SOPS_DECRYPTION_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_sops_decryption_errors_total",
+        "Total number of SOPS decryption errors",
+    )
+    .expect("Failed to create SOPS_DECRYPTION_ERRORS_TOTAL metric - this should never happen")
+});
+
+static KUSTOMIZE_BUILD_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_kustomize_build_total",
+        "Total number of kustomize build operations",
+    )
+    .expect("Failed to create KUSTOMIZE_BUILD_TOTAL metric - this should never happen")
+});
+
+static KUSTOMIZE_BUILD_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+    Histogram::with_opts(
+        prometheus::HistogramOpts::new(
+            "secret_manager_kustomize_build_duration_seconds",
+            "Duration of kustomize build operations in seconds",
+        )
+        .buckets(vec![0.5, 1.0, 2.0, 5.0, 10.0, 30.0]),
+    )
+    .expect("Failed to create KUSTOMIZE_BUILD_DURATION metric - this should never happen")
+});
+
+static KUSTOMIZE_BUILD_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_kustomize_build_errors_total",
+        "Total number of kustomize build errors",
+    )
+    .expect("Failed to create KUSTOMIZE_BUILD_ERRORS_TOTAL metric - this should never happen")
+});
+
+static GIT_CLONE_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_git_clone_total",
+        "Total number of git clone operations",
+    )
+    .expect("Failed to create GIT_CLONE_TOTAL metric - this should never happen")
+});
+
+static GIT_CLONE_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+    Histogram::with_opts(
+        prometheus::HistogramOpts::new(
+            "secret_manager_git_clone_duration_seconds",
+            "Duration of git clone operations in seconds",
+        )
+        .buckets(vec![1.0, 2.0, 5.0, 10.0, 30.0, 60.0]),
+    )
+    .expect("Failed to create GIT_CLONE_DURATION metric - this should never happen")
+});
+
+static GIT_CLONE_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_git_clone_errors_total",
+        "Total number of git clone errors",
+    )
+    .expect("Failed to create GIT_CLONE_ERRORS_TOTAL metric - this should never happen")
+});
+
+// Provider-specific metrics with provider label
+static PROVIDER_OPERATIONS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    IntCounterVec::new(
+        prometheus::Opts::new(
+            "secret_manager_provider_operations_total",
+            "Total number of provider operations by provider type",
+        ),
+        &["provider"],
+    )
+    .expect("Failed to create PROVIDER_OPERATIONS_TOTAL metric - this should never happen")
+});
+
+static PROVIDER_OPERATION_DURATION: LazyLock<HistogramVec> = LazyLock::new(|| {
+    HistogramVec::new(
+        prometheus::HistogramOpts::new(
+            "secret_manager_provider_operation_duration_seconds",
+            "Duration of provider operations in seconds by provider type",
+        )
+        .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
+        &["provider"],
+    )
+    .expect("Failed to create PROVIDER_OPERATION_DURATION metric - this should never happen")
+});
+
+static PROVIDER_OPERATION_ERRORS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    IntCounterVec::new(
+        prometheus::Opts::new(
+            "secret_manager_provider_operation_errors_total",
+            "Total number of provider operation errors by provider type",
+        ),
+        &["provider"],
+    )
+    .expect("Failed to create PROVIDER_OPERATION_ERRORS_TOTAL metric - this should never happen")
+});
+
 #[allow(
     clippy::missing_errors_doc,
     reason = "Error documentation is provided in doc comments"
@@ -116,6 +234,18 @@ pub fn register_metrics() -> Result<()> {
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATIONS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATION_DURATION.clone()))?;
     REGISTRY.register(Box::new(DURATION_PARSING_ERRORS_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(SOPS_DECRYPTION_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(SOPS_DECRYPTION_DURATION.clone()))?;
+    REGISTRY.register(Box::new(SOPS_DECRYPTION_ERRORS_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(KUSTOMIZE_BUILD_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(KUSTOMIZE_BUILD_DURATION.clone()))?;
+    REGISTRY.register(Box::new(KUSTOMIZE_BUILD_ERRORS_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(GIT_CLONE_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(GIT_CLONE_DURATION.clone()))?;
+    REGISTRY.register(Box::new(GIT_CLONE_ERRORS_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(PROVIDER_OPERATIONS_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(PROVIDER_OPERATION_DURATION.clone()))?;
+    REGISTRY.register(Box::new(PROVIDER_OPERATION_ERRORS_TOTAL.clone()))?;
 
     Ok(())
 }
@@ -157,13 +287,64 @@ pub fn observe_gcp_operation_duration(duration: f64) {
 }
 
 // Generic secret operation metrics for multi-provider support
-pub fn record_secret_operation(_provider: &str, _operation: &str, duration: f64) {
-    // For now, we'll use the GCP metrics as a generic metric
-    // In the future, we might want provider-specific metrics
-    GCP_SECRET_MANAGER_OPERATIONS_TOTAL.inc();
-    GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
+pub fn record_secret_operation(provider: &str, _operation: &str, duration: f64) {
+    // Record provider-specific metrics
+    PROVIDER_OPERATIONS_TOTAL.with_label_values(&[provider]).inc();
+    PROVIDER_OPERATION_DURATION
+        .with_label_values(&[provider])
+        .observe(duration);
+    
+    // Also maintain backward compatibility with GCP-specific metrics
+    // TODO: Consider deprecating GCP-specific metrics in favor of provider-labeled metrics
+    if provider == "gcp" {
+        GCP_SECRET_MANAGER_OPERATIONS_TOTAL.inc();
+        GCP_SECRET_MANAGER_OPERATION_DURATION.observe(duration);
+    }
+}
+
+/// Increment provider operation errors counter
+pub fn increment_provider_operation_errors(provider: &str) {
+    PROVIDER_OPERATION_ERRORS_TOTAL
+        .with_label_values(&[provider])
+        .inc();
 }
 
 pub fn increment_duration_parsing_errors() {
     DURATION_PARSING_ERRORS_TOTAL.inc();
+}
+
+pub fn increment_sops_decryption_total() {
+    SOPS_DECRYPTION_TOTAL.inc();
+}
+
+pub fn observe_sops_decryption_duration(duration: f64) {
+    SOPS_DECRYPTION_DURATION.observe(duration);
+}
+
+pub fn increment_sops_decryption_errors_total() {
+    SOPS_DECRYPTION_ERRORS_TOTAL.inc();
+}
+
+pub fn increment_kustomize_build_total() {
+    KUSTOMIZE_BUILD_TOTAL.inc();
+}
+
+pub fn observe_kustomize_build_duration(duration: f64) {
+    KUSTOMIZE_BUILD_DURATION.observe(duration);
+}
+
+pub fn increment_kustomize_build_errors_total() {
+    KUSTOMIZE_BUILD_ERRORS_TOTAL.inc();
+}
+
+pub fn increment_git_clone_total() {
+    GIT_CLONE_TOTAL.inc();
+}
+
+pub fn observe_git_clone_duration(duration: f64) {
+    GIT_CLONE_DURATION.observe(duration);
+}
+
+pub fn increment_git_clone_errors_total() {
+    GIT_CLONE_ERRORS_TOTAL.inc();
 }
