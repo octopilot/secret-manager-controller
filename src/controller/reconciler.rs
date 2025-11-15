@@ -50,7 +50,10 @@ use tracing::{error, info, warn};
 ///
 /// Invalid characters (`.`, `/`, etc.) are replaced with `_` to match GCP Secret Manager requirements
 #[must_use]
-#[allow(clippy::doc_markdown, reason = "Markdown formatting in doc comments is intentional")]
+#[allow(
+    clippy::doc_markdown,
+    reason = "Markdown formatting in doc comments is intentional"
+)]
 #[cfg(test)]
 pub fn construct_secret_name(prefix: Option<&str>, key: &str, suffix: Option<&str>) -> String {
     construct_secret_name_impl(prefix, key, suffix)
@@ -152,13 +155,19 @@ pub struct Reconciler {
 impl std::fmt::Debug for Reconciler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Reconciler")
-            .field("sops_private_key", &self.sops_private_key.as_ref().map(|_| "***"))
+            .field(
+                "sops_private_key",
+                &self.sops_private_key.as_ref().map(|_| "***"),
+            )
             .finish_non_exhaustive()
     }
 }
 
 impl Reconciler {
-    #[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error documentation is provided in doc comments"
+    )]
     pub async fn new(client: Client) -> Result<Self> {
         // Provider is created per-reconciliation based on provider config
         // Per-resource auth config is handled in reconcile()
@@ -224,7 +233,11 @@ impl Reconciler {
         Ok(None)
     }
 
-    #[allow(clippy::too_many_lines, clippy::missing_errors_doc, reason = "Reconciliation logic is complex and error docs are in comments")]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::missing_errors_doc,
+        reason = "Reconciliation logic is complex and error docs are in comments"
+    )]
     pub async fn reconcile(
         config: std::sync::Arc<SecretManagerConfig>,
         ctx: std::sync::Arc<Reconciler>,
@@ -240,7 +253,11 @@ impl Reconciler {
         }
     }
 
-    #[allow(clippy::too_many_lines, clippy::missing_errors_doc, reason = "Reconciliation logic is complex and error docs are in comments")]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::missing_errors_doc,
+        reason = "Reconciliation logic is complex and error docs are in comments"
+    )]
     async fn reconcile_internal(
         config: std::sync::Arc<SecretManagerConfig>,
         ctx: std::sync::Arc<Reconciler>,
@@ -253,11 +270,7 @@ impl Reconciler {
             error!("Validation error for {}: {}", name, e);
             // Update status to Failed with validation error
             let _ = ctx
-                .update_status_phase(
-                    &config,
-                    "Failed",
-                    Some(&format!("Validation failed: {e}")),
-                )
+                .update_status_phase(&config, "Failed", Some(&format!("Validation failed: {e}")))
                 .await;
             return Err(ReconcilerError::ReconciliationFailed(e));
         }
@@ -266,7 +279,7 @@ impl Reconciler {
         if let Err(e) = Self::validate_duration_interval(
             &config.spec.git_repository_pull_interval,
             "gitRepositoryPullInterval",
-            60,
+            crate::constants::MIN_GITREPOSITORY_PULL_INTERVAL_SECS,
         ) {
             let err = anyhow::anyhow!(
                 "Invalid gitRepositoryPullInterval '{}': {}",
@@ -289,7 +302,7 @@ impl Reconciler {
         if let Err(e) = Self::validate_duration_interval(
             &config.spec.reconcile_interval,
             "reconcileInterval",
-            60,
+            crate::constants::MIN_RECONCILE_INTERVAL_SECS,
         ) {
             let err = anyhow::anyhow!(
                 "Invalid reconcileInterval '{}': {}",
@@ -406,7 +419,9 @@ impl Reconciler {
                         // Check if this is a 404 (resource not found) - this is expected and we should wait
                         // The error is wrapped in anyhow::Error, so we need to check the root cause
                         let is_404 = e.chain().any(|err| {
-                            if let Some(kube::Error::Api(api_err)) = err.downcast_ref::<kube::Error>() {
+                            if let Some(kube::Error::Api(api_err)) =
+                                err.downcast_ref::<kube::Error>()
+                            {
                                 return api_err.code == 404;
                             }
                             false
@@ -426,7 +441,9 @@ impl Reconciler {
                                 )
                                 .await;
                             // Return requeue action - don't treat as error, just wait for resource
-                            return Ok(Action::requeue(std::time::Duration::from_secs(30)));
+                            return Ok(Action::requeue(std::time::Duration::from_secs(
+                                crate::constants::DEFAULT_GITREPOSITORY_NOT_FOUND_REQUEUE_SECS,
+                            )));
                         }
 
                         // For other errors, log and fail
@@ -742,7 +759,11 @@ impl Reconciler {
     }
 
     /// Get FluxCD GitRepository resource
-    #[allow(clippy::doc_markdown, clippy::missing_errors_doc, reason = "Markdown formatting is intentional and error docs are in comments")]
+    #[allow(
+        clippy::doc_markdown,
+        clippy::missing_errors_doc,
+        reason = "Markdown formatting is intentional and error docs are in comments"
+    )]
     async fn get_flux_git_repository(&self, source_ref: &SourceRef) -> Result<serde_json::Value> {
         // Use Kubernetes API to get GitRepository
         // GitRepository is a CRD from source.toolkit.fluxcd.io/v1beta2
@@ -1014,7 +1035,11 @@ impl Reconciler {
         Ok(path_buf)
     }
 
-    #[allow(clippy::too_many_lines, clippy::unused_async, reason = "Complex file processing logic, async signature matches trait")]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::unused_async,
+        reason = "Complex file processing logic, async signature matches trait"
+    )]
     async fn process_application_files(
         &self,
         provider: &dyn SecretManagerProvider,
@@ -1402,7 +1427,6 @@ impl Reconciler {
         field_name: &str,
         min_seconds: u64,
     ) -> Result<()> {
-
         // Trim whitespace
         let interval_trimmed = interval.trim();
 
@@ -1431,26 +1455,20 @@ impl Reconciler {
         let number_str = captures
             .name("number")
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Failed to extract number from duration '{interval_trimmed}'"
-                )
+                anyhow::anyhow!("Failed to extract number from duration '{interval_trimmed}'")
             })?
             .as_str();
 
         let unit = captures
             .name("unit")
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Failed to extract unit from duration '{interval_trimmed}'"
-                )
+                anyhow::anyhow!("Failed to extract unit from duration '{interval_trimmed}'")
             })?
             .as_str();
 
         // Parse number safely
         let number: u64 = number_str.parse().map_err(|e| {
-            anyhow::anyhow!(
-                "Invalid duration number '{number_str}' in '{interval_trimmed}': {e}"
-            )
+            anyhow::anyhow!("Invalid duration number '{number_str}' in '{interval_trimmed}': {e}")
         })?;
 
         if number == 0 {
@@ -1552,9 +1570,7 @@ impl Reconciler {
         if let Some(ref prefix) = config.spec.secrets.prefix {
             if !prefix.is_empty() {
                 if let Err(e) = Self::validate_secret_name_component(prefix, "secrets.prefix") {
-                    return Err(anyhow::anyhow!(
-                        "Invalid secrets.prefix '{prefix}': {e}"
-                    ));
+                    return Err(anyhow::anyhow!("Invalid secrets.prefix '{prefix}': {e}"));
                 }
             }
         }
@@ -1562,9 +1578,7 @@ impl Reconciler {
         if let Some(ref suffix) = config.spec.secrets.suffix {
             if !suffix.is_empty() {
                 if let Err(e) = Self::validate_secret_name_component(suffix, "secrets.suffix") {
-                    return Err(anyhow::anyhow!(
-                        "Invalid secrets.suffix '{suffix}': {e}"
-                    ));
+                    return Err(anyhow::anyhow!("Invalid secrets.suffix '{suffix}': {e}"));
                 }
             }
         }
@@ -1905,9 +1919,10 @@ impl Reconciler {
         let china_pattern = Regex::new(r"^cn-[a-z]+-\d+$")
             .map_err(|e| anyhow::anyhow!("Failed to compile regex: {e}"))?;
 
-        // Local pattern (for localstack/testing)
-        let local_pattern = Regex::new(r"^local$")
-            .map_err(|e| anyhow::anyhow!("Failed to compile regex: {e}"))?;
+        // Local pattern (for local development/testing with localstack)
+        // Note: This allows "local" as a region for local development environments
+        let local_pattern =
+            Regex::new(r"^local$").map_err(|e| anyhow::anyhow!("Failed to compile regex: {e}"))?;
 
         if standard_pattern.is_match(&region_trimmed)
             || gov_pattern.is_match(&region_trimmed)

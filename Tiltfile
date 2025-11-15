@@ -1,4 +1,4 @@
-git# Secret Manager Controller Tiltfile
+# Secret Manager Controller Tiltfile
 # 
 # This Tiltfile matches PriceWhisperer's build pattern:
 # 1. Builds Rust binaries on host (cross-compilation)

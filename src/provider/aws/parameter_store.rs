@@ -38,7 +38,10 @@ impl std::fmt::Debug for AwsParameterStore {
 impl AwsParameterStore {
     /// Create a new AWS Parameter Store client
     /// Supports IRSA (IAM Roles for Service Accounts) authentication
-    #[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error documentation is provided in doc comments"
+    )]
     pub async fn new(
         config: &AwsConfig,
         parameter_path: Option<&str>,

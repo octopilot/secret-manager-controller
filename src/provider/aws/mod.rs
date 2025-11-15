@@ -33,7 +33,10 @@ impl std::fmt::Debug for AwsSecretManager {
 impl AwsSecretManager {
     /// Create a new AWS Secrets Manager client
     /// Supports both Access Keys and IRSA (IAM Roles for Service Accounts)
-    #[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error documentation is provided in doc comments"
+    )]
     pub async fn new(config: &AwsConfig, k8s_client: &kube::Client) -> Result<Self> {
         let region = config.region.clone();
 

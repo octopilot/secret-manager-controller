@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
 // Re-export modules so they can be tested
+pub mod constants;
 pub mod controller;
 pub mod observability;
 pub mod provider;
@@ -161,7 +162,7 @@ pub struct AwsConfig {
     pub auth: Option<AwsAuthConfig>,
 }
 
-/// Azure configuration for Key Vault (stub)
+/// Azure configuration for Key Vault
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AzureConfig {

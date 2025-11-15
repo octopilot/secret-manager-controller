@@ -36,7 +36,10 @@ use std::process::Command;
 use tracing::{debug, error, info, warn};
 
 /// Run kustomize build on the specified path and extract secrets from Secret resources
-#[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "Error documentation is provided in doc comments"
+)]
 pub fn extract_secrets_from_kustomize(
     artifact_path: &Path,
     kustomize_path: &str,
@@ -138,7 +141,10 @@ fn parse_kustomize_output(yaml_output: &str) -> HashMap<String, String> {
 }
 
 /// Extract properties from kustomize output (from `ConfigMap` resources)
-#[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "Error documentation is provided in doc comments"
+)]
 pub fn extract_properties_from_kustomize(
     artifact_path: &Path,
     kustomize_path: &str,

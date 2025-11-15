@@ -44,7 +44,11 @@ impl AzureAppConfiguration {
     /// Supports Workload Identity authentication
     /// # Errors
     /// Returns an error if Azure client initialization fails
-    #[allow(clippy::missing_errors_doc, clippy::unused_async, reason = "Error documentation is provided in doc comments, async signature may be needed for future credential initialization")]
+    #[allow(
+        clippy::missing_errors_doc,
+        clippy::unused_async,
+        reason = "Error documentation is provided in doc comments, async signature may be needed for future credential initialization"
+    )]
     pub async fn new(
         config: &AzureConfig,
         app_config_endpoint: Option<&str>,

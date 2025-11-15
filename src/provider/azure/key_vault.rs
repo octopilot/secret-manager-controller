@@ -37,7 +37,11 @@ impl AzureKeyVault {
     /// Supports both Service Principal and Workload Identity
     /// # Errors
     /// Returns an error if Azure client initialization fails
-    #[allow(clippy::missing_errors_doc, clippy::unused_async, reason = "Error docs in comments, async signature matches trait")]
+    #[allow(
+        clippy::missing_errors_doc,
+        clippy::unused_async,
+        reason = "Error docs in comments, async signature matches trait"
+    )]
     pub async fn new(config: &AzureConfig, _k8s_client: &kube::Client) -> Result<Self> {
         // Construct vault URL from vault name
         // Format: https://{vault-name}.vault.azure.net/

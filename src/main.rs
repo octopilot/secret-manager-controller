@@ -33,6 +33,8 @@ use kube::{
     Client, CustomResource,
 };
 use kube_runtime::{controller::Action, watcher, Controller};
+
+mod constants;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -238,7 +240,7 @@ pub struct AwsConfig {
     pub auth: Option<AwsAuthConfig>,
 }
 
-/// Azure configuration for Key Vault (stub)
+/// Azure configuration for Key Vault
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AzureConfig {
@@ -555,9 +557,9 @@ async fn main() -> Result<()> {
     // We start it in a background task but wait for it to be ready before proceeding
     let server_state_clone = server_state.clone();
     let server_port = std::env::var("METRICS_PORT")
-        .unwrap_or_else(|_| "5000".to_string())
+        .unwrap_or_else(|_| constants::DEFAULT_METRICS_PORT.to_string())
         .parse::<u16>()
-        .unwrap_or(5000);
+        .unwrap_or(constants::DEFAULT_METRICS_PORT);
 
     // Start server in background task
     let server_handle = tokio::spawn(async move {
@@ -568,8 +570,10 @@ async fn main() -> Result<()> {
 
     // Poll server startup - wait for it to be ready before proceeding
     // This ensures readiness probes pass immediately after server starts
-    let startup_timeout = std::time::Duration::from_secs(10);
-    let poll_interval = std::time::Duration::from_millis(50);
+    let startup_timeout =
+        std::time::Duration::from_secs(constants::DEFAULT_SERVER_STARTUP_TIMEOUT_SECS);
+    let poll_interval =
+        std::time::Duration::from_millis(constants::DEFAULT_SERVER_POLL_INTERVAL_MS);
     let start_time = std::time::Instant::now();
 
     loop {
@@ -646,8 +650,10 @@ async fn main() -> Result<()> {
     let server_state_shutdown = server_state.clone();
 
     // Use Arc for shared backoff state
-    let backoff_duration_ms = Arc::new(std::sync::atomic::AtomicU64::new(1000)); // Start with 1 second
-    let max_backoff_ms = 30_000; // 30 seconds max
+    let backoff_duration_ms = Arc::new(std::sync::atomic::AtomicU64::new(
+        constants::DEFAULT_BACKOFF_START_MS,
+    ));
+    let max_backoff_ms = constants::DEFAULT_BACKOFF_MAX_MS;
 
     // Set up shutdown signal handler - mark server as not ready when SIGTERM received
     let shutdown_server_state = server_state_shutdown.clone();
@@ -690,7 +696,7 @@ obj.metadata.name.as_deref().unwrap_or("unknown"));
                         error
                     );
                     observability::metrics::increment_reconciliation_errors();
-                    Action::requeue(std::time::Duration::from_secs(60))
+                    Action::requeue(std::time::Duration::from_secs(constants::DEFAULT_RECONCILIATION_ERROR_REQUEUE_SECS))
                 },
                 reconciler.clone(),
             )
@@ -700,7 +706,7 @@ obj.metadata.name.as_deref().unwrap_or("unknown"));
                     match &x {
                         Ok(_) => {
 // Successful event, reset backoff on success
-backoff.store(1000, std::sync::atomic::Ordering::Relaxed);
+backoff.store(constants::DEFAULT_BACKOFF_START_MS, std::sync::atomic::Ordering::Relaxed);
 Some(x)
                         }
                         Err(e) => {
@@ -725,7 +731,7 @@ if is_410 {
     let current_backoff = backoff.load(std::sync::atomic::Ordering::Relaxed);
     warn!("API server storage reinitializing (429), backing off for {}ms before restart...", current_backoff);
     tokio::time::sleep(std::time::Duration::from_millis(current_backoff)).await;
-    // Exponential backoff, max 30 seconds
+    // Exponential backoff, max configured value
     let new_backoff = std::cmp::min(current_backoff * 2, max_backoff_ms);
     backoff.store(new_backoff, std::sync::atomic::Ordering::Relaxed);
     None // Filter out to allow restart
@@ -737,7 +743,7 @@ if is_410 {
     // Other errors - log but continue
     error!("Controller stream error: {:?}", e);
     // For unknown errors, wait a bit before restarting
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(constants::DEFAULT_WATCH_RESTART_DELAY_SECS)).await;
     None // Filter out to allow restart
 }
                         }
@@ -759,8 +765,14 @@ if is_410 {
         }
 
         // Controller stream ended - restart watch
-        warn!("Controller watch stream ended, restarting in 1 second...");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        warn!(
+            "Controller watch stream ended, restarting in {} seconds...",
+            constants::DEFAULT_WATCH_RESTART_DELAY_AFTER_END_SECS
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(
+            constants::DEFAULT_WATCH_RESTART_DELAY_AFTER_END_SECS,
+        ))
+        .await;
     }
 
     info!("Controller stopped gracefully");

@@ -44,7 +44,10 @@ impl SecretManager {
     ///
     /// # Errors
     /// Returns an error if GCP client initialization fails
-    #[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error documentation is provided in doc comments"
+    )]
     pub async fn new(
         project_id: String,
         _auth_type: Option<&str>,
@@ -80,7 +83,10 @@ impl SecretManager {
 
     /// Create or update secret, ensuring Git is source of truth
     /// If secret exists and value differs, creates new version and disables old versions
-    #[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error documentation is provided in doc comments"
+    )]
     async fn create_or_update_secret_impl(
         &self,
         secret_name: &str,
@@ -151,32 +157,98 @@ impl SecretManager {
     }
 
     /// Get the latest secret version value
-    #[allow(dead_code, clippy::missing_errors_doc, clippy::unused_async, reason = "May be used in future implementations")]
-    async fn get_latest_secret_value(&self, _secret_name: &str) -> Result<String> {
-        Err(anyhow::anyhow!(
-            "Not implemented - waiting for correct SDK API"
-        ))
+    /// Returns the secret value as a String, or an error if the secret doesn't exist
+    ///
+    /// # Errors
+    /// Returns an error if the secret doesn't exist or if there's an API error
+    pub async fn get_latest_secret_value(&self, secret_name: &str) -> Result<String> {
+        self.get_secret_value(secret_name)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Secret '{}' not found", secret_name))
     }
 
-    #[allow(dead_code, clippy::missing_errors_doc, clippy::unused_async, reason = "May be used in future implementations")]
-    async fn get_secret(&self, _secret_name: &str) -> Result<()> {
-        Err(anyhow::anyhow!(
-            "Not implemented - waiting for correct SDK API"
-        ))
+    /// Get secret metadata (without the value)
+    /// Useful for checking if a secret exists without retrieving its value
+    ///
+    /// # Errors
+    /// Returns an error if there's an API error
+    pub async fn get_secret(&self, secret_name: &str) -> Result<()> {
+        use google_cloud_secretmanager_v1::model::GetSecretRequest;
+
+        let secret_name_full = format!("projects/{}/secrets/{}", self.project_id, secret_name);
+
+        let request = GetSecretRequest::default();
+        let request_for_send = request.set_name(secret_name_full);
+
+        self.client
+            .get_secret()
+            .with_request(request_for_send)
+            .send()
+            .await
+            .context(format!("Failed to get GCP secret metadata: {secret_name}"))?;
+
+        Ok(())
     }
 
-    #[allow(dead_code, clippy::unused_async, reason = "May be used in future implementations, trait requires async signature")]
-    async fn create_secret(&self, _project_id: &str, _secret_name: &str) -> Result<()> {
-        Err(anyhow::anyhow!(
-            "Not implemented - waiting for correct SDK API"
-        ))
+    /// Create a new secret resource (without any versions)
+    /// Note: This creates the secret resource only. Use `add_secret_version` to add a value.
+    ///
+    /// # Errors
+    /// Returns an error if the secret already exists or if there's an API error
+    pub async fn create_secret(&self, project_id: &str, secret_name: &str) -> Result<()> {
+        use google_cloud_secretmanager_v1::model::{CreateSecretRequest, Secret};
+
+        info!("Creating new GCP secret resource: {}", secret_name);
+
+        let secret = Secret::default();
+        let create_request = CreateSecretRequest::default()
+            .set_parent(format!("projects/{}", project_id))
+            .set_secret_id(secret_name.to_string())
+            .set_secret(secret);
+
+        self.client
+            .create_secret()
+            .with_request(create_request)
+            .send()
+            .await
+            .context(format!(
+                "Failed to create GCP secret resource: {secret_name}"
+            ))?;
+
+        Ok(())
     }
 
-    #[allow(dead_code, clippy::unused_async, reason = "May be used in future implementations, trait requires async signature")]
-    async fn add_secret_version(&self, _secret_name: &str, _secret_value: &str) -> Result<()> {
-        Err(anyhow::anyhow!(
-            "Not implemented - waiting for correct SDK API"
-        ))
+    /// Add a new version to an existing secret
+    /// Creates a new version with the provided value
+    ///
+    /// # Errors
+    /// Returns an error if the secret doesn't exist or if there's an API error
+    pub async fn add_secret_version(&self, secret_name: &str, secret_value: &str) -> Result<()> {
+        use google_cloud_secretmanager_v1::model::{AddSecretVersionRequest, SecretPayload};
+
+        info!("Adding new version to GCP secret: {}", secret_name);
+
+        let secret_name_full = format!("projects/{}/secrets/{}", self.project_id, secret_name);
+
+        // Convert to owned bytes
+        let secret_bytes: Vec<u8> = secret_value.as_bytes().to_vec();
+        let mut payload = SecretPayload::default();
+        payload.data = secret_bytes.into();
+
+        let add_version_request = AddSecretVersionRequest::default()
+            .set_parent(secret_name_full)
+            .set_payload(payload);
+
+        self.client
+            .add_secret_version()
+            .with_request(add_version_request)
+            .send()
+            .await
+            .context(format!(
+                "Failed to add version to GCP secret: {secret_name}"
+            ))?;
+
+        Ok(())
     }
 }
 
@@ -185,8 +257,7 @@ impl SecretManagerProvider for SecretManager {
     async fn create_or_update_secret(&self, secret_name: &str, secret_value: &str) -> Result<bool> {
         let start = std::time::Instant::now();
 
-        // TODO: Implement actual GCP Secret Manager API calls when SDK is available
-        // For now, return error indicating not implemented
+        // Implementation uses the GCP Secret Manager SDK
         let result = self
             .create_or_update_secret_impl(secret_name, secret_value)
             .await;

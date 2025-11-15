@@ -56,7 +56,11 @@ fn normalize_base_path(base_path: Option<&str>) -> Option<&str> {
 /// Only processes the specified environment name - does not scan all environments
 ///
 /// If `base_path` is None, searches from repository root
-#[allow(clippy::unused_async, clippy::missing_errors_doc, reason = "May be called from async contexts in the future, error docs in comments")]
+#[allow(
+    clippy::unused_async,
+    clippy::missing_errors_doc,
+    reason = "May be called from async contexts in the future, error docs in comments"
+)]
 pub async fn find_application_files(
     artifact_path: &Path,
     base_path: Option<&str>,
@@ -215,7 +219,10 @@ impl ApplicationFiles {
 
 /// Parse secrets from application.secrets.env and application.secrets.yaml
 /// Supports SOPS-encrypted files
-#[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "Error documentation is provided in doc comments"
+)]
 pub async fn parse_secrets(
     app_files: &ApplicationFiles,
     sops_private_key: Option<&str>,
@@ -240,7 +247,10 @@ pub async fn parse_secrets(
 }
 
 /// Parse properties from application.properties
-#[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "Error documentation is provided in doc comments"
+)]
 pub async fn parse_properties(app_files: &ApplicationFiles) -> Result<HashMap<String, String>> {
     if let Some(ref path) = app_files.properties {
         debug!("Parsing properties from: {}", path.display());
@@ -449,9 +459,10 @@ async fn decrypt_sops_content(content: &str, sops_private_key: Option<&str>) -> 
 /// Decrypt SOPS content using rops crate with GPG private key
 ///
 /// Note: The rops crate API may require GPG keys to be in the system keyring.
-/// For now, we'll primarily use the sops binary which is more reliable.
+/// We use the sops binary instead, which is more reliable and doesn't require
+/// keys to be in the system keyring.
 fn decrypt_with_rops(_content: &str, _private_key: &str) -> Result<String> {
-    // TODO: Implement rops crate decryption
+    // Note: rops crate decryption is not implemented - we use sops binary instead
     // The rops crate API needs to be verified - it may require:
     // 1. GPG keys to be imported into system keyring
     // 2. Different API than expected

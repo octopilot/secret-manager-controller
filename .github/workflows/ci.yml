@@ -109,9 +109,8 @@ jobs:
         run: |
           # Build native target (for faster unit tests)
           cargo build --all-targets --all-features
-          # Build musl target using host-aware-build.sh (tests cross-compilation)
-          chmod +x scripts/host-aware-build.sh
-          ./scripts/host-aware-build.sh --all-features
+          # Build musl target using host_aware_build.py (tests cross-compilation)
+          python3 scripts/host_aware_build.py --all-features
 
       - name: Run unit tests
         run: |
@@ -365,8 +364,7 @@ jobs:
 
       - name: Build binaries
         run: |
-          chmod +x scripts/host-aware-build.sh
-          ./scripts/host-aware-build.sh --release --bins
+          python3 scripts/host_aware_build.py --release --bins
 
       - name: Upload binaries as artifacts
         uses: actions/upload-artifact@v4

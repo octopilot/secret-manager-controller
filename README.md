@@ -1083,7 +1083,7 @@ If you prefer not to use `just`, you can use the scripts directly:
 
 1. **Create the kind cluster:**
    ```bash
-   ./scripts/setup-kind.sh
+   python3 scripts/setup_kind.py
    ```
 
 2. **Verify the cluster is running:**

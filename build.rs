@@ -52,8 +52,7 @@ fn get_git_hash() -> Option<String> {
 
     // Check if working directory is dirty
     let diff_output = Command::new("git").args(["diff", "--quiet"]).output().ok();
-    let is_dirty = diff_output
-        .is_some_and(|output| !output.status.success());
+    let is_dirty = diff_output.is_some_and(|output| !output.status.success());
 
     let suffix = if is_dirty { "-dirty" } else { "" };
     Some(format!("{short_hash}{suffix}"))

@@ -25,7 +25,7 @@ static RECONCILIATIONS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
         "secret_manager_reconciliations_total",
         "Total number of reconciliations",
     )
-    .unwrap()
+    .expect("Failed to create RECONCILIATIONS_TOTAL metric - this should never happen")
 });
 
 static RECONCILIATION_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -33,7 +33,7 @@ static RECONCILIATION_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
         "secret_manager_reconciliation_errors_total",
         "Total number of reconciliation errors",
     )
-    .unwrap()
+    .expect("Failed to create RECONCILIATION_ERRORS_TOTAL metric - this should never happen")
 });
 
 static RECONCILIATION_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
@@ -44,7 +44,7 @@ static RECONCILIATION_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
         )
         .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]),
     )
-    .unwrap()
+    .expect("Failed to create RECONCILIATION_DURATION metric - this should never happen")
 });
 
 static SECRETS_SYNCED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -52,7 +52,7 @@ static SECRETS_SYNCED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
         "secret_manager_secrets_synced_total",
         "Total number of secrets synced to GCP Secret Manager",
     )
-    .unwrap()
+    .expect("Failed to create SECRETS_SYNCED_TOTAL metric - this should never happen")
 });
 
 static SECRETS_UPDATED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -60,7 +60,7 @@ static SECRETS_UPDATED_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
         "secret_manager_secrets_updated_total",
         "Total number of secrets updated (overwritten from git)",
     )
-    .unwrap()
+    .expect("Failed to create SECRETS_UPDATED_TOTAL metric - this should never happen")
 });
 
 static SECRETS_MANAGED: LazyLock<IntGauge> = LazyLock::new(|| {
@@ -68,7 +68,7 @@ static SECRETS_MANAGED: LazyLock<IntGauge> = LazyLock::new(|| {
         "secret_manager_secrets_managed",
         "Current number of secrets being managed",
     )
-    .unwrap()
+    .expect("Failed to create SECRETS_MANAGED metric - this should never happen")
 });
 
 static GCP_SECRET_MANAGER_OPERATIONS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
@@ -76,7 +76,9 @@ static GCP_SECRET_MANAGER_OPERATIONS_TOTAL: LazyLock<Counter> = LazyLock::new(||
         "secret_manager_gcp_operations_total",
         "Total number of GCP Secret Manager operations",
     )
-    .unwrap()
+    .expect(
+        "Failed to create GCP_SECRET_MANAGER_OPERATIONS_TOTAL metric - this should never happen",
+    )
 });
 
 static GCP_SECRET_MANAGER_OPERATION_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
@@ -87,10 +89,15 @@ static GCP_SECRET_MANAGER_OPERATION_DURATION: LazyLock<Histogram> = LazyLock::ne
         )
         .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0]),
     )
-    .unwrap()
+    .expect(
+        "Failed to create GCP_SECRET_MANAGER_OPERATION_DURATION metric - this should never happen",
+    )
 });
 
-#[allow(clippy::missing_errors_doc, reason = "Error documentation is provided in doc comments")]
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "Error documentation is provided in doc comments"
+)]
 pub fn register_metrics() -> Result<()> {
     REGISTRY.register(Box::new(RECONCILIATIONS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(RECONCILIATION_ERRORS_TOTAL.clone()))?;
