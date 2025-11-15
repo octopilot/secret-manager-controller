@@ -382,9 +382,14 @@ impl Reconciler {
             config.spec.source_ref.namespace
         );
 
+        // Determine artifact path based on source type (GitRepository vs Application)
+        // This path points to the cloned/checked-out repository directory containing secrets
         let artifact_path = match config.spec.source_ref.kind.as_str() {
             "GitRepository" => {
-                // Update status to Cloning
+                // FluxCD GitRepository: Extract artifact path from GitRepository status
+                // The GitRepository controller clones the repo and exposes the path in status.artifact.path
+
+                // Update status to Cloning - indicates we're fetching the GitRepository
                 if let Err(e) = ctx
                     .update_status_phase(
                         &config,
@@ -396,7 +401,8 @@ impl Reconciler {
                     warn!("Failed to update status to Cloning: {}", e);
                 }
 
-                // FluxCD GitRepository - get artifact path from status
+                // Fetch GitRepository resource from Kubernetes API
+                // This gives us access to the cloned repository path
                 info!(
                     "📦 Fetching FluxCD GitRepository: {}/{}",
                     config.spec.source_ref.namespace, config.spec.source_ref.name
@@ -464,6 +470,8 @@ impl Reconciler {
                     }
                 };
 
+                // Extract artifact path from GitRepository status
+                // Path format: /tmp/flux-source-{namespace}-{name}/...
                 match Reconciler::get_flux_artifact_path(&ctx, &git_repo) {
                     Ok(path) => {
                         info!(
@@ -474,9 +482,10 @@ impl Reconciler {
                         path
                     }
                     Err(e) => {
+                        // Artifact path extraction failed - GitRepository may not be ready yet
                         error!("Failed to get FluxCD artifact path: {}", e);
                         observability::metrics::increment_reconciliation_errors();
-                        // Update status to Failed
+                        // Update status to Failed - this is a permanent error (not retryable)
                         let _ = ctx
                             .update_status_phase(
                                 &config,
@@ -489,7 +498,9 @@ impl Reconciler {
                 }
             }
             "Application" => {
-                // ArgoCD Application - get Git source and clone/access repository
+                // ArgoCD Application: Clone repository directly
+                // Unlike FluxCD, ArgoCD doesn't expose artifact paths, so we clone ourselves
+                // This supports both GitRepository and Helm sources
                 match Reconciler::get_argocd_artifact_path(&ctx, &config.spec.source_ref).await {
                     Ok(path) => {
                         info!(
@@ -516,10 +527,16 @@ impl Reconciler {
             }
         };
 
-        // Create provider based on provider config
+        // Create provider client based on provider configuration
+        // Each provider has different authentication methods:
+        // - GCP: Workload Identity (default)
+        // - AWS: IRSA - IAM Roles for Service Accounts (default)
+        // - Azure: Workload Identity or Managed Identity (default)
+        // Provider is created per-reconciliation to support per-resource auth config
         let provider: Box<dyn SecretManagerProvider> = match &config.spec.provider {
             ProviderConfig::Gcp(gcp_config) => {
-                // Validate GCP config
+                // GCP Secret Manager provider
+                // Validate required GCP configuration
                 if gcp_config.project_id.is_empty() {
                     let err = anyhow::anyhow!("GCP projectId is required but is empty");
                     error!("Validation error for {}: {}", name, err);
@@ -528,6 +545,7 @@ impl Reconciler {
 
                 // Determine authentication method from config
                 // Default to Workload Identity when auth is not specified
+                // Workload Identity requires GKE with WI enabled and service account annotation
                 let (auth_type, service_account_email_owned) = if let Some(ref auth_config) =
                     gcp_config.auth
                 {
@@ -605,22 +623,27 @@ impl Reconciler {
             }
         };
 
-        // Determine what we're syncing and update status accordingly
+        // Determine sync mode: secrets vs configs (properties)
+        // Configs are stored in config stores (Parameter Store, App Configuration)
+        // Secrets are stored in secret stores (Secret Manager, Key Vault)
         let is_configs_enabled = config
             .spec
             .configs
             .as_ref()
             .map(|c| c.enabled)
             .unwrap_or(false);
+
+        // Generate status description based on what we're syncing
+        // This helps users understand what the controller is doing
         let description = if is_configs_enabled {
-            // Check provider to determine config store type
+            // Syncing to config stores (non-secret configuration values)
             match &config.spec.provider {
                 ProviderConfig::Gcp(_) => "Reconciling properties to Parameter Manager",
                 ProviderConfig::Aws(_) => "Reconciling properties to Parameter Store",
                 ProviderConfig::Azure(_) => "Reconciling properties to App Configuration",
             }
         } else {
-            // Syncing secrets
+            // Syncing to secret stores (sensitive values)
             match &config.spec.provider {
                 ProviderConfig::Gcp(_) => "Reconciling secrets to Secret Manager",
                 ProviderConfig::Aws(_) => "Reconciling secrets to Secrets Manager",
@@ -628,7 +651,7 @@ impl Reconciler {
             }
         };
 
-        // Update status to Updating before syncing
+        // Update status to Updating - indicates we're actively syncing secrets/configs
         if let Err(e) = ctx
             .update_status_phase(&config, "Updating", Some(description))
             .await
@@ -638,10 +661,14 @@ impl Reconciler {
 
         let mut secrets_synced = 0;
 
-        // Check if kustomize_path is specified - use kustomize build mode
+        // Determine processing mode: kustomize build vs raw file parsing
+        // Kustomize mode: Extract secrets from kustomize-generated Secret resources
+        // Raw file mode: Parse application.secrets.env files directly
         if let Some(kustomize_path) = &config.spec.secrets.kustomize_path {
-            // Use kustomize build to extract secrets from generated Secret resources
-            // This supports overlays, patches, and generators
+            // Kustomize Build Mode
+            // Runs `kustomize build` to generate Kubernetes manifests, then extracts Secret resources
+            // Supports overlays, patches, generators, and other kustomize features
+            // This is the recommended mode for complex deployments with multiple environments
             info!("Using kustomize build mode on path: {}", kustomize_path);
 
             match crate::controller::kustomize::extract_secrets_from_kustomize(
@@ -656,7 +683,7 @@ impl Reconciler {
                     {
                         Ok(count) => {
                             secrets_synced += count;
-                            info!("Synced {} secrets from kustomize build", count);
+                            info!("✅ Synced {} secrets from kustomize build", count);
                         }
                         Err(e) => {
                             error!("Failed to process kustomize secrets: {}", e);
@@ -688,10 +715,16 @@ impl Reconciler {
                 }
             }
         } else {
-            // Use raw file mode - read application.secrets.env files directly
+            // Raw File Mode
+            // Directly parses application.secrets.env, application.secrets.yaml, and application.properties files
+            // Simpler than kustomize mode but doesn't support overlays or generators
+            // Suitable for simple deployments or when kustomize isn't needed
             info!("Using raw file mode");
 
             // Find application files for the specified environment
+            // Searches for files matching patterns like:
+            // - {basePath}/profiles/{environment}/application.secrets.env
+            // - {basePath}/{service}/profiles/{environment}/application.secrets.env
             // Pass secret_prefix as default_service_name for single service deployments
             let default_service_name = config.spec.secrets.prefix.as_deref();
             let application_files = match parser::find_application_files(
@@ -721,7 +754,10 @@ impl Reconciler {
                 }
             };
 
-            info!("Found {} application file sets", application_files.len());
+            info!(
+                "📋 Found {} application file set(s) to process",
+                application_files.len()
+            );
 
             // Process each application file set
             for app_files in application_files {
@@ -731,10 +767,19 @@ impl Reconciler {
                 {
                     Ok(count) => {
                         secrets_synced += count;
-                        info!("Synced {} secrets for {}", count, app_files.service_name);
+                        info!(
+                            "✅ Synced {} secrets for service: {}",
+                            count, app_files.service_name
+                        );
                     }
                     Err(e) => {
-                        error!("Failed to process {}: {}", app_files.service_name, e);
+                        // Log error but continue processing other services
+                        // This allows partial success when multiple services are configured
+                        error!(
+                            "❌ Failed to process service {}: {}",
+                            app_files.service_name, e
+                        );
+                        observability::metrics::increment_reconciliation_errors();
                     }
                 }
             }
@@ -752,7 +797,7 @@ impl Reconciler {
         observability::metrics::set_secrets_managed(i64::from(secrets_synced));
 
         info!(
-            "Reconciliation complete for {} (synced {} secrets)",
+            "✅ Reconciliation complete for {}: {} secrets synced successfully",
             name, secrets_synced
         );
         Ok(Action::await_change())

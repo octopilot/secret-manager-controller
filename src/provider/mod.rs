@@ -38,6 +38,9 @@ pub trait ConfigStoreProvider: Send + Sync {
     async fn delete_config(&self, config_key: &str) -> Result<()>;
 }
 
+// Common utilities shared across providers
+pub mod common;
+
 // Provider implementations
 pub mod aws;
 pub mod azure;

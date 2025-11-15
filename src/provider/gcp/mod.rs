@@ -126,10 +126,7 @@ impl SecretManager {
                 return Ok(false);
             }
             // Value changed - we'll create a new version below
-            info!(
-                "Secret value changed, creating new version for: {}",
-                secret_name
-            );
+            info!("Secret value changed, updating GCP secret: {}", secret_name);
         }
 
         // Add new secret version with the value
