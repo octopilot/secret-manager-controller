@@ -590,9 +590,7 @@ impl Reconciler {
                         // Check if this is a 404 (resource not found) - this is expected and we should wait
                         // The error is wrapped in anyhow::Error, so we need to check the root cause
                         let is_404 = e.chain().any(|err| {
-                            if let Some(kube::Error::Api(api_err)) =
-                                err.downcast_ref::<kube::Error>()
-                            {
+                            if let Some(kube::Error::Api(api_err)) = err.downcast_ref::<kube::Error>() {
                                 return api_err.code == 404;
                             }
                             false
