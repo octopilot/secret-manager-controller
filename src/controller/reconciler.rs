@@ -20,6 +20,7 @@
 //! 5. Sync secrets to GCP Secret Manager
 //! 6. Update status
 
+use crate::controller::backoff::FibonacciBackoff;
 use crate::controller::parser;
 use crate::provider::aws::AwsParameterStore;
 use crate::provider::aws::AwsSecretManager;
@@ -36,7 +37,9 @@ use kube::Client;
 use kube_runtime::controller::Action;
 use md5;
 use regex::Regex;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use thiserror::Error;
 use tracing::{error, info, warn};
@@ -142,12 +145,40 @@ pub enum ReconcilerError {
     ReconciliationFailed(#[from] anyhow::Error),
 }
 
+/// Backoff state for a specific resource
+/// Tracks error count and backoff calculator for progressive retries
+#[derive(Debug, Clone)]
+struct BackoffState {
+    backoff: FibonacciBackoff,
+    error_count: u32,
+}
+
+impl BackoffState {
+    fn new() -> Self {
+        Self {
+            backoff: FibonacciBackoff::new(30, 300), // 30s min, 5m max
+            error_count: 0,
+        }
+    }
+
+    fn increment_error(&mut self) {
+        self.error_count += 1;
+    }
+
+    fn reset(&mut self) {
+        self.error_count = 0;
+        self.backoff.reset();
+    }
+}
+
 #[derive(Clone)]
 pub struct Reconciler {
     client: Client,
     // Note: secret_manager is created per-reconciliation to support per-resource auth config
     // In the future, we might want to cache clients per auth config
     sops_private_key: Option<String>,
+    // Backoff state per resource (identified by namespace/name)
+    backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
 }
 
 impl Reconciler {
@@ -162,6 +193,7 @@ impl Reconciler {
         Ok(Self {
             client,
             sops_private_key,
+            backoff_states: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -222,13 +254,50 @@ impl Reconciler {
         config: std::sync::Arc<SecretManagerConfig>,
         ctx: std::sync::Arc<Reconciler>,
     ) -> Result<Action, ReconcilerError> {
+        // Clone config for use in error handler
+        let config_clone = config.clone();
+        
         // Wrap entire reconciliation in error handling to prevent panics
-        match Self::reconcile_internal(config, ctx).await {
+        match Self::reconcile_internal(config, ctx.clone()).await {
             Ok(action) => Ok(action),
             Err(e) => {
-                error!("Reconciliation failed with error: {}", e);
+                let name = config_clone.metadata.name.as_deref().unwrap_or("unknown");
+                let resource_key = format!(
+                    "{}/{}",
+                    config_clone.metadata.namespace.as_deref().unwrap_or("default"),
+                    name
+                );
+
+                // Get or create backoff state for this resource
+                let backoff_seconds = {
+                    let mut states = ctx.backoff_states.lock().unwrap();
+                    let state = states.entry(resource_key.clone()).or_insert_with(BackoffState::new);
+                    state.increment_error();
+                    let backoff = state.backoff.next_backoff_seconds();
+                    let error_count = state.error_count;
+                    (backoff, error_count)
+                };
+
+                let next_trigger_time = chrono::Utc::now() + chrono::Duration::seconds(backoff_seconds.0 as i64);
+                
+                error!(
+                    "❌ Reconciliation failed for {} (error count: {}): {}",
+                    name, backoff_seconds.1, e
+                );
+                info!(
+                    "🔄 Retrying with Fibonacci backoff: {}s (trigger source: error-backoff)",
+                    backoff_seconds.0
+                );
+                info!(
+                    "📅 Next retry scheduled: {}",
+                    next_trigger_time.to_rfc3339()
+                );
+                
                 observability::metrics::increment_reconciliation_errors();
-                Err(e)
+                
+                // Return requeue action with backoff duration
+                // Note: We return Ok here to use backoff scheduling instead of error path
+                Ok(Action::requeue(std::time::Duration::from_secs(backoff_seconds.0)))
             }
         }
     }
@@ -309,14 +378,36 @@ impl Reconciler {
             .and_then(|ann| ann.get("secret-management.microscaler.io/reconcile"))
             .is_some();
 
-        if is_manual_trigger {
-            info!(
-                "Manual reconciliation triggered for SecretManagerConfig: {} (via msmctl CLI)",
+        // Determine trigger source for logging
+        let trigger_source = if is_manual_trigger {
+            "manual-cli"
+        } else {
+            // Check if this was triggered by an event or timer
+            // Since we can't easily distinguish between event-based and timer-based here,
+            // we'll log based on whether there's an existing backoff state
+            let resource_key = format!(
+                "{}/{}",
+                config.metadata.namespace.as_deref().unwrap_or("default"),
                 name
             );
-        } else {
-            info!("Reconciling SecretManagerConfig: {}", name);
-        }
+            let has_errors = ctx
+                .backoff_states
+                .lock()
+                .ok()
+                .and_then(|states| states.get(&resource_key).map(|s| s.error_count > 0))
+                .unwrap_or(false);
+            
+            if has_errors {
+                "retry-after-error"
+            } else {
+                "timer-or-event"
+            }
+        };
+
+        info!(
+            "🔄 Reconciling SecretManagerConfig: {} (trigger source: {})",
+            name, trigger_source
+        );
 
         observability::metrics::increment_reconciliations();
 
@@ -408,9 +499,14 @@ impl Reconciler {
                         });
 
                         if is_404 {
+                            let next_trigger_time = chrono::Utc::now() + chrono::Duration::seconds(30);
                             warn!(
                                 "⏳ GitRepository {}/{} not found yet, will retry in 30s",
                                 config.spec.source_ref.namespace, config.spec.source_ref.name
+                            );
+                            info!(
+                                "📅 Next retry scheduled: {} (trigger source: waiting-for-resource)",
+                                next_trigger_time.to_rfc3339()
                             );
                             // Update status to Pending (waiting for GitRepository)
                             let _ = ctx
@@ -729,11 +825,35 @@ impl Reconciler {
         observability::metrics::observe_reconciliation_duration(start.elapsed().as_secs_f64());
         observability::metrics::set_secrets_managed(i64::from(secrets_synced));
 
-        info!(
-            "Reconciliation complete for {} (synced {} secrets)",
-            name, secrets_synced
+        // Success - reset backoff state for this resource
+        let resource_key = format!(
+            "{}/{}",
+            config.metadata.namespace.as_deref().unwrap_or("default"),
+            name
         );
-        Ok(Action::await_change())
+        if let Ok(mut states) = ctx.backoff_states.lock() {
+            if let Some(state) = states.get_mut(&resource_key) {
+                state.reset();
+            }
+        }
+
+        // Parse reconcile_interval and schedule next reconciliation
+        let reconcile_interval_seconds = Self::parse_duration_to_seconds(&config.spec.reconcile_interval)
+            .unwrap_or(60); // Default to 60s if parsing fails
+
+        let next_trigger_time = chrono::Utc::now() + chrono::Duration::seconds(reconcile_interval_seconds as i64);
+        
+        info!(
+            "✅ Reconciliation complete for {} (synced {} secrets, duration: {:.2}s)",
+            name, secrets_synced, start.elapsed().as_secs_f64()
+        );
+        info!(
+            "📅 Next scheduled reconciliation: {} (in {}s, trigger source: timer-based)",
+            next_trigger_time.to_rfc3339(),
+            reconcile_interval_seconds
+        );
+
+        Ok(Action::requeue(std::time::Duration::from_secs(reconcile_interval_seconds)))
     }
 
     /// Get FluxCD GitRepository resource
@@ -1378,6 +1498,59 @@ impl Reconciler {
         .await?;
 
         Ok(())
+    }
+
+    /// Parse Kubernetes duration string to seconds
+    /// Accepts format: "1m", "5m", "1h", "30s", etc.
+    ///
+    /// # Arguments
+    /// * `interval` - The duration string to parse
+    ///
+    /// # Returns
+    /// * `Ok(seconds)` if valid
+    /// * `Err` with descriptive error message if invalid
+    fn parse_duration_to_seconds(interval: &str) -> Result<u64> {
+        use regex::Regex;
+
+        let interval_trimmed = interval.trim();
+        if interval_trimmed.is_empty() {
+            return Err(anyhow::anyhow!("Duration cannot be empty"));
+        }
+
+        let duration_regex = Regex::new(r"^(?P<number>\d+)(?P<unit>[smhd])$")
+            .map_err(|e| anyhow::anyhow!("Failed to compile regex: {}", e))?;
+
+        let interval_lower = interval_trimmed.to_lowercase();
+        let captures = duration_regex.captures(&interval_lower)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Invalid duration format '{}': must match pattern <number><unit> where unit is s, m, h, or d",
+                interval_trimmed
+            ))?;
+
+        let number_str = captures.name("number")
+            .ok_or_else(|| anyhow::anyhow!("Failed to extract number from duration"))?
+            .as_str();
+
+        let unit = captures.name("unit")
+            .ok_or_else(|| anyhow::anyhow!("Failed to extract unit from duration"))?
+            .as_str();
+
+        let number: u64 = number_str.parse()
+            .map_err(|e| anyhow::anyhow!("Invalid duration number: {}", e))?;
+
+        if number == 0 {
+            return Err(anyhow::anyhow!("Duration number must be greater than 0"));
+        }
+
+        let seconds = match unit {
+            "s" => number,
+            "m" => number * 60,
+            "h" => number * 3600,
+            "d" => number * 86400,
+            _ => return Err(anyhow::anyhow!("Invalid duration unit: {}", unit)),
+        };
+
+        Ok(seconds)
     }
 
     /// Validate duration interval with regex and minimum value check
