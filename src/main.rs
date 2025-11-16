@@ -45,7 +45,7 @@ pub mod controller;
 pub mod observability;
 pub mod provider;
 
-use controller::reconciler::Reconciler;
+use controller::reconciler::{Reconciler, TriggerSource};
 use controller::server::{start_server, ServerState};
 
 /// SecretManagerConfig Custom Resource Definition
@@ -77,6 +77,7 @@ use controller::server::{start_server, ServerState};
     version = "v1",
     namespaced,
     status = "SecretManagerConfigStatus",
+    shortname = "smc",
     printcolumn = r#"{"name":"Phase", "type":"string", "jsonPath":".status.phase"}, {"name":"Description", "type":"string", "jsonPath":".status.description"}, {"name":"Ready", "type":"string", "jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#
 )]
 #[serde(rename_all = "camelCase")]
@@ -767,7 +768,14 @@ async fn main() -> Result<()> {
                     );
                     let _resource_guard = resource_span.enter();
 
-                    match Reconciler::reconcile(Arc::new(item.clone()), reconciler.clone()).await {
+                    // Startup reconciliation uses timer-based trigger source
+                    match Reconciler::reconcile(
+                        Arc::new(item.clone()),
+                        reconciler.clone(),
+                        TriggerSource::TimerBased,
+                    )
+                    .await
+                    {
                         Ok(_action) => {
                             info!(
                                 "Successfully reconciled existing resource: {} in namespace {}",
@@ -983,6 +991,19 @@ async fn main() -> Result<()> {
                             );
                         }
 
+                        // Determine trigger source for detailed logging
+                        let trigger_source = if is_manual_trigger {
+                            TriggerSource::ManualCli
+                        } else if is_periodic_reconcile {
+                            TriggerSource::TimerBased
+                        } else if observed_generation == 0 {
+                            // First reconciliation
+                            TriggerSource::TimerBased
+                        } else {
+                            // Spec change (generation changed)
+                            TriggerSource::TimerBased
+                        };
+
                         if is_manual_trigger {
                             debug!(
                                 resource.name = name.as_str(),
@@ -993,19 +1014,16 @@ async fn main() -> Result<()> {
                             );
                         }
 
-                        info!(
-                            "Reconciling SecretManagerConfig: {} (triggered by watch event, generation={}, observed_generation={})",
-                            name, generation, observed_generation
-                        );
                         debug!(
                             resource.name = name.as_str(),
                             resource.namespace = namespace.as_str(),
                             generation = generation,
                             observed_generation = observed_generation,
+                            trigger_source = trigger_source.as_str(),
                             "watch.event.received"
                         );
 
-                        let result = Reconciler::reconcile(obj, reconciler.clone()).await;
+                        let result = Reconciler::reconcile(obj, reconciler.clone(), trigger_source).await;
 
                         match &result {
                             Ok(action) => {

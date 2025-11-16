@@ -147,6 +147,36 @@ pub enum ReconcilerError {
     ReconciliationFailed(#[from] anyhow::Error),
 }
 
+/// Trigger source for reconciliation
+/// Tracks why a reconciliation was triggered for better debugging and observability
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerSource {
+    /// Manual trigger via CLI annotation (msmctl reconcile)
+    ManualCli,
+    /// Timer-based periodic reconciliation (reconcile_interval)
+    TimerBased,
+    /// Error backoff retry (Fibonacci backoff after failure)
+    ErrorBackoff,
+    /// Waiting for resource (GitRepository 404)
+    WaitingForResource,
+    /// Retry after error (generic retry)
+    RetryAfterError,
+}
+
+impl TriggerSource {
+    /// Get human-readable string representation
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TriggerSource::ManualCli => "manual-cli",
+            TriggerSource::TimerBased => "timer-based",
+            TriggerSource::ErrorBackoff => "error-backoff",
+            TriggerSource::WaitingForResource => "waiting-for-resource",
+            TriggerSource::RetryAfterError => "retry-after-error",
+        }
+    }
+}
+
 /// Backoff state for a specific resource
 /// Tracks error count and backoff calculator for progressive retries
 #[derive(Debug, Clone)]
@@ -158,7 +188,7 @@ struct BackoffState {
 impl BackoffState {
     fn new() -> Self {
         Self {
-            backoff: FibonacciBackoff::new(30, 300), // 30s min, 5m max
+            backoff: FibonacciBackoff::new(1, 10), // 1 minute min, 10 minutes max (converted to seconds internally)
             error_count: 0,
         }
     }
@@ -273,33 +303,41 @@ impl Reconciler {
     pub async fn reconcile(
         config: std::sync::Arc<SecretManagerConfig>,
         ctx: std::sync::Arc<Reconciler>,
+        trigger_source: TriggerSource,
     ) -> Result<Action, ReconcilerError> {
         // Clone config for use in error handler
         let config_clone = config.clone();
-        
+
         // Wrap entire reconciliation in error handling to prevent panics
-        match Self::reconcile_internal(config, ctx.clone()).await {
+        match Self::reconcile_internal(config, ctx.clone(), trigger_source).await {
             Ok(action) => Ok(action),
             Err(e) => {
                 let name = config_clone.metadata.name.as_deref().unwrap_or("unknown");
                 let resource_key = format!(
                     "{}/{}",
-                    config_clone.metadata.namespace.as_deref().unwrap_or("default"),
+                    config_clone
+                        .metadata
+                        .namespace
+                        .as_deref()
+                        .unwrap_or("default"),
                     name
                 );
 
                 // Get or create backoff state for this resource
                 let backoff_seconds = {
                     let mut states = ctx.backoff_states.lock().unwrap();
-                    let state = states.entry(resource_key.clone()).or_insert_with(BackoffState::new);
+                    let state = states
+                        .entry(resource_key.clone())
+                        .or_insert_with(BackoffState::new);
                     state.increment_error();
                     let backoff = state.backoff.next_backoff_seconds();
                     let error_count = state.error_count;
                     (backoff, error_count)
                 };
 
-                let next_trigger_time = chrono::Utc::now() + chrono::Duration::seconds(backoff_seconds.0 as i64);
-                
+                let next_trigger_time =
+                    chrono::Utc::now() + chrono::Duration::seconds(backoff_seconds.0 as i64);
+
                 error!(
                     "❌ Reconciliation failed for {} (error count: {}): {}",
                     name, backoff_seconds.1, e
@@ -309,15 +347,18 @@ impl Reconciler {
                     backoff_seconds.0
                 );
                 info!(
-                    "📅 Next retry scheduled: {}",
-                    next_trigger_time.to_rfc3339()
+                    "📅 Next retry scheduled: {} (in {}s, trigger source: error-backoff)",
+                    next_trigger_time.to_rfc3339(),
+                    backoff_seconds.0
                 );
-                
+
                 observability::metrics::increment_reconciliation_errors();
-                
+
                 // Return requeue action with backoff duration
                 // Note: We return Ok here to use backoff scheduling instead of error path
-                Ok(Action::requeue(std::time::Duration::from_secs(backoff_seconds.0)))
+                Ok(Action::requeue(std::time::Duration::from_secs(
+                    backoff_seconds.0,
+                )))
             }
         }
     }
@@ -330,9 +371,17 @@ impl Reconciler {
     async fn reconcile_internal(
         config: std::sync::Arc<SecretManagerConfig>,
         ctx: std::sync::Arc<Reconciler>,
+        trigger_source: TriggerSource,
     ) -> Result<Action, ReconcilerError> {
         let start = Instant::now();
         let name = config.metadata.name.as_deref().unwrap_or("unknown");
+
+        // Log trigger source at start of reconciliation
+        info!(
+            "🔄 Reconciling SecretManagerConfig: {} (trigger source: {})",
+            name,
+            trigger_source.as_str()
+        );
 
         // Create OpenTelemetry span for this reconciliation
         // This provides distributed tracing when Datadog/OTel is configured
@@ -458,7 +507,7 @@ impl Reconciler {
                 .ok()
                 .and_then(|states| states.get(&resource_key).map(|s| s.error_count > 0))
                 .unwrap_or(false);
-            
+
             if has_errors {
                 "retry-after-error"
             } else {
@@ -590,21 +639,29 @@ impl Reconciler {
                         // Check if this is a 404 (resource not found) - this is expected and we should wait
                         // The error is wrapped in anyhow::Error, so we need to check the root cause
                         let is_404 = e.chain().any(|err| {
-                            if let Some(kube::Error::Api(api_err)) = err.downcast_ref::<kube::Error>() {
+                            if let Some(kube::Error::Api(api_err)) =
+                                err.downcast_ref::<kube::Error>()
+                            {
                                 return api_err.code == 404;
                             }
                             false
                         });
 
                         if is_404 {
-                            let next_trigger_time = chrono::Utc::now() + chrono::Duration::seconds(30);
+                            let retry_duration_secs =
+                                crate::constants::DEFAULT_GITREPOSITORY_NOT_FOUND_REQUEUE_SECS;
+                            let next_trigger_time = chrono::Utc::now()
+                                + chrono::Duration::seconds(retry_duration_secs as i64);
                             warn!(
-                                "⏳ GitRepository {}/{} not found yet, will retry in 30s",
-                                config.spec.source_ref.namespace, config.spec.source_ref.name
+                                "⏳ GitRepository {}/{} not found yet, will retry in {}s (1m)",
+                                config.spec.source_ref.namespace,
+                                config.spec.source_ref.name,
+                                retry_duration_secs
                             );
                             info!(
-                                "📅 Next retry scheduled: {} (trigger source: waiting-for-resource)",
-                                next_trigger_time.to_rfc3339()
+                                "📅 Next retry scheduled: {} (in {}s, trigger source: waiting-for-resource)",
+                                next_trigger_time.to_rfc3339(),
+                                retry_duration_secs
                             );
                             // Update status to Pending (waiting for GitRepository)
                             let _ = ctx
@@ -615,8 +672,10 @@ impl Reconciler {
                                 )
                                 .await;
                             // Return requeue action - don't treat as error, just wait for resource
+                            // Fixed 60s (1m) interval for GitRepository 404 (resource not yet created)
+                            // Aligns with minimum reconcile interval and GitOps tool conventions
                             return Ok(Action::requeue(std::time::Duration::from_secs(
-                                crate::constants::DEFAULT_GITREPOSITORY_NOT_FOUND_REQUEUE_SECS,
+                                retry_duration_secs,
                             )));
                         }
 
@@ -976,33 +1035,34 @@ impl Reconciler {
         observability::metrics::set_secrets_managed(i64::from(secrets_synced));
 
         // Success - reset backoff state for this resource
+        // On successful reconciliation, reset the backoff timer to use the resource's reconcile_interval
+        // This ensures that after a successful reconciliation (even during backoff), we return to
+        // the normal schedule defined in the resource spec
         let resource_key = format!(
             "{}/{}",
             config.metadata.namespace.as_deref().unwrap_or("default"),
             name
         );
-        if let Ok(mut states) = ctx.backoff_states.lock() {
+        let was_in_backoff = if let Ok(mut states) = ctx.backoff_states.lock() {
             if let Some(state) = states.get_mut(&resource_key) {
+                let had_errors = state.error_count > 0;
                 state.reset();
+                had_errors
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
 
-        // Parse reconcile_interval and schedule next reconciliation
-        let reconcile_interval_seconds = Self::parse_duration_to_seconds(&config.spec.reconcile_interval)
-            .unwrap_or(60); // Default to 60s if parsing fails
-
-        let next_trigger_time = chrono::Utc::now() + chrono::Duration::seconds(reconcile_interval_seconds as i64);
-        
         info!(
             "✅ Reconciliation complete for {} (synced {} secrets, duration: {:.2}s)",
-            name, secrets_synced, start.elapsed().as_secs_f64()
-        );
-        info!(
-            "✅ Reconciliation complete for {}: {} secrets synced successfully",
-            name, secrets_synced
+            name,
+            secrets_synced,
+            start.elapsed().as_secs_f64()
         );
 
-        // Honor the reconcile interval from the resource spec
+        // Use reconcile_interval from CRD spec for successful reconciliations
         // Each resource has its own reconcileInterval and maintains its own error count
         // Parse the reconcile interval and requeue after that duration
         // This ensures we don't reconcile more frequently than specified per resource
@@ -1012,6 +1072,22 @@ impl Reconciler {
                 // Reset any parsing error count by clearing the annotation if it exists
                 // This resets backoff when parsing succeeds again for this specific resource
                 let _ = ctx.clear_parsing_error_count(&config).await;
+
+                let next_trigger_time = chrono::Utc::now()
+                    + chrono::Duration::from_std(duration).unwrap_or(chrono::Duration::seconds(60));
+
+                if was_in_backoff {
+                    info!(
+                        "🔄 Backoff reset: Returning to normal schedule using reconcileInterval '{}'",
+                        config.spec.reconcile_interval
+                    );
+                }
+
+                info!(
+                    "📅 Next scheduled reconciliation: {} (in {}s, trigger source: timer-based)",
+                    next_trigger_time.to_rfc3339(),
+                    duration.as_secs()
+                );
 
                 debug!(
                     "Requeueing reconciliation for {} after {}s (reconcileInterval: {})",
@@ -2064,8 +2140,6 @@ impl Reconciler {
     /// * `Ok(seconds)` if valid
     /// * `Err` with descriptive error message if invalid
     fn parse_duration_to_seconds(interval: &str) -> Result<u64> {
-        use regex::Regex;
-
         let interval_trimmed = interval.trim();
         if interval_trimmed.is_empty() {
             return Err(anyhow::anyhow!("Duration cannot be empty"));
@@ -2081,15 +2155,18 @@ impl Reconciler {
                 interval_trimmed
             ))?;
 
-        let number_str = captures.name("number")
+        let number_str = captures
+            .name("number")
             .ok_or_else(|| anyhow::anyhow!("Failed to extract number from duration"))?
             .as_str();
 
-        let unit = captures.name("unit")
+        let unit = captures
+            .name("unit")
             .ok_or_else(|| anyhow::anyhow!("Failed to extract unit from duration"))?
             .as_str();
 
-        let number: u64 = number_str.parse()
+        let number: u64 = number_str
+            .parse()
             .map_err(|e| anyhow::anyhow!("Invalid duration number: {}", e))?;
 
         if number == 0 {

@@ -39,6 +39,7 @@ use std::borrow::Cow;
     version = "v1",
     namespaced,
     status = "SecretManagerConfigStatus",
+    shortname = "smc",
     printcolumn = r#"{"name":"Phase", "type":"string", "jsonPath":".status.phase"}, {"name":"Description", "type":"string", "jsonPath":".status.description"}, {"name":"Ready", "type":"string", "jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#
 )]
 #[serde(rename_all = "camelCase")]

@@ -18,8 +18,8 @@ pub const DEFAULT_SERVER_POLL_INTERVAL_MS: u64 = 50;
 pub const DEFAULT_RECONCILIATION_ERROR_REQUEUE_SECS: u64 = 60;
 
 /// Default requeue interval when GitRepository is not found (seconds)
-/// This is shorter than error requeue because it's an expected condition
-pub const DEFAULT_GITREPOSITORY_NOT_FOUND_REQUEUE_SECS: u64 = 30;
+/// Minimum 1 minute to align with GitOps tool conventions and minimum reconcile interval
+pub const DEFAULT_GITREPOSITORY_NOT_FOUND_REQUEUE_SECS: u64 = 60;
 
 /// Default exponential backoff starting value (milliseconds)
 pub const DEFAULT_BACKOFF_START_MS: u64 = 1000;
