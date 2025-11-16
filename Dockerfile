@@ -33,10 +33,11 @@ COPY config ./config
 
 # Build the binary in release mode
 # Pass build-time environment variables to build.rs
+# Use --locked to ensure Cargo.lock is respected and transitive dependencies resolve correctly
 RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
     BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
     BUILD_DATETIME=${BUILD_DATETIME} \
-    cargo build --release --bin secret-manager-controller
+    cargo build --release --locked --bin secret-manager-controller
 
 # Stage 2: Runtime image
 FROM debian:bookworm-slim

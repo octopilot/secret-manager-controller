@@ -48,9 +48,8 @@ tokio = { version = "1", features = ["full"] }
 # GCP Secret Manager - using forked Google Cloud Rust SDK with rustls support
 # Fork: https://github.com/microscaler/google-cloud-rust/tree/fix/openssl-tls-issue
 # This fork uses rustls instead of OpenSSL, eliminating OpenSSL dependency complexity.
-# Note: google-cloud-gax-internal is explicitly added to help Cargo resolve it in Docker builds
-# It's also a transitive dependency of google-cloud-secretmanager-v1
-google-cloud-gax-internal = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-gax-internal" }
+# Note: google-cloud-gax-internal is a transitive dependency and should be resolved automatically
+# If Docker builds fail, ensure Cargo.lock is up to date and committed
 google-cloud-secretmanager-v1 = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-secretmanager-v1" }
 
 # AWS Secrets Manager and Parameter Store - using official AWS Rust SDK
