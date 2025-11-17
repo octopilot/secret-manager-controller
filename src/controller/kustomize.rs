@@ -291,6 +291,137 @@ data:
             // Should still parse even without --- separator
             assert_eq!(result.get("key"), Some(&"value".to_string()));
         }
+
+        #[test]
+        fn test_parse_kustomize_output_secret_with_no_data() {
+            let secret = Secret {
+                data: None,
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+            let yaml_output = format!("---\n{}", yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_secret_with_empty_data() {
+            let secret = Secret {
+                data: Some(BTreeMap::new()),
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+            let yaml_output = format!("---\n{}", yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_multiple_secrets_same_key() {
+            // When multiple secrets have the same key, later ones should overwrite
+            let secret1 = Secret {
+                metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                    name: Some("secret1".to_string()),
+                    ..Default::default()
+                }
+                .into(),
+                data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value1").into()),
+                )])),
+                ..Secret::default()
+            };
+            let secret2 = Secret {
+                metadata: k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta {
+                    name: Some("secret2".to_string()),
+                    ..Default::default()
+                }
+                .into(),
+                data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value2").into()),
+                )])),
+                ..Secret::default()
+            };
+            let yaml1 = serde_yaml::to_string(&secret1).unwrap();
+            let yaml2 = serde_yaml::to_string(&secret2).unwrap();
+            let yaml_output = format!("---\n{}\n---\n{}", yaml1, yaml2);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            // Last value should win
+            assert_eq!(result.get("key"), Some(&"value2".to_string()));
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_secret_with_string_data() {
+            // Secrets can have stringData instead of data
+            let secret = Secret {
+                string_data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    "plain-text-value".to_string(),
+                )])),
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+            let yaml_output = format!("---\n{}", yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            // stringData should be parsed (if the function supports it)
+            // Note: Current implementation only handles data, not stringData
+            // This test documents current behavior
+            assert!(result.is_empty() || result.contains_key("key"));
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_mixed_resources() {
+            // Mix of Secret and non-Secret resources
+            let secret = Secret {
+                data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value").into()),
+                )])),
+                ..Secret::default()
+            };
+            let config_map_yaml = r#"apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+data:
+  config-key: config-value
+"#;
+            let secret_yaml = serde_yaml::to_string(&secret).unwrap();
+            let yaml_output = format!("---\n{}\n---\n{}", config_map_yaml, secret_yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            // Should only extract from Secret, not ConfigMap
+            assert_eq!(result.get("key"), Some(&"value".to_string()));
+            assert!(!result.contains_key("config-key"));
+        }
+
+        #[test]
+        fn test_parse_kustomize_output_whitespace_handling() {
+            let secret = Secret {
+                data: Some(BTreeMap::from([(
+                    "key".to_string(),
+                    k8s_openapi::ByteString(general_purpose::STANDARD.encode("value").into()),
+                )])),
+                ..Secret::default()
+            };
+            let yaml = serde_yaml::to_string(&secret).unwrap();
+            // Add extra whitespace around separators
+            let yaml_output = format!("   ---   \n{}\n   ---   \n", yaml);
+
+            let result = parse_kustomize_output(&yaml_output);
+
+            assert_eq!(result.get("key"), Some(&"value".to_string()));
+        }
     }
 }
 

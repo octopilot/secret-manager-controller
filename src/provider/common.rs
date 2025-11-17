@@ -63,7 +63,78 @@ where
 /// * `operation` - Operation type (e.g., "create", "update", "no_change")
 /// * `start_time` - Start time of the operation
 pub fn record_secret_metrics(provider: &str, operation: &str, start_time: Instant) {
-    metrics::record_secret_operation(provider, operation, start_time.elapsed().as_secs_f64());
+    let duration = start_time.elapsed().as_secs_f64();
+    metrics::record_secret_operation(provider, operation, duration);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_compare_secret_value_not_found() {
+        let result = compare_secret_value(|| async { Ok(None) }, "new-value")
+            .await
+            .unwrap();
+        assert_eq!(result, SecretComparison::NotFound);
+    }
+
+    #[tokio::test]
+    async fn test_compare_secret_value_unchanged() {
+        let result = compare_secret_value(
+            || async { Ok(Some("same-value".to_string())) },
+            "same-value",
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, SecretComparison::Unchanged);
+    }
+
+    #[tokio::test]
+    async fn test_compare_secret_value_changed() {
+        let result =
+            compare_secret_value(|| async { Ok(Some("old-value".to_string())) }, "new-value")
+                .await
+                .unwrap();
+        assert_eq!(result, SecretComparison::Changed);
+    }
+
+    #[tokio::test]
+    async fn test_compare_secret_value_error_propagation() {
+        let result =
+            compare_secret_value(|| async { Err(anyhow::anyhow!("Test error")) }, "value").await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_secret_comparison_debug() {
+        let not_found = SecretComparison::NotFound;
+        let debug_str = format!("{:?}", not_found);
+        assert!(debug_str.contains("NotFound"));
+    }
+
+    #[test]
+    fn test_secret_comparison_eq() {
+        assert_eq!(SecretComparison::NotFound, SecretComparison::NotFound);
+        assert_eq!(SecretComparison::Unchanged, SecretComparison::Unchanged);
+        assert_eq!(SecretComparison::Changed, SecretComparison::Changed);
+        assert_ne!(SecretComparison::NotFound, SecretComparison::Unchanged);
+    }
+
+    #[test]
+    fn test_record_secret_metrics() {
+        let start = Instant::now();
+        // Just verify it doesn't panic
+        record_secret_metrics("gcp", "create", start);
+    }
+
+    #[test]
+    fn test_log_secret_operation() {
+        // Just verify it doesn't panic
+        log_secret_operation("gcp", "test-secret", SecretComparison::NotFound);
+        log_secret_operation("aws", "test-secret", SecretComparison::Unchanged);
+        log_secret_operation("azure", "test-secret", SecretComparison::Changed);
+    }
 }
 
 /// Log secret operation result

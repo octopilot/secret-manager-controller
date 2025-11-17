@@ -48,9 +48,10 @@ tokio = { version = "1", features = ["full"] }
 # GCP Secret Manager - using forked Google Cloud Rust SDK with rustls support
 # Fork: https://github.com/microscaler/google-cloud-rust/tree/fix/openssl-tls-issue
 # This fork uses rustls instead of OpenSSL, eliminating OpenSSL dependency complexity.
-# Note: Using commit hash for reproducible builds (matches Cargo.lock)
+# Using branch (not rev) for better CI compatibility - Cargo can fetch branches even with shallow clones
+# The commit hash is pinned in Cargo.lock for reproducibility
 # google-cloud-gax-internal is a transitive dependency and should be resolved automatically
-google-cloud-secretmanager-v1 = { git = "https://github.com/microscaler/google-cloud-rust", rev = "601d718f825eefc83358a5392fb769181190b2d2", package = "google-cloud-secretmanager-v1" }
+google-cloud-secretmanager-v1 = { git = "https://github.com/microscaler/google-cloud-rust", branch = "fix/openssl-tls-issue", package = "google-cloud-secretmanager-v1" }
 
 # AWS Secrets Manager and Parameter Store - using official AWS Rust SDK
 # Match obsctl approach: use default features, aws-smithy-http-client will use rustls-aws-lc via feature unification

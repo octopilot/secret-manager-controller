@@ -1074,4 +1074,490 @@ required: value
             assert!(result.is_err());
         }
     }
+
+    mod application_files_tests {
+        use super::*;
+
+        #[test]
+        fn test_application_files_has_any_files_all_none() {
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: PathBuf::from("/tmp"),
+                secrets_env: None,
+                secrets_yaml: None,
+                properties: None,
+            };
+            assert!(!files.has_any_files());
+        }
+
+        #[test]
+        fn test_application_files_has_any_files_with_env() {
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: PathBuf::from("/tmp"),
+                secrets_env: Some(PathBuf::from("/tmp/secrets.env")),
+                secrets_yaml: None,
+                properties: None,
+            };
+            assert!(files.has_any_files());
+        }
+
+        #[test]
+        fn test_application_files_has_any_files_with_yaml() {
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: PathBuf::from("/tmp"),
+                secrets_env: None,
+                secrets_yaml: Some(PathBuf::from("/tmp/secrets.yaml")),
+                properties: None,
+            };
+            assert!(files.has_any_files());
+        }
+
+        #[test]
+        fn test_application_files_has_any_files_with_properties() {
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: PathBuf::from("/tmp"),
+                secrets_env: None,
+                secrets_yaml: None,
+                properties: Some(PathBuf::from("/tmp/properties")),
+            };
+            assert!(files.has_any_files());
+        }
+    }
+
+    mod parse_secrets_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_parse_secrets_empty_files() {
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: PathBuf::from("/tmp"),
+                secrets_env: None,
+                secrets_yaml: None,
+                properties: None,
+            };
+            let result = parse_secrets(&files, None).await.unwrap();
+            assert!(result.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_parse_secrets_with_env_only() {
+            let temp_dir = TempDir::new().unwrap();
+            let env_path = temp_dir.path().join("secrets.env");
+            fs::write(&env_path, "KEY1=value1\nKEY2=value2\n").unwrap();
+
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: temp_dir.path().to_path_buf(),
+                secrets_env: Some(env_path),
+                secrets_yaml: None,
+                properties: None,
+            };
+            let result = parse_secrets(&files, None).await.unwrap();
+            assert_eq!(result.get("KEY1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("KEY2"), Some(&"value2".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_secrets_with_yaml_only() {
+            let temp_dir = TempDir::new().unwrap();
+            let yaml_path = temp_dir.path().join("secrets.yaml");
+            fs::write(
+                &yaml_path,
+                r#"database:
+  url: postgres://localhost:5432/mydb
+"#,
+            )
+            .unwrap();
+
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: temp_dir.path().to_path_buf(),
+                secrets_env: None,
+                secrets_yaml: Some(yaml_path),
+                properties: None,
+            };
+            let result = parse_secrets(&files, None).await.unwrap();
+            assert_eq!(
+                result.get("database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+        }
+
+        #[tokio::test]
+        async fn test_parse_secrets_with_both_env_and_yaml() {
+            let temp_dir = TempDir::new().unwrap();
+            let env_path = temp_dir.path().join("secrets.env");
+            let yaml_path = temp_dir.path().join("secrets.yaml");
+            fs::write(&env_path, "ENV_KEY=env_value\n").unwrap();
+            fs::write(
+                &yaml_path,
+                r#"yaml:
+  key: yaml_value
+"#,
+            )
+            .unwrap();
+
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: temp_dir.path().to_path_buf(),
+                secrets_env: Some(env_path),
+                secrets_yaml: Some(yaml_path),
+                properties: None,
+            };
+            let result = parse_secrets(&files, None).await.unwrap();
+            assert_eq!(result.get("ENV_KEY"), Some(&"env_value".to_string()));
+            assert_eq!(result.get("yaml.key"), Some(&"yaml_value".to_string()));
+        }
+    }
+
+    mod parse_properties_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_parse_properties_no_properties_file() {
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: PathBuf::from("/tmp"),
+                secrets_env: None,
+                secrets_yaml: None,
+                properties: None,
+            };
+            let result = parse_properties(&files).await.unwrap();
+            assert!(result.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_with_file() {
+            let temp_dir = TempDir::new().unwrap();
+            let props_path = temp_dir.path().join("properties");
+            fs::write(
+                &props_path,
+                "database.url=postgres://localhost:5432/mydb\ndatabase.user=admin\n",
+            )
+            .unwrap();
+
+            let files = ApplicationFiles {
+                service_name: "test".to_string(),
+                base_path: temp_dir.path().to_path_buf(),
+                secrets_env: None,
+                secrets_yaml: None,
+                properties: Some(props_path),
+            };
+            let result = parse_properties(&files).await.unwrap();
+            assert_eq!(
+                result.get("database.url"),
+                Some(&"postgres://localhost:5432/mydb".to_string())
+            );
+            assert_eq!(result.get("database.user"), Some(&"admin".to_string()));
+        }
+    }
+
+    mod flatten_yaml_value_edge_cases_tests {
+        use super::*;
+
+        #[test]
+        fn test_flatten_yaml_value_empty_prefix() {
+            let mut result = HashMap::new();
+            let value = serde_yaml::from_str::<serde_yaml::Value>("key: value").unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            assert_eq!(result.get("key"), Some(&"value".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_nested_arrays() {
+            let mut result = HashMap::new();
+            let value = serde_yaml::from_str::<serde_yaml::Value>(
+                r#"items:
+  - first
+  - second
+"#,
+            )
+            .unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            assert_eq!(result.get("items[0]"), Some(&"first".to_string()));
+            assert_eq!(result.get("items[1]"), Some(&"second".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_numbers() {
+            let mut result = HashMap::new();
+            let value = serde_yaml::from_str::<serde_yaml::Value>("port: 8080").unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            assert_eq!(result.get("port"), Some(&"8080".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_booleans() {
+            let mut result = HashMap::new();
+            let value = serde_yaml::from_str::<serde_yaml::Value>("enabled: true").unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            assert_eq!(result.get("enabled"), Some(&"true".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_null() {
+            let mut result = HashMap::new();
+            let value = serde_yaml::from_str::<serde_yaml::Value>("key: null").unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            assert_eq!(result.get("key"), Some(&String::new()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_complex_nested() {
+            let mut result = HashMap::new();
+            let value = serde_yaml::from_str::<serde_yaml::Value>(
+                r#"api:
+  version: 1
+  endpoints:
+    - /health
+    - /metrics
+  enabled: true
+"#,
+            )
+            .unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            assert_eq!(result.get("api.version"), Some(&"1".to_string()));
+            assert_eq!(result.get("api.endpoints[0]"), Some(&"/health".to_string()));
+            assert_eq!(
+                result.get("api.endpoints[1]"),
+                Some(&"/metrics".to_string())
+            );
+            assert_eq!(result.get("api.enabled"), Some(&"true".to_string()));
+        }
+
+        #[test]
+        fn test_flatten_yaml_value_non_string_key() {
+            let mut result = HashMap::new();
+            // YAML with numeric key (edge case)
+            let value = serde_yaml::from_str::<serde_yaml::Value>("123: value").unwrap();
+            flatten_yaml_value(&value, String::new(), &mut result);
+            // Non-string keys become empty string
+            assert_eq!(result.get(""), Some(&"value".to_string()));
+        }
+    }
+
+    mod find_files_in_directory_tests {
+        use super::*;
+        use tempfile::TempDir;
+
+        #[test]
+        fn test_find_files_in_directory_all_files() {
+            let temp_dir = TempDir::new().unwrap();
+            let env_path = temp_dir.path().join("application.secrets.env");
+            let yaml_path = temp_dir.path().join("application.secrets.yaml");
+            let props_path = temp_dir.path().join("application.properties");
+            fs::write(&env_path, "KEY=value").unwrap();
+            fs::write(&yaml_path, "key: value").unwrap();
+            fs::write(&props_path, "key=value").unwrap();
+
+            let result = find_files_in_directory("test-service", temp_dir.path()).unwrap();
+
+            assert_eq!(result.service_name, "test-service");
+            assert_eq!(result.secrets_env, Some(env_path));
+            assert_eq!(result.secrets_yaml, Some(yaml_path));
+            assert_eq!(result.properties, Some(props_path));
+        }
+
+        #[test]
+        fn test_find_files_in_directory_no_files() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let result = find_files_in_directory("test-service", temp_dir.path()).unwrap();
+
+            assert_eq!(result.service_name, "test-service");
+            assert!(result.secrets_env.is_none());
+            assert!(result.secrets_yaml.is_none());
+            assert!(result.properties.is_none());
+        }
+
+        #[test]
+        fn test_find_files_in_directory_partial_files() {
+            let temp_dir = TempDir::new().unwrap();
+            let env_path = temp_dir.path().join("application.secrets.env");
+            fs::write(&env_path, "KEY=value").unwrap();
+
+            let result = find_files_in_directory("test-service", temp_dir.path()).unwrap();
+
+            assert_eq!(result.secrets_env, Some(env_path));
+            assert!(result.secrets_yaml.is_none());
+            assert!(result.properties.is_none());
+        }
+
+        #[test]
+        fn test_find_files_in_directory_ignores_other_files() {
+            let temp_dir = TempDir::new().unwrap();
+            let env_path = temp_dir.path().join("application.secrets.env");
+            let other_file = temp_dir.path().join("other-file.txt");
+            fs::write(&env_path, "KEY=value").unwrap();
+            fs::write(&other_file, "content").unwrap();
+
+            let result = find_files_in_directory("test-service", temp_dir.path()).unwrap();
+
+            assert_eq!(result.secrets_env, Some(env_path));
+            assert!(result.secrets_yaml.is_none());
+            assert!(result.properties.is_none());
+        }
+
+        #[test]
+        fn test_find_files_in_directory_nonexistent_dir() {
+            let result =
+                find_files_in_directory("test-service", std::path::Path::new("/nonexistent/path"));
+
+            assert!(result.is_err());
+        }
+    }
+
+    mod parse_env_file_edge_cases_tests {
+        use super::*;
+        use tempfile::TempDir;
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_comments() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(
+                &file_path,
+                "# Comment line\nKEY1=value1\n# Another comment\nKEY2=value2\n",
+            )
+            .unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(result.get("KEY1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("KEY2"), Some(&"value2".to_string()));
+            assert!(!result.contains_key("# Comment"));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_empty_value() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "KEY1=\nKEY2=value2\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(result.get("KEY1"), Some(&String::new()));
+            assert_eq!(result.get("KEY2"), Some(&"value2".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_equals_in_value() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "URL=https://example.com?key=value\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            // split_once only splits on first =
+            assert_eq!(
+                result.get("URL"),
+                Some(&"https://example.com?key=value".to_string())
+            );
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_with_no_equals() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "KEY1=value1\nINVALID_LINE\nKEY2=value2\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert_eq!(result.get("KEY1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("KEY2"), Some(&"value2".to_string()));
+            assert!(!result.contains_key("INVALID_LINE"));
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_only_comments() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "# Comment 1\n# Comment 2\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert!(result.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_parse_env_file_only_empty_lines() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.env");
+            fs::write(&file_path, "\n\n\n").unwrap();
+
+            let result = parse_env_file(&file_path, None).await.unwrap();
+
+            assert!(result.is_empty());
+        }
+    }
+
+    mod parse_properties_file_edge_cases_tests {
+        use super::*;
+        use tempfile::TempDir;
+
+        #[tokio::test]
+        async fn test_parse_properties_file_with_empty_value() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(&file_path, "key1=\nkey2=value2\n").unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert_eq!(result.get("key1"), Some(&String::new()));
+            assert_eq!(result.get("key2"), Some(&"value2".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_file_with_equals_in_value() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(&file_path, "url=https://example.com?key=value\n").unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert_eq!(
+                result.get("url"),
+                Some(&"https://example.com?key=value".to_string())
+            );
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_file_with_no_equals() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(&file_path, "key1=value1\ninvalid_line\nkey2=value2\n").unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert_eq!(result.get("key1"), Some(&"value1".to_string()));
+            assert_eq!(result.get("key2"), Some(&"value2".to_string()));
+            assert!(!result.contains_key("invalid_line"));
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_file_only_comments() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(&file_path, "# Comment 1\n# Comment 2\n").unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert!(result.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_parse_properties_file_empty_file() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.properties");
+            fs::write(&file_path, "").unwrap();
+
+            let result = parse_properties_file(&file_path).await.unwrap();
+
+            assert!(result.is_empty());
+        }
+    }
 }

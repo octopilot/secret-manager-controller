@@ -2130,60 +2130,6 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Parse Kubernetes duration string to seconds
-    /// Accepts format: "1m", "5m", "1h", "30s", etc.
-    ///
-    /// # Arguments
-    /// * `interval` - The duration string to parse
-    ///
-    /// # Returns
-    /// * `Ok(seconds)` if valid
-    /// * `Err` with descriptive error message if invalid
-    fn parse_duration_to_seconds(interval: &str) -> Result<u64> {
-        let interval_trimmed = interval.trim();
-        if interval_trimmed.is_empty() {
-            return Err(anyhow::anyhow!("Duration cannot be empty"));
-        }
-
-        let duration_regex = Regex::new(r"^(?P<number>\d+)(?P<unit>[smhd])$")
-            .map_err(|e| anyhow::anyhow!("Failed to compile regex: {}", e))?;
-
-        let interval_lower = interval_trimmed.to_lowercase();
-        let captures = duration_regex.captures(&interval_lower)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Invalid duration format '{}': must match pattern <number><unit> where unit is s, m, h, or d",
-                interval_trimmed
-            ))?;
-
-        let number_str = captures
-            .name("number")
-            .ok_or_else(|| anyhow::anyhow!("Failed to extract number from duration"))?
-            .as_str();
-
-        let unit = captures
-            .name("unit")
-            .ok_or_else(|| anyhow::anyhow!("Failed to extract unit from duration"))?
-            .as_str();
-
-        let number: u64 = number_str
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid duration number: {}", e))?;
-
-        if number == 0 {
-            return Err(anyhow::anyhow!("Duration number must be greater than 0"));
-        }
-
-        let seconds = match unit {
-            "s" => number,
-            "m" => number * 60,
-            "h" => number * 3600,
-            "d" => number * 86400,
-            _ => return Err(anyhow::anyhow!("Invalid duration unit: {}", unit)),
-        };
-
-        Ok(seconds)
-    }
-
     /// Validate duration interval with regex and minimum value check
     /// Ensures interval matches Kubernetes duration format and meets minimum requirement
     /// Accepts Kubernetes duration format: "1m", "5m", "1h", etc.
@@ -2953,6 +2899,1449 @@ mod tests {
             assert_eq!(sanitize_secret_name("---"), ""); // All dashes removed by trim
             assert_eq!(sanitize_secret_name("--test--"), "test"); // Leading/trailing dashes removed
             assert_eq!(sanitize_secret_name("a--b--c"), "a-b-c"); // Consecutive dashes collapsed
+        }
+    }
+
+    mod trigger_source_tests {
+        use super::*;
+
+        #[test]
+        fn test_trigger_source_as_str() {
+            assert_eq!(TriggerSource::ManualCli.as_str(), "manual-cli");
+            assert_eq!(TriggerSource::TimerBased.as_str(), "timer-based");
+            assert_eq!(TriggerSource::ErrorBackoff.as_str(), "error-backoff");
+            assert_eq!(
+                TriggerSource::WaitingForResource.as_str(),
+                "waiting-for-resource"
+            );
+            assert_eq!(TriggerSource::RetryAfterError.as_str(), "retry-after-error");
+        }
+
+        #[test]
+        fn test_trigger_source_debug() {
+            let sources = vec![
+                TriggerSource::ManualCli,
+                TriggerSource::TimerBased,
+                TriggerSource::ErrorBackoff,
+                TriggerSource::WaitingForResource,
+                TriggerSource::RetryAfterError,
+            ];
+            for source in sources {
+                let debug_str = format!("{:?}", source);
+                assert!(!debug_str.is_empty());
+            }
+        }
+
+        #[test]
+        fn test_trigger_source_clone() {
+            let source = TriggerSource::ManualCli;
+            let cloned = source;
+            assert_eq!(source.as_str(), cloned.as_str());
+        }
+
+        #[test]
+        fn test_trigger_source_eq() {
+            assert_eq!(TriggerSource::ManualCli, TriggerSource::ManualCli);
+            assert_ne!(TriggerSource::ManualCli, TriggerSource::TimerBased);
+        }
+    }
+
+    mod backoff_state_tests {
+        use super::*;
+
+        #[test]
+        fn test_backoff_state_new() {
+            let state = BackoffState::new();
+            assert_eq!(state.error_count, 0);
+        }
+
+        #[test]
+        fn test_backoff_state_increment_error() {
+            let mut state = BackoffState::new();
+            assert_eq!(state.error_count, 0);
+            state.increment_error();
+            assert_eq!(state.error_count, 1);
+            state.increment_error();
+            assert_eq!(state.error_count, 2);
+        }
+
+        #[test]
+        fn test_backoff_state_reset() {
+            let mut state = BackoffState::new();
+            state.increment_error();
+            state.increment_error();
+            assert_eq!(state.error_count, 2);
+            state.reset();
+            assert_eq!(state.error_count, 0);
+            // Verify backoff is reset by checking next backoff is at minimum
+            assert_eq!(state.backoff.next_backoff_seconds(), 60); // 1m = 60s
+        }
+    }
+
+    mod parse_kubernetes_duration_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_kubernetes_duration_seconds() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("30s").unwrap(),
+                std::time::Duration::from_secs(30)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("60s").unwrap(),
+                std::time::Duration::from_secs(60)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1s").unwrap(),
+                std::time::Duration::from_secs(1)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_minutes() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1m").unwrap(),
+                std::time::Duration::from_secs(60)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("5m").unwrap(),
+                std::time::Duration::from_secs(300)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("60m").unwrap(),
+                std::time::Duration::from_secs(3600)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_hours() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1h").unwrap(),
+                std::time::Duration::from_secs(3600)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("2h").unwrap(),
+                std::time::Duration::from_secs(7200)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_days() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1d").unwrap(),
+                std::time::Duration::from_secs(86400)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("2d").unwrap(),
+                std::time::Duration::from_secs(172800)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_case_insensitive() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1M").unwrap(),
+                std::time::Duration::from_secs(60)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1H").unwrap(),
+                std::time::Duration::from_secs(3600)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1D").unwrap(),
+                std::time::Duration::from_secs(86400)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_whitespace() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration(" 1m ").unwrap(),
+                std::time::Duration::from_secs(60)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("5m ").unwrap(),
+                std::time::Duration::from_secs(300)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_empty() {
+            assert!(Reconciler::parse_kubernetes_duration("").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("   ").is_err());
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_zero() {
+            assert!(Reconciler::parse_kubernetes_duration("0s").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("0m").is_err());
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_invalid_format() {
+            assert!(Reconciler::parse_kubernetes_duration("1").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("m").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("1.5m").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("1 m").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("1min").is_err());
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_invalid_unit() {
+            assert!(Reconciler::parse_kubernetes_duration("1x").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("1w").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("1y").is_err());
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_large_numbers() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1000s").unwrap(),
+                std::time::Duration::from_secs(1000)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("100m").unwrap(),
+                std::time::Duration::from_secs(6000)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("24h").unwrap(),
+                std::time::Duration::from_secs(86400)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("7d").unwrap(),
+                std::time::Duration::from_secs(604800)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_very_large_numbers() {
+            // Test that large numbers don't overflow
+            assert!(Reconciler::parse_kubernetes_duration("999999999s").is_ok());
+            assert!(Reconciler::parse_kubernetes_duration("999999999m").is_ok());
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_with_leading_zeros() {
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("01m").unwrap(),
+                std::time::Duration::from_secs(60)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("005s").unwrap(),
+                std::time::Duration::from_secs(5)
+            );
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_whitespace_only() {
+            assert!(Reconciler::parse_kubernetes_duration("   ").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("\t").is_err());
+            assert!(Reconciler::parse_kubernetes_duration("\n").is_err());
+        }
+
+        #[test]
+        fn test_parse_kubernetes_duration_mixed_case() {
+            // Should be case-insensitive
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1S").unwrap(),
+                std::time::Duration::from_secs(1)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1M").unwrap(),
+                std::time::Duration::from_secs(60)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1H").unwrap(),
+                std::time::Duration::from_secs(3600)
+            );
+            assert_eq!(
+                Reconciler::parse_kubernetes_duration("1D").unwrap(),
+                std::time::Duration::from_secs(86400)
+            );
+        }
+    }
+
+    mod validate_duration_interval_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_duration_interval_valid() {
+            assert!(Reconciler::validate_duration_interval("60s", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("1m", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("5m", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("1h", "test", 60).is_ok());
+        }
+
+        #[test]
+        fn test_validate_duration_interval_minimum() {
+            assert!(Reconciler::validate_duration_interval("60s", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("1m", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("59s", "test", 60).is_err());
+            assert!(Reconciler::validate_duration_interval("30s", "test", 60).is_err());
+        }
+
+        #[test]
+        fn test_validate_duration_interval_empty() {
+            assert!(Reconciler::validate_duration_interval("", "test", 60).is_err());
+            assert!(Reconciler::validate_duration_interval("   ", "test", 60).is_err());
+        }
+
+        #[test]
+        fn test_validate_duration_interval_invalid_format() {
+            assert!(Reconciler::validate_duration_interval("invalid", "test", 60).is_err());
+            assert!(Reconciler::validate_duration_interval("1", "test", 60).is_err());
+        }
+
+        #[test]
+        fn test_validate_duration_interval_exact_minimum() {
+            assert!(Reconciler::validate_duration_interval("60s", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("1m", "test", 60).is_ok());
+        }
+
+        #[test]
+        fn test_validate_duration_interval_above_minimum() {
+            assert!(Reconciler::validate_duration_interval("61s", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("2m", "test", 60).is_ok());
+            assert!(Reconciler::validate_duration_interval("1h", "test", 60).is_ok());
+        }
+
+        #[test]
+        fn test_validate_duration_interval_custom_minimum() {
+            assert!(Reconciler::validate_duration_interval("120s", "test", 120).is_ok());
+            assert!(Reconciler::validate_duration_interval("2m", "test", 120).is_ok());
+            assert!(Reconciler::validate_duration_interval("119s", "test", 120).is_err());
+        }
+    }
+
+    mod validate_source_ref_kind_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_source_ref_kind_valid() {
+            assert!(Reconciler::validate_source_ref_kind("GitRepository").is_ok());
+            assert!(Reconciler::validate_source_ref_kind("Application").is_ok());
+        }
+
+        #[test]
+        fn test_validate_source_ref_kind_case_sensitive() {
+            assert!(Reconciler::validate_source_ref_kind("gitrepository").is_err());
+            assert!(Reconciler::validate_source_ref_kind("GITREPOSITORY").is_err());
+            assert!(Reconciler::validate_source_ref_kind("application").is_err());
+            assert!(Reconciler::validate_source_ref_kind("APPLICATION").is_err());
+        }
+
+        #[test]
+        fn test_validate_source_ref_kind_invalid() {
+            assert!(Reconciler::validate_source_ref_kind("InvalidKind").is_err());
+            assert!(Reconciler::validate_source_ref_kind("").is_err());
+            assert!(Reconciler::validate_source_ref_kind("GitRepo").is_err());
+        }
+
+        #[test]
+        fn test_validate_source_ref_kind_whitespace() {
+            assert!(Reconciler::validate_source_ref_kind(" GitRepository ").is_ok());
+            assert!(Reconciler::validate_source_ref_kind(" Application ").is_ok());
+        }
+    }
+
+    mod validate_kubernetes_name_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_kubernetes_name_valid() {
+            assert!(Reconciler::validate_kubernetes_name("my-resource", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name("my.resource", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name("my-resource-123", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name("a", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_empty() {
+            assert!(Reconciler::validate_kubernetes_name("", "test").is_err());
+            assert!(Reconciler::validate_kubernetes_name("   ", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_too_long() {
+            let long_name = "a".repeat(254);
+            assert!(Reconciler::validate_kubernetes_name(&long_name, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_invalid_chars() {
+            assert!(Reconciler::validate_kubernetes_name("My-Resource", "test").is_err()); // uppercase
+            assert!(Reconciler::validate_kubernetes_name("my_resource", "test").is_err()); // underscore
+            assert!(Reconciler::validate_kubernetes_name("-my-resource", "test").is_err()); // starts with dash
+            assert!(Reconciler::validate_kubernetes_name("my-resource-", "test").is_err()); // ends with dash
+            assert!(Reconciler::validate_kubernetes_name(".my-resource", "test").is_err()); // starts with dot
+            assert!(Reconciler::validate_kubernetes_name("my-resource.", "test").is_err());
+            // ends with dot
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_max_length() {
+            let max_name = "a".repeat(253);
+            assert!(Reconciler::validate_kubernetes_name(&max_name, "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_boundary_length() {
+            let boundary_name = "a".repeat(253);
+            assert!(Reconciler::validate_kubernetes_name(&boundary_name, "test").is_ok());
+            let too_long = "a".repeat(254);
+            assert!(Reconciler::validate_kubernetes_name(&too_long, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_with_dots() {
+            assert!(Reconciler::validate_kubernetes_name("my.service", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name("my.service.name", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name(".my.service", "test").is_err());
+            assert!(Reconciler::validate_kubernetes_name("my.service.", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_single_char() {
+            assert!(Reconciler::validate_kubernetes_name("a", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name("0", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_name_consecutive_dashes() {
+            assert!(Reconciler::validate_kubernetes_name("my--service", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_name("my---service", "test").is_ok());
+        }
+    }
+
+    mod validate_kubernetes_namespace_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_kubernetes_namespace_valid() {
+            assert!(Reconciler::validate_kubernetes_namespace("default").is_ok());
+            assert!(Reconciler::validate_kubernetes_namespace("kube-system").is_ok());
+            assert!(Reconciler::validate_kubernetes_namespace("my-namespace").is_ok());
+            assert!(Reconciler::validate_kubernetes_namespace("a").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_empty() {
+            assert!(Reconciler::validate_kubernetes_namespace("").is_err());
+            assert!(Reconciler::validate_kubernetes_namespace("   ").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_too_long() {
+            let long_namespace = "a".repeat(64);
+            assert!(Reconciler::validate_kubernetes_namespace(&long_namespace).is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_invalid_chars() {
+            assert!(Reconciler::validate_kubernetes_namespace("MyNamespace").is_err()); // uppercase
+            assert!(Reconciler::validate_kubernetes_namespace("my_namespace").is_err()); // underscore
+            assert!(Reconciler::validate_kubernetes_namespace("my.namespace").is_err()); // dot
+            assert!(Reconciler::validate_kubernetes_namespace("-my-namespace").is_err()); // starts with dash
+            assert!(Reconciler::validate_kubernetes_namespace("my-namespace-").is_err());
+            // ends with dash
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_max_length() {
+            let max_namespace = "a".repeat(63);
+            assert!(Reconciler::validate_kubernetes_namespace(&max_namespace).is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_boundary_length() {
+            let boundary_namespace = "a".repeat(63);
+            assert!(Reconciler::validate_kubernetes_namespace(&boundary_namespace).is_ok());
+            let too_long = "a".repeat(64);
+            assert!(Reconciler::validate_kubernetes_namespace(&too_long).is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_single_char() {
+            assert!(Reconciler::validate_kubernetes_namespace("a").is_ok());
+            assert!(Reconciler::validate_kubernetes_namespace("0").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_namespace_consecutive_dashes() {
+            assert!(Reconciler::validate_kubernetes_namespace("my--namespace").is_ok());
+            assert!(Reconciler::validate_kubernetes_namespace("my---namespace").is_ok());
+        }
+    }
+
+    mod validate_kubernetes_label_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_kubernetes_label_valid() {
+            assert!(Reconciler::validate_kubernetes_label("dev", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("my-label", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("my.label", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("my_label", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("a", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_empty() {
+            assert!(Reconciler::validate_kubernetes_label("", "test").is_err());
+            assert!(Reconciler::validate_kubernetes_label("   ", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_too_long() {
+            let long_label = "a".repeat(64);
+            assert!(Reconciler::validate_kubernetes_label(&long_label, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_invalid_chars() {
+            assert!(Reconciler::validate_kubernetes_label("MyLabel", "test").is_err()); // uppercase
+            assert!(Reconciler::validate_kubernetes_label(".my-label", "test").is_err()); // starts with dot
+            assert!(Reconciler::validate_kubernetes_label("my-label.", "test").is_err());
+            // ends with dot
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_max_length() {
+            let max_label = "a".repeat(63);
+            assert!(Reconciler::validate_kubernetes_label(&max_label, "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_boundary_length() {
+            let boundary_label = "a".repeat(63);
+            assert!(Reconciler::validate_kubernetes_label(&boundary_label, "test").is_ok());
+            let too_long = "a".repeat(64);
+            assert!(Reconciler::validate_kubernetes_label(&too_long, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_single_char() {
+            assert!(Reconciler::validate_kubernetes_label("a", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("0", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_with_underscores() {
+            assert!(Reconciler::validate_kubernetes_label("my_label", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("my_label_value", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_kubernetes_label_consecutive_dashes() {
+            assert!(Reconciler::validate_kubernetes_label("my--label", "test").is_ok());
+            assert!(Reconciler::validate_kubernetes_label("my---label", "test").is_ok());
+        }
+    }
+
+    mod validate_secret_name_component_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_secret_name_component_valid() {
+            assert!(Reconciler::validate_secret_name_component("prefix", "test").is_ok());
+            assert!(Reconciler::validate_secret_name_component("my-prefix", "test").is_ok());
+            assert!(Reconciler::validate_secret_name_component("my_prefix", "test").is_ok());
+            assert!(Reconciler::validate_secret_name_component("prefix123", "test").is_ok());
+            assert!(Reconciler::validate_secret_name_component("a", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_empty() {
+            assert!(Reconciler::validate_secret_name_component("", "test").is_err());
+            assert!(Reconciler::validate_secret_name_component("   ", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_too_long() {
+            let long_component = "a".repeat(256);
+            assert!(Reconciler::validate_secret_name_component(&long_component, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_invalid_chars() {
+            assert!(Reconciler::validate_secret_name_component("my.prefix", "test").is_err()); // dot
+            assert!(Reconciler::validate_secret_name_component("my prefix", "test").is_err()); // space
+            assert!(Reconciler::validate_secret_name_component("my@prefix", "test").is_err());
+            // special char
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_max_length() {
+            let max_component = "a".repeat(255);
+            assert!(Reconciler::validate_secret_name_component(&max_component, "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_boundary_length() {
+            let boundary_component = "a".repeat(255);
+            assert!(
+                Reconciler::validate_secret_name_component(&boundary_component, "test").is_ok()
+            );
+            let too_long = "a".repeat(256);
+            assert!(Reconciler::validate_secret_name_component(&too_long, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_single_char() {
+            assert!(Reconciler::validate_secret_name_component("a", "test").is_ok());
+            assert!(Reconciler::validate_secret_name_component("0", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_name_component_with_underscores() {
+            assert!(Reconciler::validate_secret_name_component("my_component", "test").is_ok());
+            assert!(Reconciler::validate_secret_name_component("my_component_123", "test").is_ok());
+        }
+    }
+
+    mod validate_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_path_valid() {
+            assert!(Reconciler::validate_path("path/to/file", "test").is_ok());
+            assert!(Reconciler::validate_path("/absolute/path", "test").is_ok());
+            assert!(Reconciler::validate_path("./relative/path", "test").is_ok());
+            assert!(Reconciler::validate_path("path", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_path_empty() {
+            assert!(Reconciler::validate_path("", "test").is_err());
+            assert!(Reconciler::validate_path("   ", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_path_too_long() {
+            let long_path = "a".repeat(4097);
+            assert!(Reconciler::validate_path(&long_path, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_path_null_bytes() {
+            assert!(Reconciler::validate_path("path\0to/file", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_path_control_characters() {
+            assert!(Reconciler::validate_path("path\x01to/file", "test").is_err());
+            assert!(Reconciler::validate_path("path\x1fto/file", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_path_max_length() {
+            let max_path = "a".repeat(4096);
+            assert!(Reconciler::validate_path(&max_path, "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_path_boundary_length() {
+            let boundary_path = "a".repeat(4096);
+            assert!(Reconciler::validate_path(&boundary_path, "test").is_ok());
+            let too_long = "a".repeat(4097);
+            assert!(Reconciler::validate_path(&too_long, "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_path_single_char() {
+            assert!(Reconciler::validate_path("a", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_path_with_special_chars_allowed() {
+            assert!(Reconciler::validate_path("path/to/file", "test").is_ok());
+            assert!(Reconciler::validate_path("path/to/file.txt", "test").is_ok());
+            assert!(Reconciler::validate_path("path/to/file-name", "test").is_ok());
+        }
+    }
+
+    mod validate_provider_config_tests {
+        use super::*;
+        use crate::{AwsConfig, AzureConfig, GcpConfig, ProviderConfig};
+
+        #[test]
+        fn test_validate_gcp_config_valid() {
+            let gcp = ProviderConfig::Gcp(GcpConfig {
+                project_id: "my-project-123".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&gcp).is_ok());
+        }
+
+        #[test]
+        fn test_validate_gcp_config_empty_project_id() {
+            let gcp = ProviderConfig::Gcp(GcpConfig {
+                project_id: "".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&gcp).is_err());
+        }
+
+        #[test]
+        fn test_validate_gcp_config_invalid_project_id() {
+            let gcp = ProviderConfig::Gcp(GcpConfig {
+                project_id: "MY-PROJECT".to_string(), // uppercase not allowed
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&gcp).is_err());
+        }
+
+        #[test]
+        fn test_validate_gcp_config_too_short() {
+            let gcp = ProviderConfig::Gcp(GcpConfig {
+                project_id: "abc".to_string(), // too short (< 6 chars)
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&gcp).is_err());
+        }
+
+        #[test]
+        fn test_validate_gcp_config_ends_with_hyphen() {
+            let gcp = ProviderConfig::Gcp(GcpConfig {
+                project_id: "my-project-".to_string(), // ends with hyphen
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&gcp).is_err());
+        }
+
+        #[test]
+        fn test_validate_aws_config_valid() {
+            let aws = ProviderConfig::Aws(AwsConfig {
+                region: "us-east-1".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&aws).is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_config_empty_region() {
+            let aws = ProviderConfig::Aws(AwsConfig {
+                region: "".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&aws).is_err());
+        }
+
+        #[test]
+        fn test_validate_aws_config_gov_region() {
+            let aws = ProviderConfig::Aws(AwsConfig {
+                region: "us-gov-west-1".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&aws).is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_config_china_region() {
+            let aws = ProviderConfig::Aws(AwsConfig {
+                region: "cn-north-1".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&aws).is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_config_local_region() {
+            let aws = ProviderConfig::Aws(AwsConfig {
+                region: "local".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&aws).is_ok());
+        }
+
+        #[test]
+        fn test_validate_azure_config_valid() {
+            let azure = ProviderConfig::Azure(AzureConfig {
+                vault_name: "my-vault".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&azure).is_ok());
+        }
+
+        #[test]
+        fn test_validate_azure_config_empty_vault_name() {
+            let azure = ProviderConfig::Azure(AzureConfig {
+                vault_name: "".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&azure).is_err());
+        }
+
+        #[test]
+        fn test_validate_azure_config_too_short() {
+            let azure = ProviderConfig::Azure(AzureConfig {
+                vault_name: "ab".to_string(), // too short (< 3 chars)
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&azure).is_err());
+        }
+
+        #[test]
+        fn test_validate_azure_config_ends_with_hyphen() {
+            let azure = ProviderConfig::Azure(AzureConfig {
+                vault_name: "my-vault-".to_string(), // ends with hyphen
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&azure).is_err());
+        }
+
+        #[test]
+        fn test_validate_azure_config_consecutive_hyphens() {
+            let azure = ProviderConfig::Azure(AzureConfig {
+                vault_name: "my--vault".to_string(), // consecutive hyphens
+                auth: None,
+            });
+            assert!(Reconciler::validate_provider_config(&azure).is_err());
+        }
+    }
+
+    mod validate_aws_region_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_aws_region_standard() {
+            assert!(Reconciler::validate_aws_region("us-east-1").is_ok());
+            assert!(Reconciler::validate_aws_region("eu-west-1").is_ok());
+            assert!(Reconciler::validate_aws_region("ap-southeast-2").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_gov() {
+            assert!(Reconciler::validate_aws_region("us-gov-west-1").is_ok());
+            assert!(Reconciler::validate_aws_region("us-gov-east-1").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_iso() {
+            assert!(Reconciler::validate_aws_region("us-iso-east-1").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_china() {
+            assert!(Reconciler::validate_aws_region("cn-north-1").is_ok());
+            assert!(Reconciler::validate_aws_region("cn-northwest-1").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_local() {
+            assert!(Reconciler::validate_aws_region("local").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_case_insensitive() {
+            assert!(Reconciler::validate_aws_region("US-EAST-1").is_ok());
+            assert!(Reconciler::validate_aws_region("Us-East-1").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_whitespace() {
+            assert!(Reconciler::validate_aws_region(" us-east-1 ").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_region_empty() {
+            assert!(Reconciler::validate_aws_region("").is_err());
+            assert!(Reconciler::validate_aws_region("   ").is_err());
+        }
+
+        #[test]
+        fn test_validate_aws_region_invalid() {
+            assert!(Reconciler::validate_aws_region("invalid").is_err());
+            assert!(Reconciler::validate_aws_region("us-east").is_err());
+            assert!(Reconciler::validate_aws_region("us-east-1-extra").is_err());
+        }
+    }
+
+    mod validate_url_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_url_valid_http() {
+            assert!(Reconciler::validate_url("http://example.com", "test").is_ok());
+            assert!(Reconciler::validate_url("http://example.com/path", "test").is_ok());
+            assert!(Reconciler::validate_url("http://example.com:8080", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_url_valid_https() {
+            assert!(Reconciler::validate_url("https://example.com", "test").is_ok());
+            assert!(Reconciler::validate_url("https://example.com/path", "test").is_ok());
+            assert!(Reconciler::validate_url("https://example.com:443", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_url_empty() {
+            assert!(Reconciler::validate_url("", "test").is_err());
+            assert!(Reconciler::validate_url("   ", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_url_invalid() {
+            assert!(Reconciler::validate_url("example.com", "test").is_err()); // no protocol
+            assert!(Reconciler::validate_url("ftp://example.com", "test").is_err()); // wrong protocol
+            assert!(Reconciler::validate_url("http://", "test").is_err()); // no host
+            assert!(Reconciler::validate_url("http:// ", "test").is_err()); // space in URL
+        }
+    }
+
+    mod validate_aws_parameter_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_aws_parameter_path_valid() {
+            assert!(Reconciler::validate_aws_parameter_path("/my-service", "test").is_ok());
+            assert!(Reconciler::validate_aws_parameter_path("/my-service/dev", "test").is_ok());
+            assert!(
+                Reconciler::validate_aws_parameter_path("/my-service/dev/database", "test").is_ok()
+            );
+            assert!(Reconciler::validate_aws_parameter_path("/my_service", "test").is_ok());
+            assert!(Reconciler::validate_aws_parameter_path("/my-service.dev", "test").is_ok());
+        }
+
+        #[test]
+        fn test_validate_aws_parameter_path_empty() {
+            assert!(Reconciler::validate_aws_parameter_path("", "test").is_err());
+            assert!(Reconciler::validate_aws_parameter_path("   ", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_aws_parameter_path_no_leading_slash() {
+            assert!(Reconciler::validate_aws_parameter_path("my-service", "test").is_err());
+            assert!(Reconciler::validate_aws_parameter_path("my-service/dev", "test").is_err());
+        }
+
+        #[test]
+        fn test_validate_aws_parameter_path_invalid_chars() {
+            assert!(Reconciler::validate_aws_parameter_path("/my service", "test").is_err()); // space
+            assert!(Reconciler::validate_aws_parameter_path("/my@service", "test").is_err()); // special char
+            assert!(Reconciler::validate_aws_parameter_path("/my/service/", "test").is_err());
+            // trailing slash
+        }
+    }
+
+    mod get_parsing_error_count_tests {
+        use super::*;
+
+        fn create_test_config() -> SecretManagerConfig {
+            use crate::{ProviderConfig, SecretsConfig, SourceRef};
+            SecretManagerConfig {
+                metadata: kube::core::ObjectMeta {
+                    name: Some("test".to_string()),
+                    namespace: Some("default".to_string()),
+                    ..Default::default()
+                },
+                spec: crate::SecretManagerConfigSpec {
+                    source_ref: SourceRef {
+                        kind: "GitRepository".to_string(),
+                        name: "test-repo".to_string(),
+                        namespace: "default".to_string(),
+                    },
+                    provider: ProviderConfig::Gcp(crate::GcpConfig {
+                        project_id: "test-project".to_string(),
+                        auth: None,
+                    }),
+                    secrets: SecretsConfig {
+                        environment: "dev".to_string(),
+                        prefix: None,
+                        suffix: None,
+                        base_path: None,
+                        kustomize_path: None,
+                    },
+                    configs: None,
+                    otel: None,
+                    git_repository_pull_interval: "5m".to_string(),
+                    reconcile_interval: "1m".to_string(),
+                    diff_discovery: true,
+                    trigger_update: true,
+                    suspend: false,
+                    suspend_git_pulls: false,
+                },
+                status: None,
+            }
+        }
+
+        #[test]
+        fn test_get_parsing_error_count_no_annotations() {
+            let config = create_test_config();
+            assert_eq!(Reconciler::get_parsing_error_count(&config), 0);
+        }
+
+        #[test]
+        fn test_get_parsing_error_count_no_error_annotation() {
+            let mut config = create_test_config();
+            config.metadata.annotations = Some(std::collections::BTreeMap::new());
+            assert_eq!(Reconciler::get_parsing_error_count(&config), 0);
+        }
+
+        #[test]
+        fn test_get_parsing_error_count_with_error_count() {
+            let mut config = create_test_config();
+            let mut annotations = std::collections::BTreeMap::new();
+            annotations.insert(
+                "secret-management.microscaler.io/duration-parsing-errors".to_string(),
+                "5".to_string(),
+            );
+            config.metadata.annotations = Some(annotations);
+            assert_eq!(Reconciler::get_parsing_error_count(&config), 5);
+        }
+
+        #[test]
+        fn test_get_parsing_error_count_invalid_value() {
+            let mut config = create_test_config();
+            let mut annotations = std::collections::BTreeMap::new();
+            annotations.insert(
+                "secret-management.microscaler.io/duration-parsing-errors".to_string(),
+                "invalid".to_string(),
+            );
+            config.metadata.annotations = Some(annotations);
+            // Invalid values should return 0
+            assert_eq!(Reconciler::get_parsing_error_count(&config), 0);
+        }
+    }
+
+    mod validate_configs_config_tests {
+        use super::*;
+        use crate::{ConfigStoreType, ConfigsConfig};
+
+        #[test]
+        fn test_validate_configs_config_empty() {
+            let configs = ConfigsConfig {
+                enabled: false,
+                store: None,
+                app_config_endpoint: None,
+                parameter_path: None,
+            };
+            assert!(Reconciler::validate_configs_config(&configs).is_ok());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_valid_endpoint() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::SecretManager),
+                app_config_endpoint: Some("https://example.com".to_string()),
+                parameter_path: None,
+            };
+            assert!(Reconciler::validate_configs_config(&configs).is_ok());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_empty_endpoint() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::SecretManager),
+                app_config_endpoint: Some("".to_string()),
+                parameter_path: None,
+            };
+            // Empty endpoint should be allowed (skipped)
+            assert!(Reconciler::validate_configs_config(&configs).is_ok());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_invalid_endpoint() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::SecretManager),
+                app_config_endpoint: Some("not-a-url".to_string()),
+                parameter_path: None,
+            };
+            assert!(Reconciler::validate_configs_config(&configs).is_err());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_valid_parameter_path() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::ParameterManager),
+                app_config_endpoint: None,
+                parameter_path: Some("/my-service/dev".to_string()),
+            };
+            assert!(Reconciler::validate_configs_config(&configs).is_ok());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_empty_parameter_path() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::ParameterManager),
+                app_config_endpoint: None,
+                parameter_path: Some("".to_string()),
+            };
+            // Empty path should be allowed (skipped)
+            assert!(Reconciler::validate_configs_config(&configs).is_ok());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_invalid_parameter_path() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::ParameterManager),
+                app_config_endpoint: None,
+                parameter_path: Some("not-a-path".to_string()),
+            };
+            assert!(Reconciler::validate_configs_config(&configs).is_err());
+        }
+
+        #[test]
+        fn test_validate_configs_config_with_both_valid() {
+            let configs = ConfigsConfig {
+                enabled: true,
+                store: Some(ConfigStoreType::SecretManager),
+                app_config_endpoint: Some("https://example.com".to_string()),
+                parameter_path: Some("/my-service/dev".to_string()),
+            };
+            assert!(Reconciler::validate_configs_config(&configs).is_ok());
+        }
+    }
+
+    mod validate_secret_manager_config_tests {
+        use super::*;
+        use crate::{ProviderConfig, SecretsConfig, SourceRef};
+
+        fn create_valid_config() -> SecretManagerConfig {
+            SecretManagerConfig {
+                metadata: kube::core::ObjectMeta {
+                    name: Some("test".to_string()),
+                    namespace: Some("default".to_string()),
+                    ..Default::default()
+                },
+                spec: crate::SecretManagerConfigSpec {
+                    source_ref: SourceRef {
+                        kind: "GitRepository".to_string(),
+                        name: "test-repo".to_string(),
+                        namespace: "default".to_string(),
+                    },
+                    provider: ProviderConfig::Gcp(crate::GcpConfig {
+                        project_id: "test-project-123".to_string(),
+                        auth: None,
+                    }),
+                    secrets: SecretsConfig {
+                        environment: "dev".to_string(),
+                        prefix: None,
+                        suffix: None,
+                        base_path: None,
+                        kustomize_path: None,
+                    },
+                    configs: None,
+                    otel: None,
+                    git_repository_pull_interval: "5m".to_string(),
+                    reconcile_interval: "1m".to_string(),
+                    diff_discovery: true,
+                    trigger_update: true,
+                    suspend: false,
+                    suspend_git_pulls: false,
+                },
+                status: None,
+            }
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_valid() {
+            let config = create_valid_config();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_empty_kind() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.kind = String::new();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_kind() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.kind = "InvalidKind".to_string();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_empty_name() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.name = String::new();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_name() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.name = "Invalid-Name-With-Uppercase".to_string();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_empty_namespace() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.namespace = String::new();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_namespace() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.namespace = "Invalid-Namespace-With-Uppercase".to_string();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_empty_environment() {
+            let mut config = create_valid_config();
+            config.spec.secrets.environment = String::new();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_environment() {
+            let mut config = create_valid_config();
+            config.spec.secrets.environment = "Invalid-Environment-With-Uppercase".to_string();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_prefix() {
+            let mut config = create_valid_config();
+            config.spec.secrets.prefix = Some("invalid.prefix".to_string());
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_empty_prefix_allowed() {
+            let mut config = create_valid_config();
+            config.spec.secrets.prefix = Some(String::new());
+            // Empty prefix should be allowed (skipped)
+            assert!(Reconciler::validate_secret_manager_config(&config).is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_suffix() {
+            let mut config = create_valid_config();
+            config.spec.secrets.suffix = Some("invalid.suffix".to_string());
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_base_path() {
+            let mut config = create_valid_config();
+            config.spec.secrets.base_path = Some("\0invalid-path".to_string());
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_kustomize_path() {
+            let mut config = create_valid_config();
+            config.spec.secrets.kustomize_path = Some("\0invalid-path".to_string());
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_provider() {
+            let mut config = create_valid_config();
+            config.spec.provider = ProviderConfig::Gcp(crate::GcpConfig {
+                project_id: "".to_string(), // Empty project ID
+                auth: None,
+            });
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_invalid_configs() {
+            let mut config = create_valid_config();
+            config.spec.configs = Some(crate::ConfigsConfig {
+                enabled: true,
+                store: Some(crate::ConfigStoreType::SecretManager),
+                app_config_endpoint: Some("not-a-url".to_string()),
+                parameter_path: None,
+            });
+            assert!(Reconciler::validate_secret_manager_config(&config).is_err());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_valid_with_all_optional_fields() {
+            let mut config = create_valid_config();
+            config.spec.secrets.prefix = Some("my-prefix".to_string());
+            config.spec.secrets.suffix = Some("my-suffix".to_string());
+            config.spec.secrets.base_path = Some("microservices".to_string());
+            config.spec.secrets.kustomize_path = Some("path/to/kustomize".to_string());
+            assert!(Reconciler::validate_secret_manager_config(&config).is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_aws_provider() {
+            let mut config = create_valid_config();
+            config.spec.provider = ProviderConfig::Aws(crate::AwsConfig {
+                region: "us-east-1".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_secret_manager_config(&config).is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_azure_provider() {
+            let mut config = create_valid_config();
+            config.spec.provider = ProviderConfig::Azure(crate::AzureConfig {
+                vault_name: "my-vault".to_string(),
+                auth: None,
+            });
+            assert!(Reconciler::validate_secret_manager_config(&config).is_ok());
+        }
+
+        #[test]
+        fn test_validate_secret_manager_config_application_kind() {
+            let mut config = create_valid_config();
+            config.spec.source_ref.kind = "Application".to_string();
+            assert!(Reconciler::validate_secret_manager_config(&config).is_ok());
+        }
+    }
+
+    mod calculate_progressive_backoff_tests {
+        use super::*;
+
+        #[test]
+        fn test_calculate_progressive_backoff_sequence() {
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(0),
+                std::time::Duration::from_secs(60) // 1 minute
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(1),
+                std::time::Duration::from_secs(60) // 1 minute
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(2),
+                std::time::Duration::from_secs(120) // 2 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(3),
+                std::time::Duration::from_secs(180) // 3 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(4),
+                std::time::Duration::from_secs(300) // 5 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(5),
+                std::time::Duration::from_secs(480) // 8 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(6),
+                std::time::Duration::from_secs(780) // 13 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(7),
+                std::time::Duration::from_secs(1260) // 21 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(8),
+                std::time::Duration::from_secs(2040) // 34 minutes
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(9),
+                std::time::Duration::from_secs(3300) // 55 minutes
+            );
+        }
+
+        #[test]
+        fn test_calculate_progressive_backoff_max_cap() {
+            // All errors >= 10 should cap at 60 minutes
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(10),
+                std::time::Duration::from_secs(3600) // 60 minutes (1 hour)
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(20),
+                std::time::Duration::from_secs(3600) // 60 minutes (1 hour)
+            );
+            assert_eq!(
+                Reconciler::calculate_progressive_backoff(100),
+                std::time::Duration::from_secs(3600) // 60 minutes (1 hour)
+            );
+        }
+    }
+
+    mod sanitize_secret_name_edge_cases_tests {
+        use super::*;
+
+        #[test]
+        fn test_sanitize_secret_name_special_chars() {
+            assert_eq!(sanitize_secret_name("test@key#value"), "test_key_value");
+            assert_eq!(sanitize_secret_name("test!key$value"), "test_key_value");
+            assert_eq!(sanitize_secret_name("test%key^value"), "test_key_value");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_unicode() {
+            // Unicode characters are replaced with underscore, but é is kept as-is (it's alphanumeric)
+            // Emoji and other non-ASCII are replaced with underscore
+            let result = sanitize_secret_name("test-émoji-🚀");
+            // The actual behavior: é is kept, emoji is replaced with _
+            assert_eq!(result, "test-émoji-_");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_only_dashes() {
+            assert_eq!(sanitize_secret_name("---"), "");
+            assert_eq!(sanitize_secret_name("----"), "");
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_mixed_sanitization() {
+            assert_eq!(
+                sanitize_secret_name("test.key/value name"),
+                "test_key_value_name"
+            );
+        }
+
+        #[test]
+        fn test_sanitize_secret_name_preserves_valid_chars() {
+            assert_eq!(sanitize_secret_name("test-key_123"), "test-key_123");
+            assert_eq!(sanitize_secret_name("Test-Key_123"), "Test-Key_123");
+        }
+    }
+
+    mod construct_secret_name_edge_cases_tests {
+        use super::*;
+
+        #[test]
+        fn test_construct_secret_name_with_sanitization_needed() {
+            let result = construct_secret_name(Some("my.service"), "database/url", Some("-prod"));
+            assert_eq!(result, "my_service-database_url-prod");
+        }
+
+        #[test]
+        fn test_construct_secret_name_empty_key() {
+            let result = construct_secret_name(Some("prefix"), "", Some("suffix"));
+            // Empty key results in "prefix--suffix" before sanitization
+            // After sanitization (which happens in construct_secret_name), consecutive dashes are collapsed
+            assert_eq!(result, "prefix-suffix");
+        }
+
+        #[test]
+        fn test_construct_secret_name_multiple_leading_dashes_in_suffix() {
+            let result = construct_secret_name(Some("prefix"), "key", Some("---suffix"));
+            assert_eq!(result, "prefix-key-suffix");
+        }
+
+        #[test]
+        fn test_construct_secret_name_suffix_only_dashes() {
+            let result = construct_secret_name(Some("prefix"), "key", Some("---"));
+            assert_eq!(result, "prefix-key");
+        }
+
+        #[test]
+        fn test_construct_secret_name_prefix_with_special_chars() {
+            let result = construct_secret_name(Some("my.service"), "key", None);
+            assert_eq!(result, "my_service-key");
+        }
+
+        #[test]
+        fn test_construct_secret_name_key_with_special_chars() {
+            let result = construct_secret_name(None, "my.key/name", None);
+            assert_eq!(result, "my_key_name");
         }
     }
 }

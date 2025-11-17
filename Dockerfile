@@ -19,6 +19,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure git to fetch full history for git dependencies
+# This ensures Cargo can access branches and commits from git dependencies
+# Required when using git dependencies with branches or specific commits
+RUN git config --global --add safe.directory '*' && \
+    git config --global init.defaultBranch main
+
 WORKDIR /build
 
 # Copy Cargo files first for better layer caching
@@ -34,9 +40,12 @@ COPY config ./config
 # Build the binary in release mode
 # Pass build-time environment variables to build.rs
 # Use --locked to ensure Cargo.lock is respected and transitive dependencies resolve correctly
+# CARGO_NET_GIT_FETCH_WITH_CLI=true forces Cargo to use git CLI instead of libgit2
+# This ensures full git clones and better compatibility with git dependencies
 RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
     BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
     BUILD_DATETIME=${BUILD_DATETIME} \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
     cargo build --release --locked --bin secret-manager-controller
 
 # Stage 2: Runtime image

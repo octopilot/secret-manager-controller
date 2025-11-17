@@ -348,3 +348,187 @@ pub fn observe_git_clone_duration(duration: f64) {
 pub fn increment_git_clone_errors_total() {
     GIT_CLONE_ERRORS_TOTAL.inc();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_register_metrics() {
+        // This should not panic - metrics should register successfully
+        assert!(register_metrics().is_ok());
+    }
+
+    #[test]
+    fn test_increment_reconciliations() {
+        let before = RECONCILIATIONS_TOTAL.get();
+        increment_reconciliations();
+        let after = RECONCILIATIONS_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_increment_reconciliation_errors() {
+        let before = RECONCILIATION_ERRORS_TOTAL.get();
+        increment_reconciliation_errors();
+        let after = RECONCILIATION_ERRORS_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_observe_reconciliation_duration() {
+        observe_reconciliation_duration(1.5);
+        // Just verify it doesn't panic - histogram observation doesn't return a value
+    }
+
+    #[test]
+    fn test_increment_secrets_synced() {
+        let before = SECRETS_SYNCED_TOTAL.get();
+        increment_secrets_synced(5);
+        let after = SECRETS_SYNCED_TOTAL.get();
+        assert_eq!(after, before + 5u64);
+    }
+
+    #[test]
+    fn test_increment_secrets_synced_negative() {
+        let before = SECRETS_SYNCED_TOTAL.get();
+        increment_secrets_synced(-5); // Should be clamped to 0
+        let after = SECRETS_SYNCED_TOTAL.get();
+        assert_eq!(after, before); // No change since negative is clamped
+    }
+
+    #[test]
+    fn test_increment_secrets_updated() {
+        let before = SECRETS_UPDATED_TOTAL.get();
+        increment_secrets_updated(3);
+        let after = SECRETS_UPDATED_TOTAL.get();
+        assert_eq!(after, before + 3u64);
+    }
+
+    #[test]
+    fn test_set_secrets_managed() {
+        set_secrets_managed(10);
+        assert_eq!(SECRETS_MANAGED.get(), 10);
+        set_secrets_managed(20);
+        assert_eq!(SECRETS_MANAGED.get(), 20);
+    }
+
+    #[test]
+    fn test_increment_gcp_operations() {
+        let before = GCP_SECRET_MANAGER_OPERATIONS_TOTAL.get();
+        increment_gcp_operations();
+        let after = GCP_SECRET_MANAGER_OPERATIONS_TOTAL.get();
+        assert_eq!(after, before + 1.0);
+    }
+
+    #[test]
+    fn test_observe_gcp_operation_duration() {
+        observe_gcp_operation_duration(0.5);
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_record_secret_operation_gcp() {
+        let before_ops = GCP_SECRET_MANAGER_OPERATIONS_TOTAL.get();
+        let before_provider = PROVIDER_OPERATIONS_TOTAL.with_label_values(&["gcp"]).get();
+        record_secret_operation("gcp", "create", 0.3);
+        let after_ops = GCP_SECRET_MANAGER_OPERATIONS_TOTAL.get();
+        let after_provider = PROVIDER_OPERATIONS_TOTAL.with_label_values(&["gcp"]).get();
+        assert_eq!(after_ops, before_ops + 1.0);
+        assert_eq!(after_provider, before_provider + 1u64);
+    }
+
+    #[test]
+    fn test_record_secret_operation_aws() {
+        let before_provider = PROVIDER_OPERATIONS_TOTAL.with_label_values(&["aws"]).get();
+        record_secret_operation("aws", "create", 0.3);
+        let after_provider = PROVIDER_OPERATIONS_TOTAL.with_label_values(&["aws"]).get();
+        assert_eq!(after_provider, before_provider + 1u64);
+    }
+
+    #[test]
+    fn test_increment_provider_operation_errors() {
+        let before = PROVIDER_OPERATION_ERRORS_TOTAL
+            .with_label_values(&["gcp"])
+            .get();
+        increment_provider_operation_errors("gcp");
+        let after = PROVIDER_OPERATION_ERRORS_TOTAL
+            .with_label_values(&["gcp"])
+            .get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_increment_duration_parsing_errors() {
+        let before = DURATION_PARSING_ERRORS_TOTAL.get();
+        increment_duration_parsing_errors();
+        let after = DURATION_PARSING_ERRORS_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_increment_sops_decryption_total() {
+        let before = SOPS_DECRYPTION_TOTAL.get();
+        increment_sops_decryption_total();
+        let after = SOPS_DECRYPTION_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_observe_sops_decryption_duration() {
+        observe_sops_decryption_duration(0.2);
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_increment_sops_decryption_errors_total() {
+        let before = SOPS_DECRYPTION_ERRORS_TOTAL.get();
+        increment_sops_decryption_errors_total();
+        let after = SOPS_DECRYPTION_ERRORS_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_increment_kustomize_build_total() {
+        let before = KUSTOMIZE_BUILD_TOTAL.get();
+        increment_kustomize_build_total();
+        let after = KUSTOMIZE_BUILD_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_observe_kustomize_build_duration() {
+        observe_kustomize_build_duration(1.0);
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_increment_kustomize_build_errors_total() {
+        let before = KUSTOMIZE_BUILD_ERRORS_TOTAL.get();
+        increment_kustomize_build_errors_total();
+        let after = KUSTOMIZE_BUILD_ERRORS_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_increment_git_clone_total() {
+        let before = GIT_CLONE_TOTAL.get();
+        increment_git_clone_total();
+        let after = GIT_CLONE_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_observe_git_clone_duration() {
+        observe_git_clone_duration(2.5);
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_increment_git_clone_errors_total() {
+        let before = GIT_CLONE_ERRORS_TOTAL.get();
+        increment_git_clone_errors_total();
+        let after = GIT_CLONE_ERRORS_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+}
