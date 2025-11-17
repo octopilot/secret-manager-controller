@@ -356,6 +356,13 @@ impl Reconciler {
 
                 // Return requeue action with backoff duration
                 // Note: We return Ok here to use backoff scheduling instead of error path
+                //
+                // TODO: Consider moving this retry logic to error_policy in main.rs to avoid
+                // potential kube-rs timer deadlock issues. The error_policy is designed by
+                // kube-runtime to handle retries safely without blocking the timer event stream.
+                // This wrapper converts errors to Ok(Action::requeue()), which bypasses the
+                // error_policy entirely and could potentially block timers if many resources
+                // fail simultaneously. However, the Fibonacci backoff reduces this risk.
                 Ok(Action::requeue(std::time::Duration::from_secs(
                     backoff_seconds.0,
                 )))
@@ -648,20 +655,12 @@ impl Reconciler {
                         });
 
                         if is_404 {
-                            let retry_duration_secs =
-                                crate::constants::DEFAULT_GITREPOSITORY_NOT_FOUND_REQUEUE_SECS;
-                            let next_trigger_time = chrono::Utc::now()
-                                + chrono::Duration::seconds(retry_duration_secs as i64);
                             warn!(
-                                "⏳ GitRepository {}/{} not found yet, will retry in {}s (1m)",
-                                config.spec.source_ref.namespace,
-                                config.spec.source_ref.name,
-                                retry_duration_secs
+                                "⏳ GitRepository {}/{} not found yet, waiting for watch event",
+                                config.spec.source_ref.namespace, config.spec.source_ref.name
                             );
                             info!(
-                                "📅 Next retry scheduled: {} (in {}s, trigger source: waiting-for-resource)",
-                                next_trigger_time.to_rfc3339(),
-                                retry_duration_secs
+                                "👀 Waiting for GitRepository creation (trigger source: watch-event)",
                             );
                             // Update status to Pending (waiting for GitRepository)
                             let _ = ctx
@@ -671,12 +670,26 @@ impl Reconciler {
                                     Some("GitRepository not found, waiting for creation"),
                                 )
                                 .await;
-                            // Return requeue action - don't treat as error, just wait for resource
-                            // Fixed 60s (1m) interval for GitRepository 404 (resource not yet created)
-                            // Aligns with minimum reconcile interval and GitOps tool conventions
-                            return Ok(Action::requeue(std::time::Duration::from_secs(
-                                retry_duration_secs,
-                            )));
+                            // Return await_change() to wait for watch event instead of blocking timer loop
+                            // This prevents the kube-rs controller deadlock where timer-based reconcilers
+                            // stop firing after hitting a requeue in an error branch.
+                            //
+                            // How reconciliation resumes:
+                            // 1. Periodic timer-based reconciliation continues to work - the controller's
+                            //    timer mechanism will trigger reconciliation based on reconcile_interval
+                            //    even when Action::await_change() is returned, allowing periodic checks
+                            //    for the GitRepository to appear.
+                            // 2. When FluxCD creates the GitRepository, it updates the GitRepository's
+                            //    status field. While the controller watches SecretManagerConfig (not
+                            //    GitRepository), periodic reconciliation will detect the GitRepository
+                            //    on the next scheduled check.
+                            // 3. Manual reconciliation triggers (via annotation) will also work,
+                            //    allowing immediate retry when the GitRepository is created.
+                            //
+                            // This approach ensures timer-based reconciliation continues working for
+                            // all resources, preventing the deadlock while still allowing periodic
+                            // checks for missing dependencies.
+                            return Ok(Action::await_change());
                         }
 
                         // For other errors, log and fail
