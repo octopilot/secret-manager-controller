@@ -1,0 +1,38 @@
+# Kustomize configuration for FluxCD installation with patches
+# This kustomization includes:
+# 1. FluxCD installation manifests (from flux install --export)
+# 2. Patches to enable secret-manager-controller integration
+#
+# Usage:
+#   kubectl apply -k gitops/cluster/fluxcd/install/
+#
+# This will:
+# - Install FluxCD components (CRDs, RBAC, deployments, services, etc.)
+# - Apply network policy patches to allow controller access
+# - Label the microscaler-system namespace for network policy matching
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: flux-system
+
+# FluxCD installation manifests
+# These are exported from: flux install --export --namespace=flux-system
+resources:
+  - fluxcd-install.yaml
+
+# Patches to enable secret-manager-controller integration
+# These patches modify FluxCD-managed resources to allow the controller
+# (running in microscaler-system namespace) to access FluxCD services
+patches:
+  - path: patches/networkpolicy-allow-egress.yaml
+    target:
+      kind: NetworkPolicy
+      name: allow-egress
+      namespace: flux-system
+
+# Note: Namespace label is defined in config/namespace.yaml (DRY principle)
+# The namespace is created when the controller is installed (via config/kustomization.yaml)
+# Kustomize security restrictions prevent referencing files outside this directory,
+# so the namespace must be applied separately or via the controller installation
+

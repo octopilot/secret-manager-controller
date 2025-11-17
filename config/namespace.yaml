@@ -3,6 +3,9 @@ kind: Namespace
 metadata:
   name: microscaler-system
   labels:
+    name: microscaler-system
+    # This label is required for FluxCD NetworkPolicy namespaceSelector matching
+    # See: gitops/cluster/fluxcd/install/patches/networkpolicy-allow-egress.yaml
     app: secret-manager-controller
     managed-by: tilt
 

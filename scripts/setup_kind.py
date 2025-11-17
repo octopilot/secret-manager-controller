@@ -185,6 +185,50 @@ def configure_containerd_registry():
         log_info(f"✅ Configured registry mirror on {node}")
 
 
+def create_pvc():
+    """Create PVC for controller cache.
+    
+    Creates the PVC at cluster startup so it's not managed by Tilt.
+    This prevents Tilt from deleting/recreating PVCs which can lock up the system.
+    """
+    log_info("Creating PVC for controller cache...")
+    
+    pvc_yaml_path = Path("config/storage/pvc.yaml")
+    if not pvc_yaml_path.exists():
+        log_warn(f"PVC YAML not found at {pvc_yaml_path}, skipping PVC creation")
+        return
+    
+    # Ensure namespace exists first
+    result = run_command(
+        ["kubectl", "get", "namespace", "microscaler-system"],
+        check=False,
+        capture_output=True
+    )
+    if result.returncode != 0:
+        log_info("Creating microscaler-system namespace...")
+        run_command(
+            ["kubectl", "create", "namespace", "microscaler-system"],
+            check=False,
+        )
+    
+    # Apply PVC (idempotent - won't fail if it already exists)
+    result = run_command(
+        ["kubectl", "apply", "-f", str(pvc_yaml_path)],
+        check=False,
+        capture_output=True
+    )
+    
+    if result.returncode == 0:
+        log_info("✅ PVC created successfully")
+    else:
+        # Check if PVC already exists (that's okay)
+        if "already exists" in result.stderr or "unchanged" in result.stdout:
+            log_info("✅ PVC already exists")
+        else:
+            log_warn(f"Failed to create PVC: {result.stderr}")
+            log_warn("PVC will be created by kustomize during controller deployment")
+
+
 def ensure_registry_connected():
     """Ensure registry is connected to kind network."""
     # Check if kind network exists
@@ -259,6 +303,10 @@ def setup_kind_cluster():
     # Configure containerd on all nodes to use local registry
     log_info("Configuring containerd on nodes to use local registry...")
     configure_containerd_registry()
+    
+    # Create PVC for controller cache (created at cluster startup, not managed by Tilt)
+    # This prevents Tilt from deleting/recreating PVCs which can lock up the system
+    create_pvc()
     
     # Configure cluster to use local registry
     configmap_yaml = f"""apiVersion: v1

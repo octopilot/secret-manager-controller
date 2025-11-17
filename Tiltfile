@@ -260,6 +260,26 @@ local_resource(
 )
 
 # ====================
+# SOPS Private Key Setup
+# ====================
+# Export GPG private key from local keyring (using .sops.yaml key ID) and create Kubernetes secrets
+# This allows the controller to decrypt SOPS-encrypted files
+# Creates secrets in all environment namespaces (tilt, dev, stage, prod, microscaler-system)
+# Optional - only runs if .sops.yaml exists and GPG key is available locally
+
+local_resource(
+    'sops-key-setup',
+    cmd='python3 scripts/setup_sops_key.py --all-environments',
+    deps=[
+        './scripts/setup_sops_key.py',
+        '.sops.yaml',  # Watch for .sops.yaml changes
+    ],
+    labels=['infrastructure'],
+    resource_deps=['fluxcd-install'],
+    allow_parallel=False,
+)
+
+# ====================
 # Deploy to Kubernetes
 # ====================
 # Deploy using kustomize
@@ -273,10 +293,11 @@ k8s_yaml(kustomize('%s/config' % CONTROLLER_DIR))
 # because custom_build registers the image and Tilt matches it to the deployment
 # Note: No port forwarding needed - pods get their own IPs
 # Use 'kubectl port-forward' or 'just port-forward' to access metrics
+# Note: PVC is created during Kind cluster setup (not managed by Tilt to avoid deletion issues)
 k8s_resource(
     CONTROLLER_NAME,
     labels=['controllers'],
-    resource_deps=['secret-manager-controller-build-and-copy', 'secret-manager-controller-crd-gen', 'fluxcd-install'],
+    resource_deps=['secret-manager-controller-build-and-copy', 'secret-manager-controller-crd-gen', 'fluxcd-install', 'sops-key-setup'],
 )
 
 # ====================

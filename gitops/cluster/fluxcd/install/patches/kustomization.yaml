@@ -1,0 +1,20 @@
+# Kustomize configuration for FluxCD patches
+# These patches modify FluxCD-managed resources to enable integration with
+# the secret-manager-controller running in microscaler-system namespace.
+#
+# Usage:
+#   kubectl apply -k gitops/cluster/fluxcd/install/
+#
+# Note: Patches are applied automatically via the parent kustomization.yaml
+# in gitops/cluster/fluxcd/install/. The NetworkPolicy patch is applied
+# using Kustomize patches with target selector.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: flux-system
+
+# Note: Namespace label is now defined in config/namespace.yaml (DRY principle)
+# The parent kustomization.yaml includes it via: ../../../config/namespace.yaml
+# This file is kept for reference but no longer includes namespace-label.yaml
+

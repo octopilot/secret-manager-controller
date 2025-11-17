@@ -28,6 +28,24 @@ def run_command(cmd_list, check=False, capture_output=True):
     return result
 
 
+def cleanup_docker_resources():
+    """Clean up Docker resources to free space before building."""
+    print("🧹 Cleaning up Docker resources to free space...")
+    
+    # Remove dangling images (unused intermediate layers)
+    print("  Removing dangling images...")
+    run_command(["docker", "image", "prune", "-f"], check=False)
+    
+    # Remove old build cache (keeps recent cache for faster builds)
+    print("  Pruning build cache...")
+    run_command(["docker", "builder", "prune", "-f", "--filter", "until=24h"], check=False)
+    
+    # Remove unused images (not just dangling)
+    # This removes images not used by any container
+    print("  Removing unused images...")
+    run_command(["docker", "image", "prune", "-a", "-f", "--filter", "until=24h"], check=False)
+
+
 def main():
     """Main Docker build function."""
     image_name = os.getenv("IMAGE_NAME", "localhost:5000/secret-manager-controller")
@@ -36,6 +54,10 @@ def main():
     expected_ref = os.getenv("EXPECTED_REF", f"{image_name}:tilt")
     
     dockerfile_path = os.path.join(controller_dir, "Dockerfile.dev")
+    
+    # Clean up Docker resources before building to prevent "No space left on device" errors
+    # This is especially important when Docker Desktop's VM disk is getting full
+    cleanup_docker_resources()
     
     print(f"🔨 Building Docker image (using cache)...")
     

@@ -59,18 +59,17 @@ def clear_namespace_finalizers(namespace):
 
 
 def check_flux_cli():
-    """Check if flux CLI is installed."""
+    """Check if flux CLI is installed (optional - only needed for flux check)."""
     result = run_command("which flux", check=False, capture_output=True)
     if result.returncode != 0:
-        log_error("flux CLI not found. Please install it:")
-        log_error("  brew install fluxcd/tap/flux  # macOS")
-        log_error("  or see: https://fluxcd.io/docs/installation/")
+        log_warn("flux CLI not found (optional - only needed for 'flux check')")
+        log_warn("  Installation will use kubectl apply -k instead")
         return False
     return True
 
 
 def check_fluxcd_installed():
-    """Check if FluxCD is already installed in the cluster using flux check."""
+    """Check if FluxCD is already installed in the cluster."""
     # First check if namespace is terminating - if so, FluxCD is not properly installed
     ns_result = run_command(
         "kubectl get namespace flux-system -o jsonpath='{.status.phase}'",
@@ -83,17 +82,15 @@ def check_fluxcd_installed():
         log_warn("   FluxCD is not properly installed - namespace is being deleted")
         return False
     
-    # Use flux check command to verify installation
-    result = run_command(
+    # Try flux check if available (optional)
+    flux_check_result = run_command(
         "flux check",
         check=False,
         capture_output=True
     )
     
-    # flux check returns non-zero if checks fail, but we need to check if controllers exist
-    # Check for controllers in the output
-    if "controllers" in result.stdout.lower():
-        # Check if source-controller exists and is running
+    # If flux check succeeded and shows controllers, verify source-controller is running
+    if flux_check_result.returncode == 0 and "controllers" in flux_check_result.stdout.lower():
         pod_result = run_command(
             "kubectl get pods -n flux-system -l app.kubernetes.io/name=source-controller --field-selector=status.phase=Running -o name",
             check=False,
@@ -103,7 +100,7 @@ def check_fluxcd_installed():
             log_info("✅ FluxCD is already installed (source-controller running)")
             return True
     
-    # Fallback: Check namespace and pods if flux check doesn't show controllers
+    # Fallback: Check namespace and pods directly (works without flux CLI)
     ns_check = run_command(
         "kubectl get namespace flux-system",
         check=False,
@@ -124,30 +121,48 @@ def check_fluxcd_installed():
 
 
 def install_fluxcd():
-    """Install FluxCD using Flux CLI bootstrap."""
-    log_info("Installing FluxCD...")
+    """Install FluxCD using Kustomize with patches."""
+    import os
     
-    # Use bootstrap command with:
-    # - flux-system namespace (standard)
-    # - No Git repository (we'll create GitRepositories manually for testing)
-    # - No GitOps mode (just install components)
-    log_info("Running: flux install --namespace=flux-system")
+    log_info("Installing FluxCD using Kustomize...")
     
+    # Get the install directory path
+    # __file__ is scripts/tilt/install_fluxcd.py
+    # We need to go up 2 levels to get to project root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(script_dir))
+    install_dir = os.path.join(project_root, "gitops", "cluster", "fluxcd", "install")
+    
+    if not os.path.exists(install_dir):
+        log_error(f"FluxCD install directory not found: {install_dir}")
+        log_error("Expected directory: gitops/cluster/fluxcd/install/")
+        return False
+    
+    kustomization_file = os.path.join(install_dir, "kustomization.yaml")
+    if not os.path.exists(kustomization_file):
+        log_error(f"Kustomization file not found: {kustomization_file}")
+        return False
+    
+    log_info(f"Applying FluxCD installation from: {install_dir}")
+    log_info("This includes FluxCD components + network policy patches")
+    
+    # Apply FluxCD installation with patches via Kustomize
     result = run_command(
-        "flux install --namespace=flux-system",
+        f"kubectl apply -k {install_dir}",
         check=False,
         capture_output=True
     )
     
     if result.returncode != 0:
-        # Check if it failed because FluxCD is already installed
-        if "already installed" in result.stderr.lower() or "already exists" in result.stderr.lower():
-            log_info("FluxCD appears to be already installed (installation command detected existing installation)")
-            return True
-        log_error(f"Failed to install FluxCD: {result.stderr}")
+        log_error(f"Failed to apply FluxCD installation: {result.stderr}")
+        if result.stdout:
+            log_error(f"Output: {result.stdout}")
         return False
     
-    log_info("FluxCD installation command completed")
+    log_info("✅ FluxCD installation manifests applied")
+    log_info("Note: Namespace label is defined in config/namespace.yaml (DRY principle)")
+    log_info("      The namespace will be created when the controller is installed")
+    
     log_info("Waiting for FluxCD components to be ready...")
     
     # Wait for source-controller to be ready
@@ -214,6 +229,11 @@ def install_fluxcd():
         else:
             log_warn("⚠️  Could not verify source-controller configuration")
     
+    # Network policy patches are now included in the kustomization
+    # The kustomization.yaml applies the NetworkPolicy patch automatically
+    log_info("✅ Network policy patches are included in the installation")
+    log_info("   The NetworkPolicy has been patched to allow ingress from microscaler-system namespace")
+    
     # Check other components
     components = [
         ("kustomize-controller", "app=kustomize-controller"),
@@ -252,9 +272,11 @@ def main():
     log_info("FluxCD Installation Script")
     log_info("=" * 50)
     
-    # Check prerequisites
-    if not check_flux_cli():
-        sys.exit(1)
+    # Check prerequisites (flux CLI is optional - only needed for flux check)
+    # Installation uses kubectl apply -k, so flux CLI is not required
+    flux_cli_available = check_flux_cli()
+    if not flux_cli_available:
+        log_info("Note: Installation will proceed using kubectl (flux CLI not required)")
     
     # Check if already installed
     is_installed = check_fluxcd_installed()
