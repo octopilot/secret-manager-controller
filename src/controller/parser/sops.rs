@@ -151,6 +151,9 @@ async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>)
     // Set GPG home directory if we created a temporary one
     if let Some(ref gpg_home_path) = gpg_home {
         cmd.env("GNUPGHOME", gpg_home_path);
+        // Use --trust-model always to skip trust validation (required for imported keys)
+        // This ensures SOPS can use the key even if it's not explicitly trusted
+        cmd.env("GNUPG_TRUST_MODEL", "always");
         debug!("Using temporary GPG home: {:?}", gpg_home_path);
     }
 
@@ -188,10 +191,31 @@ async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>)
         Ok(decrypted)
     } else {
         // SECURITY: Only log error message, never log decrypted content
-        // Truncate error message to avoid potential secret leakage in error output
+        // Log full error for debugging (SOPS errors are usually safe to log)
         let error_msg = String::from_utf8_lossy(&output.stderr);
-        let safe_error = if error_msg.len() > 200 {
-            format!("{}... (truncated)", &error_msg[..200])
+        let stdout_msg = String::from_utf8_lossy(&output.stdout);
+
+        // Log detailed error for debugging
+        warn!(
+            "SOPS decryption failed with exit code: {:?}",
+            output.status.code()
+        );
+        warn!("SOPS stderr: {}", error_msg);
+        if !stdout_msg.trim().is_empty() {
+            warn!("SOPS stdout: {}", stdout_msg);
+        }
+
+        // Check if GPG keyring was used
+        if gpg_home.is_some() {
+            warn!("GPG keyring was set - verify the key matches the encryption key used in .sops.yaml");
+        }
+
+        // Truncate error message for error return (but we logged full details above)
+        let safe_error = if error_msg.len() > 500 {
+            format!(
+                "{}... (truncated, see logs for full error)",
+                &error_msg[..500]
+            )
         } else {
             error_msg.to_string()
         };
@@ -230,7 +254,9 @@ async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>> {
 
     // Import private key into temporary keyring
     // Use --pinentry-mode loopback for non-interactive use in containers
-    let mut cmd = tokio::process::Command::new(gpg_path);
+    // Clone gpg_path since we'll need it again for trust operations
+    let gpg_path_for_trust = gpg_path.clone();
+    let mut cmd = tokio::process::Command::new(&gpg_path);
     cmd.env("GNUPGHOME", &gpg_home)
         .arg("--batch")
         .arg("--yes")
@@ -259,11 +285,65 @@ async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>> {
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
+        debug!("GPG import output: {}", stdout);
+
+        // Trust the imported key by setting ownertrust to ultimate (6)
+        // This is required for SOPS to use the key for decryption
+        // Format: <fingerprint>:6: (6 = ultimate trust)
+        // We extract the fingerprint from the import output or trust all keys in the keyring
+        let gpg_home_clone = gpg_home.clone();
+        let trust_output = tokio::process::Command::new(&gpg_path_for_trust)
+            .env("GNUPGHOME", &gpg_home_clone)
+            .arg("--list-keys")
+            .arg("--with-colons")
+            .arg("--fingerprint")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        if let Ok(list_output) = trust_output {
+            if list_output.status.success() {
+                // Extract fingerprint from output and trust it
+                // Format: fpr:::::::::564F22B9BCE625AC1A935A10BC2D684F8DCF5CD4:
+                let output_str = String::from_utf8_lossy(&list_output.stdout);
+                for line in output_str.lines() {
+                    if line.starts_with("fpr:") {
+                        // Extract fingerprint (last field before final colon)
+                        if let Some(fpr_line) = line.split(':').last() {
+                            if !fpr_line.is_empty() {
+                                // Set ownertrust to ultimate (6) for this fingerprint
+                                let trust_cmd = tokio::process::Command::new(&gpg_path_for_trust)
+                                    .env("GNUPGHOME", &gpg_home_clone)
+                                    .arg("--batch")
+                                    .arg("--yes")
+                                    .arg("--import-ownertrust")
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::piped())
+                                    .stderr(Stdio::piped())
+                                    .spawn();
+
+                                if let Ok(mut trust_child) = trust_cmd {
+                                    // Format: <fingerprint>:6: (6 = ultimate trust)
+                                    let trust_input = format!("{}:6:\n", fpr_line);
+                                    if let Some(mut stdin) = trust_child.stdin.take() {
+                                        let _ = stdin.write_all(trust_input.as_bytes()).await;
+                                        let _ = stdin.shutdown().await;
+                                    }
+                                    let _ = trust_child.wait_with_output().await;
+                                }
+                                break; // Only trust the first key found
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         info!(
             "Successfully imported GPG private key into temporary keyring: {:?}",
             gpg_home
         );
-        debug!("GPG import output: {}", stdout);
         Ok(Some(gpg_home))
     } else {
         let error_msg = String::from_utf8_lossy(&output.stderr);

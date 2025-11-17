@@ -21,6 +21,7 @@ rules:
   - patch
 # Watch and patch FluxCD GitRepository resources
 # Patch permission is needed to suspend/resume Git pulls via suspendGitPulls field
+# Status access is needed to read artifact URLs from GitRepository status
 - apiGroups:
   - source.toolkit.fluxcd.io
   resources:
@@ -30,6 +31,12 @@ rules:
   - list
   - watch
   - patch
+- apiGroups:
+  - source.toolkit.fluxcd.io
+  resources:
+  - gitrepositories/status
+  verbs:
+  - get
 # Watch ArgoCD Application resources
 - apiGroups:
   - argoproj.io
