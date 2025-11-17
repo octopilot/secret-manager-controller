@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use thiserror::Error;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::{debug, error, info, info_span, warn, Instrument};
 
 /// Base directory for Secret Manager Controller cache and artifacts
@@ -222,18 +223,17 @@ pub struct Reconciler {
     client: Client,
     // Note: secret_manager is created per-reconciliation to support per-resource auth config
     // In the future, we might want to cache clients per auth config
-    sops_private_key: Option<String>,
+    // SOPS private key is wrapped in Arc<AsyncMutex> to allow hot-reloading when secret changes
+    sops_private_key: Arc<AsyncMutex<Option<String>>>,
     // Backoff state per resource (identified by namespace/name)
     backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
 }
 
 impl std::fmt::Debug for Reconciler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Note: We can't lock the mutex in Debug, so we just indicate if it's set
         f.debug_struct("Reconciler")
-            .field(
-                "sops_private_key",
-                &self.sops_private_key.as_ref().map(|_| "***"),
-            )
+            .field("sops_private_key", &"***")
             .finish_non_exhaustive()
     }
 }
@@ -252,7 +252,7 @@ impl Reconciler {
 
         Ok(Self {
             client,
-            sops_private_key,
+            sops_private_key: Arc::new(AsyncMutex::new(sops_private_key)),
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -307,6 +307,188 @@ impl Reconciler {
             namespace
         );
         Ok(None)
+    }
+
+    /// Reload SOPS private key from Kubernetes secret
+    /// Called when the secret changes to hot-reload the key without restarting
+    pub async fn reload_sops_private_key(&self) -> Result<()> {
+        let new_key = Self::load_sops_private_key(&self.client).await?;
+        let mut key_guard = self.sops_private_key.lock().await;
+        *key_guard = new_key;
+
+        if key_guard.is_some() {
+            info!("✅ Reloaded SOPS private key from Kubernetes secret");
+        } else {
+            warn!("SOPS private key secret not found, SOPS decryption will be disabled");
+        }
+
+        Ok(())
+    }
+
+    /// Start watching for SOPS private key secret changes across all namespaces
+    /// Spawns a background task that watches for secret updates and reloads the key
+    /// Watches all namespaces to detect SOPS secret changes in tilt, dev, stage, prod, etc.
+    pub fn start_sops_key_watch(reconciler: Arc<Self>) {
+        tokio::spawn(async move {
+            use futures::pin_mut;
+            use futures::StreamExt;
+            use k8s_openapi::api::core::v1::Secret;
+            use kube::Api;
+            use kube_runtime::watcher;
+
+            // Watch secrets across ALL namespaces to detect SOPS key changes everywhere
+            let secrets: Api<Secret> = Api::all(reconciler.client.clone());
+
+            // Watch for secrets matching SOPS key names
+            let secret_names = vec!["sops-private-key", "sops-gpg-key", "gpg-key"];
+
+            info!("Starting watch for SOPS private key secrets across all namespaces");
+
+            // Watch all secrets in all namespaces and filter for SOPS key names
+            // watcher() returns a Stream - pin it to use with StreamExt
+            let stream = watcher(secrets, watcher::Config::default());
+            pin_mut!(stream);
+
+            while let Some(event_result) = stream.next().await {
+                match event_result {
+                    Ok(event) => {
+                        // Match on Event variants - handle all variants including Init events
+                        match event {
+                            watcher::Event::Apply(secret) => {
+                                let secret_name =
+                                    secret.metadata.name.as_deref().unwrap_or("unknown");
+                                let secret_namespace =
+                                    secret.metadata.namespace.as_deref().unwrap_or("unknown");
+
+                                // Check if this is one of the SOPS key secrets
+                                if secret_names.contains(&secret_name) {
+                                    info!(
+                                        "SOPS private key secret '{}/{}' changed, reloading...",
+                                        secret_namespace, secret_name
+                                    );
+                                    // Reload from the namespace where the secret changed
+                                    if let Err(e) = reconciler
+                                        .reload_sops_private_key_from_namespace(secret_namespace)
+                                        .await
+                                    {
+                                        error!("Failed to reload SOPS private key from namespace {}: {}", secret_namespace, e);
+                                    }
+                                }
+                            }
+                            watcher::Event::Delete(secret) => {
+                                let secret_name =
+                                    secret.metadata.name.as_deref().unwrap_or("unknown");
+                                let secret_namespace =
+                                    secret.metadata.namespace.as_deref().unwrap_or("unknown");
+                                if secret_names.contains(&secret_name) {
+                                    warn!(
+                                        "SOPS private key secret '{}/{}' was deleted",
+                                        secret_namespace, secret_name
+                                    );
+                                    // Try to reload from controller namespace as fallback
+                                    if let Err(e) = reconciler.reload_sops_private_key().await {
+                                        warn!("Failed to reload SOPS private key from controller namespace: {}", e);
+                                        // Clear the key if reload fails
+                                        let mut key_guard =
+                                            reconciler.sops_private_key.lock().await;
+                                        *key_guard = None;
+                                        warn!(
+                                            "SOPS private key cleared, decryption will be disabled"
+                                        );
+                                    }
+                                }
+                            }
+                            watcher::Event::Init
+                            | watcher::Event::InitApply(_)
+                            | watcher::Event::InitDone => {
+                                // Initial watch events - ignore, we already loaded the key at startup
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Error watching SOPS key secrets: {}", e);
+                        // Continue watching - errors are transient
+                    }
+                }
+            }
+
+            warn!("SOPS key secret watch stream ended");
+        });
+    }
+
+    /// Reload SOPS private key from a specific namespace
+    /// Falls back to controller namespace if not found
+    async fn reload_sops_private_key_from_namespace(&self, namespace: &str) -> Result<()> {
+        use k8s_openapi::api::core::v1::Secret;
+        use kube::Api;
+
+        let secrets: Api<Secret> = Api::namespaced(self.client.clone(), namespace);
+        let secret_names = vec!["sops-private-key", "sops-gpg-key", "gpg-key"];
+
+        for secret_name in secret_names {
+            match secrets.get(secret_name).await {
+                Ok(secret) => {
+                    if let Some(ref data_map) = secret.data {
+                        if let Some(data) = data_map
+                            .get("private-key")
+                            .or_else(|| data_map.get("key"))
+                            .or_else(|| data_map.get("gpg-key"))
+                        {
+                            let key = String::from_utf8(data.0.clone()).map_err(|e| {
+                                anyhow::anyhow!("Failed to decode private key: {e}")
+                            })?;
+                            let mut key_guard = self.sops_private_key.lock().await;
+                            *key_guard = Some(key);
+                            info!(
+                                "✅ Reloaded SOPS private key from secret '{}/{}'",
+                                namespace, secret_name
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+                Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
+                    // Try next secret name
+                }
+                Err(e) => {
+                    warn!("Failed to get secret {}/{}: {}", namespace, secret_name, e);
+                }
+            }
+        }
+
+        // Fallback to controller namespace
+        let controller_namespace =
+            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+        if namespace != controller_namespace {
+            debug!(
+                "SOPS key not found in {}, falling back to controller namespace {}",
+                namespace, controller_namespace
+            );
+            return self.reload_sops_private_key().await;
+        }
+
+        warn!(
+            "SOPS private key secret not found in namespace {}",
+            namespace
+        );
+        Ok(())
+    }
+
+    /// Start watching for GitRepository and ArgoCD Application changes
+    /// Note: The main controller watch already handles SecretManagerConfig changes.
+    /// During reconciliation, the controller fetches the latest GitRepository/Application,
+    /// so source changes are automatically picked up on the next reconciliation cycle.
+    /// This function is a placeholder for future enhancement to directly watch source resources.
+    pub fn start_source_watch(
+        _reconciler: Arc<Self>,
+        _configs_api: kube::Api<SecretManagerConfig>,
+    ) {
+        // Currently, the main controller watch handles SecretManagerConfig changes,
+        // and during reconciliation, it fetches the latest GitRepository/Application.
+        // This ensures source changes are picked up without restarting the controller.
+        // Future enhancement: Directly watch GitRepository and Application resources
+        // and trigger reconciliation of referencing SecretManagerConfig resources.
+        info!("Source watch: SecretManagerConfig resources are watched by main controller, source changes are picked up during reconciliation");
     }
 
     #[allow(
@@ -1424,16 +1606,31 @@ impl Reconciler {
             .build()
             .context("Failed to create HTTP client")?;
 
-        let response = client
-            .get(&artifact_url)
-            .send()
-            .await
-            .context(format!("Failed to download artifact from {}", artifact_url))?;
+        let response = match client.get(&artifact_url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                error!("Failed to download artifact from {}: {}", artifact_url, e);
+                return Err(anyhow::anyhow!(
+                    "Failed to download artifact from {}: {}",
+                    artifact_url,
+                    e
+                ));
+            }
+        };
 
         if !response.status().is_success() {
+            let status = response.status();
+            let status_text = response.status().canonical_reason().unwrap_or("Unknown");
+            error!(
+                "Artifact download returned HTTP {} {} from {}",
+                status.as_u16(),
+                status_text,
+                artifact_url
+            );
             return Err(anyhow::anyhow!(
-                "Failed to download artifact: HTTP {}",
-                response.status()
+                "Failed to download artifact: HTTP {} {}",
+                status.as_u16(),
+                status_text
             ));
         }
 
@@ -1829,8 +2026,36 @@ impl Reconciler {
             let secret_prefix = service_name;
 
             // Parse secrets from files (with SOPS decryption if needed)
-            let secrets = parser::parse_secrets(app_files, self.sops_private_key.as_deref()).await?;
+            // Get SOPS private key from Arc<AsyncMutex> for this reconciliation
+            let sops_private_key = {
+                let key_guard = self.sops_private_key.lock().await;
+                key_guard.clone() // Clone the Option<String> to avoid lifetime issues
+            };
+            let secrets = parser::parse_secrets(app_files, sops_private_key.as_deref()).await?;
             let properties = parser::parse_properties(app_files).await?;
+
+            // Debug: Log keys (not values) for debugging
+            if !secrets.is_empty() {
+                let secret_keys: Vec<&String> = secrets.keys().collect();
+                debug!(
+                    "📋 Found {} secret key(s) in application.secrets files: {:?}",
+                    secret_keys.len(),
+                    secret_keys
+                );
+            } else {
+                debug!("📋 No secrets found in application.secrets files");
+            }
+
+            if !properties.is_empty() {
+                let property_keys: Vec<&String> = properties.keys().collect();
+                debug!(
+                    "📋 Found {} property key(s) in application.properties: {:?}",
+                    property_keys.len(),
+                    property_keys
+                );
+            } else {
+                debug!("📋 No properties found in application.properties");
+            }
 
         // Store secrets in cloud provider (GitOps: Git is source of truth)
         let mut count = 0;

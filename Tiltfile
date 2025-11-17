@@ -164,9 +164,10 @@ local_resource(
     ],
     labels=['controllers'],
     allow_parallel=True,
-    # Run after controller build completes to clean up stopped containers
+    # Run after controller deployment completes to clean up stopped containers
     # This prevents accumulation of stopped containers from Docker builds
-    resource_deps=[IMAGE_NAME],
+    # Depend on the Kubernetes deployment resource which uses the image
+    resource_deps=[CONTROLLER_NAME],
 )
 
 # ====================

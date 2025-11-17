@@ -652,6 +652,15 @@ async fn main() -> Result<()> {
     // Create reconciler context
     let reconciler = Arc::new(Reconciler::new(client.clone()).await?);
 
+    // Start watching for SOPS private key secret changes
+    // This allows hot-reloading the key without restarting the controller
+    Reconciler::start_sops_key_watch(reconciler.clone());
+
+    // Note: GitRepository and ArgoCD Application changes are handled by the main controller watch.
+    // When SecretManagerConfig resources are reconciled, they fetch the latest source,
+    // ensuring source changes are picked up without restarting the controller.
+    // SOPS secrets are watched separately for hot-reloading.
+
     // Check if CRD is queryable and reconcile existing resources before starting the watch
     // This ensures existing resources are reconciled when the controller starts
     // CRITICAL: Without this, resources created before controller deployment won't be reconciled
@@ -697,21 +706,13 @@ async fn main() -> Result<()> {
                 let mut sorted_namespaces: Vec<_> = resources_by_namespace.keys().collect();
                 sorted_namespaces.sort();
 
-                // Output startup summary table
-                info!("");
-                info!("╔════════════════════════════════════════════════════════════════════════════╗");
-                info!(
-                    "║              Secret Manager Controller - Startup Resource Summary         ║"
-                );
-                info!("╠════════════════════════════════════════════════════════════════════════════╣");
-                info!(
-                    "║ Resource Kind: SecretManagerConfig                                        ║"
-                );
-                info!("║ Total Resources: {:<58} ║", list.items.len());
-                info!("║ Namespaces: {:<62} ║", resources_by_namespace.len());
-                info!("╠════════════════════════════════════════════════════════════════════════════╣");
+                // Output startup summary
+                info!("Secret Manager Controller - Startup Resource Summary");
+                info!("Resource Kind: SecretManagerConfig");
+                info!("Total Resources: {}", list.items.len());
+                info!("Namespaces: {}", resources_by_namespace.len());
 
-                for (idx, namespace) in sorted_namespaces.iter().enumerate() {
+                for namespace in sorted_namespaces.iter() {
                     let resources = resources_by_namespace.get(*namespace).unwrap();
                     let namespace_display = if **namespace == "default" {
                         format!("{} (default)", namespace)
@@ -723,9 +724,9 @@ async fn main() -> Result<()> {
                     let mut sorted_resources = resources.clone();
                     sorted_resources.sort();
 
-                    info!("║ Namespace: {:<66} ║", namespace_display);
+                    info!("Namespace: {}", namespace_display);
                     info!(
-                        "║   Resources ({:2}): {:<60} ║",
+                        "  Resources ({}): {}",
                         sorted_resources.len(),
                         if sorted_resources.len() <= 3 {
                             sorted_resources.join(", ")
@@ -737,14 +738,7 @@ async fn main() -> Result<()> {
                             )
                         }
                     );
-
-                    if idx < sorted_namespaces.len() - 1 {
-                        info!("╠════════════════════════════════════════════════════════════════════════════╣");
-                    }
                 }
-
-                info!("╚════════════════════════════════════════════════════════════════════════════╝");
-                info!("");
                 info!("Reconciling {} existing SecretManagerConfig resources before starting watch...", list.items.len());
 
                 // Explicitly reconcile each existing resource

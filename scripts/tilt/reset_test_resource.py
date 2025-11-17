@@ -146,17 +146,15 @@ Examples:
     # Apply all test resources
     print("")
     print("📋 Applying test SecretManagerConfig resources...")
-    print("╔════════════════════════════════════════════════════════════════════════════╗")
-    print("║                    Test Resources Summary                                  ║")
-    print("╠════════════════════════════════════════════════════════════════════════════╣")
+    print("Test Resources Summary")
     
     failed_resources = []
     
     for resource in test_resources:
-        print(f"║ Resource: {resource['name']:<66} ║")
-        print(f"║   Environment: {resource['environment']:<62} ║")
-        print(f"║   Namespace: {resource['namespace']:<62} ║")
-        print(f"║   Reconcile Interval: {resource['reconcile_interval']:<58} ║")
+        print(f"Resource: {resource['name']}")
+        print(f"  Environment: {resource['environment']}")
+        print(f"  Namespace: {resource['namespace']}")
+        print(f"  Reconcile Interval: {resource['reconcile_interval']}")
         
         # Apply using kustomize to ensure namespace and all resources are created
         # First ensure namespace exists, then apply SecretManagerConfig
@@ -189,7 +187,7 @@ Examples:
         # Success if SecretManagerConfig was applied successfully
         # GitRepository failure is acceptable (might already exist or require different permissions)
         if apply_result.returncode == 0:
-            print(f"║   Status: ✅ Applied successfully{' ' * 50} ║")
+            print(f"  Status: ✅ Applied successfully")
             # Only show GitRepository note if it failed AND it's not a common expected error
             if gitrepo_result.returncode != 0:
                 gitrepo_error = gitrepo_result.stderr.lower() if gitrepo_result.stderr else ""
@@ -201,19 +199,17 @@ Examples:
                 else:
                     # Show unexpected errors
                     error_msg = gitrepo_result.stderr[:50].replace('\n', ' ')
-                    print(f"║   Note: GitRepository: {error_msg:<54} ║")
+                    print(f"  Note: GitRepository: {error_msg}")
         else:
-            print(f"║   Status: ❌ Failed (exit code: {apply_result.returncode}){' ' * 40} ║")
+            print(f"  Status: ❌ Failed (exit code: {apply_result.returncode})")
             failed_resources.append(resource)
             if apply_result.stderr:
                 # Print error details (truncated if too long)
                 error_msg = apply_result.stderr[:60].replace('\n', ' ')
-                print(f"║   Error: {error_msg:<60} ║")
+                print(f"  Error: {error_msg}")
         
         if resource != test_resources[-1]:
-            print("╠════════════════════════════════════════════════════════════════════════════╣")
-    
-    print("╚════════════════════════════════════════════════════════════════════════════╝")
+            print("")
     print("")
     
     if failed_resources:

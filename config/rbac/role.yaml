@@ -7,6 +7,16 @@ rules:
 # This Role is only needed for namespace-specific permissions
 # SecretManagerConfig watching is handled by ClusterRole
 # This Role allows access to SOPS secrets in microscaler-system namespace
+# list and watch are needed for the SOPS key watcher to detect secret changes
+# Note: list/watch must be on all secrets (watcher needs to list first), but controller filters to specific names
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - list
+  - watch
+# Allow get on specific secret names only
 - apiGroups:
   - ""
   resources:

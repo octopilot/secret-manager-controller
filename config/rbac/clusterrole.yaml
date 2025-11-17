@@ -39,9 +39,19 @@ rules:
   - get
   - list
   - watch
-# Access SOPS private key secrets in microscaler-system namespace
-# Note: ClusterRole grants cluster-wide access, but actual access is restricted
-# to microscaler-system namespace via RoleBinding
+# Access SOPS private key secrets across all namespaces
+# The controller watches for SOPS secrets in all namespaces (tilt, dev, stage, prod, etc.)
+# to detect changes and hot-reload the key without restarting
+# Note: list/watch must be on all secrets (watcher needs to list first), but controller filters to specific names
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - list
+  - watch
+# Allow get on specific secret names in all namespaces
+# This allows the controller to load SOPS keys from any namespace where they exist
 - apiGroups:
   - ""
   resources:

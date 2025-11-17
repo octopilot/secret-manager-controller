@@ -130,6 +130,10 @@ def install_contour():
     # Note: externalIPs not needed with hostPort - port mappings handle external access
     # Docker bridge IPs (172.19.0.x) are not routable from host anyway
     # Helm uses the current kubeconfig context automatically
+    # Note: externalTrafficPolicy can only be set for LoadBalancer/NodePort services,
+    # so we must ensure it's not set when using ClusterIP service type
+    # The Contour Helm chart sets externalTrafficPolicy conditionally, so we need to
+    # explicitly prevent it from being set by using a values override
     install_cmd = (
         f"helm install {release_name} contour/contour "
         "--namespace projectcontour "
@@ -138,7 +142,8 @@ def install_contour():
         "--set envoy.useHostPort.https=true "
         "--set envoy.hostPorts.http=80 "
         "--set envoy.hostPorts.https=443 "
-        "--set envoy.service.type=ClusterIP"
+        "--set envoy.service.type=ClusterIP "
+        "--set envoy.service.externalTrafficPolicy=null"
     )
     
     result = run_command(install_cmd, check=False, capture_output=True)
@@ -147,6 +152,12 @@ def install_contour():
         log_error(f"Failed to install Contour via Helm: {result.stderr}")
         if result.stdout:
             log_error(f"Output: {result.stdout}")
+        # Check if it's specifically the externalTrafficPolicy error
+        if "externalTrafficPolicy" in result.stderr or "externalTrafficPolicy" in result.stdout:
+            log_info("")
+            log_info("💡 Tip: The Contour Helm chart may have issues with ClusterIP + externalTrafficPolicy")
+            log_info("   Consider using NodePort instead if hostPort doesn't work:")
+            log_info("   --set envoy.service.type=NodePort")
         return False
     
     log_info("✅ Contour installed via Helm")
