@@ -260,9 +260,9 @@ jobs:
             BUILD_TIMESTAMP=${{ github.run_id }}
             BUILD_DATETIME=${{ github.event.head_commit.timestamp }}
 
-  # Step 3: Run Pact tests in k3s cluster
+  # Step 3: Run Pact tests in Kind cluster (same cluster as dev)
   pact-tests:
-    name: Pact Tests (k3s)
+    name: Pact Tests (Kind)
     runs-on: ubuntu-latest
     needs: build-test-image
     timeout-minutes: 20
@@ -279,11 +279,12 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install k3s
-        uses: k3d-io/k3d-action@v6
+      - name: Install Kind
+        uses: helm/kind-action@v1.9.0
         with:
-          cluster-name: pact-test-cluster
-          args: --wait --timeout 300s
+          cluster_name: secret-manager-controller
+          config_file: kind-config.yaml
+          wait: 300s
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
@@ -368,7 +369,7 @@ jobs:
           curl -s https://fluxcd.io/install.sh | sudo bash
           flux --version
 
-      - name: Install Flux to k3s cluster
+      - name: Install Flux to Kind cluster
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -386,7 +387,7 @@ jobs:
             --interval=1m \
             --namespace=flux-system || true
 
-      - name: Deploy Pact Broker to k3s
+      - name: Deploy Pact Broker to Kind cluster
         run: |
           # Apply Pact Broker manifests directly (for CI testing)
           # This uses the controller's isolated Pact Broker with SQLite
@@ -409,10 +410,11 @@ jobs:
         run: |
           cargo test --test pact_* --no-fail-fast || echo "Pact tests may require broker setup"
         
-      - name: Cleanup k3s cluster
+      - name: Cleanup test resources
         if: always()
         run: |
           kubectl delete namespace secret-manager-controller-pact-broker --ignore-not-found=true || true
+          # Note: We keep the cluster for reuse, only cleanup test resources
 
   # Step 4: Build binaries and publish final container and binaries
   build-and-publish:

@@ -1,0 +1,20 @@
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: argocd-server-proxy
+  namespace: argocd
+spec:
+  virtualhost:
+    fqdn: argocd.kind.local
+    # TLS configuration (optional - ArgoCD can handle TLS termination)
+    # Uncomment if you want to use TLS at ingress level
+    # tls:
+    #   secretName: argocd-server-tls
+  routes:
+    - conditions:
+      - prefix: /
+      services:
+        - name: argocd-server
+          port: 80
+          # ArgoCD uses HTTP internally (default protocol, no need to specify)
+

@@ -4,15 +4,16 @@ kind: Kustomization
 namespace: microscaler-system
 
 resources:
-- namespace.yaml
-- crd/secretmanagerconfig.yaml
-- rbac/serviceaccount.yaml
-- rbac/role.yaml
-- rbac/rolebinding.yaml
-- rbac/clusterrole.yaml
-- rbac/clusterrolebinding.yaml
-- rbac/role-sops-secret.yaml
-- rbac/rolebinding-sops-secret.yaml
-- deployment/deployment.yaml
-- service/metrics-service.yaml
+  - namespace.yaml
+  - crd/secretmanagerconfig.yaml
+  - rbac/serviceaccount.yaml
+  - rbac/role.yaml
+  - rbac/rolebinding.yaml
+  - rbac/clusterrole.yaml
+  - rbac/clusterrolebinding.yaml
+  - rbac/role-sops-secret.yaml
+  - rbac/rolebinding-sops-secret.yaml
+  - storage/pvc.yaml
+  - deployment/deployment.yaml
+  - service/metrics-service.yaml
 

@@ -12,11 +12,11 @@ default:
 # Development Environment
 # ============================================================================
 
-# Start development environment (K3s + Tilt)
+# Start development environment (Kind + Tilt)
 dev-up:
     python3 scripts/dev_up.py
 
-# Stop development environment (K3s + Tilt)
+# Stop development environment (Kind + Tilt)
 dev-down:
     python3 scripts/dev_down.py
 # ============================================================================
@@ -40,12 +40,12 @@ build-release:
 # Build Docker image (development)
 build-docker:
     @echo "🐳 Building Docker image..."
-    @docker build -f Dockerfile.dev -t localhost:5002/secret-manager-controller:dev .
+    @docker build -f Dockerfile.dev -t localhost:5000/secret-manager-controller:dev .
 
 # Build Docker image (production)
 build-docker-prod:
     @echo "🐳 Building Docker image (production)..."
-    @docker build -f Dockerfile -t localhost:5002/secret-manager-controller:latest .
+    @docker build -f Dockerfile -t localhost:5000/secret-manager-controller:latest .
 
 # Generate CRD from Rust code
 generate-crd:

@@ -30,7 +30,7 @@ def run_command(cmd, check=False, capture_output=True):
 
 def main():
     """Main cleanup function."""
-    image_name = os.getenv("IMAGE_NAME", "localhost:5002/secret-manager-controller")
+    image_name = os.getenv("IMAGE_NAME", "localhost:5000/secret-manager-controller")
     controller_name = os.getenv("CONTROLLER_NAME", "secret-manager-controller")
     
     print("🧹 Cleaning up controller images before rebuild...")
@@ -49,9 +49,9 @@ def main():
             tag = tag.strip()
             if tag.startswith("tilt-"):
                 run_command(["docker", "rmi", f"{image_name}:{tag}"], check=False)
-                run_command(["docker", "rmi", f"localhost:5002/{controller_name}:{tag}"], check=False)
+                run_command(["docker", "rmi", f"localhost:5000/{controller_name}:{tag}"], check=False)
     
-    run_command(["docker", "rmi", f"localhost:5002/{controller_name}:tilt"], check=False)
+    run_command(["docker", "rmi", f"localhost:5000/{controller_name}:tilt"], check=False)
     
     # Also try to remove from kind's containerd if it's a kind cluster
     print("📋 Cleaning up kind registry cache...")

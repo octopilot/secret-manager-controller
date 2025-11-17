@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, info_span, warn, Instrument};
+use tracing::{debug, info, info_span, warn, Instrument};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
@@ -524,9 +524,10 @@ async fn decrypt_with_sops_binary(content: &str, sops_private_key: Option<&str>)
 
     // Set up GPG keyring if private key is provided
     let gpg_home = if let Some(private_key) = sops_private_key {
-        debug!("Importing GPG private key into temporary keyring");
+        info!("Importing GPG private key into temporary keyring for SOPS decryption");
         import_gpg_key(private_key).await?
     } else {
+        warn!("No SOPS private key provided - SOPS decryption may fail if key is not in system keyring");
         None
     };
 
@@ -620,10 +621,13 @@ async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>> {
     debug!("Created temporary GPG home: {:?}", gpg_home);
 
     // Import private key into temporary keyring
+    // Use --pinentry-mode loopback for non-interactive use in containers
     let mut cmd = tokio::process::Command::new(gpg_path);
     cmd.env("GNUPGHOME", &gpg_home)
         .arg("--batch")
         .arg("--yes")
+        .arg("--pinentry-mode")
+        .arg("loopback")
         .arg("--import")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -646,11 +650,19 @@ async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>> {
         .context("Failed to wait for gpg import command")?;
 
     if output.status.success() {
-        debug!("Successfully imported GPG private key");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        info!(
+            "Successfully imported GPG private key into temporary keyring: {:?}",
+            gpg_home
+        );
+        debug!("GPG import output: {}", stdout);
         Ok(Some(gpg_home))
     } else {
         let error_msg = String::from_utf8_lossy(&output.stderr);
-        warn!("Failed to import GPG private key: {}", error_msg);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        warn!("Failed to import GPG private key");
+        warn!("GPG stderr: {}", error_msg);
+        warn!("GPG stdout: {}", stdout);
         // Clean up on failure
         let _ = tokio::fs::remove_dir_all(&gpg_home).await;
         Err(anyhow::anyhow!(

@@ -2,7 +2,7 @@
 """
 Development environment shutdown script.
 
-Stops Tilt and K3s cluster for local development.
+Stops Tilt and Kind cluster for local development.
 Replaces embedded shell script in justfile.
 """
 
@@ -10,10 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add scripts directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
 
-from setup_k3s import log_info
+def log_info(msg):
+    """Print info message."""
+    print(f"[INFO] {msg}")
 
 
 def stop_tilt():
@@ -27,11 +27,11 @@ def stop_tilt():
     )
 
 
-def stop_k3s():
-    """Stop K3s container."""
-    log_info("Stopping K3s container...")
+def stop_kind():
+    """Stop Kind cluster."""
+    log_info("Stopping Kind cluster...")
     subprocess.run(
-        ["docker", "stop", "k3s-secret-manager-controller"],
+        ["kind", "delete", "cluster", "--name", "secret-manager-controller"],
         capture_output=True,
         check=False
     )
@@ -44,8 +44,8 @@ def main():
     # Stop Tilt
     stop_tilt()
     
-    # Stop K3s container
-    stop_k3s()
+    # Stop Kind cluster
+    stop_kind()
     
     log_info("✅ Development environment stopped")
 

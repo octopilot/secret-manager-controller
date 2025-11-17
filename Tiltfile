@@ -13,14 +13,14 @@
 # Configuration
 # ====================
 
-# Restrict to k3s cluster
-allow_k8s_contexts(['k3s-secret-manager-controller'])
+# Restrict to kind cluster
+allow_k8s_contexts(['kind-secret-manager-controller'])
 
 # Get the directory where this Tiltfile is located
 # Since the Tiltfile is in the controller directory, use '.' for relative paths
 CONTROLLER_DIR = '.'
 CONTROLLER_NAME = 'secret-manager-controller'
-IMAGE_NAME = 'localhost:5002/secret-manager-controller'
+IMAGE_NAME = 'localhost:5000/secret-manager-controller'
 BINARY_NAME = 'secret-manager-controller'
 # Build for Linux x86_64 (cross-compile for container compatibility)
 BINARY_PATH = '%s/target/x86_64-unknown-linux-musl/debug/%s' % (CONTROLLER_DIR, BINARY_NAME)
@@ -150,6 +150,26 @@ custom_build(
 )
 
 # ====================
+# Container Cleanup
+# ====================
+# Clean up stopped Docker containers after controller builds complete
+# This prevents Docker from being overwhelmed by stopped containers from Tilt builds
+# Runs as a one-shot cleanup after each controller build
+
+local_resource(
+    'container-cleanup',
+    cmd='python3 scripts/tilt/cleanup_stopped_containers.py',
+    deps=[
+        './scripts/tilt/cleanup_stopped_containers.py',
+    ],
+    labels=['controllers'],
+    allow_parallel=True,
+    # Run after controller build completes to clean up stopped containers
+    # This prevents accumulation of stopped containers from Docker builds
+    resource_deps=[IMAGE_NAME],
+)
+
+# ====================
 # FluxCD Installation
 # ====================
 # Install FluxCD in the cluster before deploying the controller
@@ -161,6 +181,24 @@ local_resource(
     cmd='python3 scripts/tilt/install_fluxcd.py',
     deps=[
         './scripts/tilt/install_fluxcd.py',
+    ],
+    labels=['infrastructure'],
+    allow_parallel=False,
+)
+
+# ====================
+# Contour Ingress Installation
+# ====================
+# Install Contour Ingress Controller for Kind cluster
+# Contour is a CNCF project that uses Envoy as the data plane
+# Required for ArgoCD ingress access
+# Idempotent - can be run multiple times safely
+
+local_resource(
+    'ingress-install',
+    cmd='NON_INTERACTIVE=1 python3 scripts/setup_contour.py',
+    deps=[
+        './scripts/setup_contour.py',
     ],
     labels=['infrastructure'],
     allow_parallel=False,
@@ -180,6 +218,24 @@ local_resource(
         './scripts/tilt/install_argocd.py',
     ],
     labels=['infrastructure'],
+    resource_deps=['ingress-install'],
+    allow_parallel=False,
+)
+
+# ArgoCD Ingress
+# Access ArgoCD UI via ingress at http://argocd.localhost
+# Requires Contour ingress controller (installed via ingress-install)
+# Contour uses Envoy as the data plane and exposes it via NodePort
+# Default credentials: admin / (get password with: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+# Apply ingress after ArgoCD and Contour are installed
+local_resource(
+    'argocd-ingress-apply',
+    cmd='kubectl apply -f gitops/cluster/argocd/ingress.yaml',
+    deps=[
+        'gitops/cluster/argocd/ingress.yaml',
+    ],
+    labels=['infrastructure', 'argocd'],
+    resource_deps=['argocd-install', 'ingress-install'],
     allow_parallel=False,
 )
 

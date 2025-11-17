@@ -737,10 +737,103 @@ impl Reconciler {
                         path
                     }
                     Err(e) => {
-                        // Artifact path extraction failed - GitRepository may not be ready yet
+                        // Check if GitRepository is ready - if not, wait for it to become ready
+                        let status = git_repo.get("status");
+                        let is_ready = status
+                            .and_then(|s| s.get("conditions"))
+                            .and_then(|c| c.as_array())
+                            .and_then(|conditions| {
+                                conditions.iter().find(|c| {
+                                    c.get("type")
+                                        .and_then(|t| t.as_str())
+                                        .map(|t| t == "Ready")
+                                        .unwrap_or(false)
+                                })
+                            })
+                            .and_then(|c| c.get("status"))
+                            .and_then(|s| s.as_str())
+                            .map(|s| s == "True")
+                            .unwrap_or(false);
+
+                        if !is_ready {
+                            // GitRepository exists but is not ready yet (still cloning or failed)
+                            // Check if it's a transient error (still reconciling) vs permanent (failed)
+                            let is_reconciling = status
+                                .and_then(|s| s.get("conditions"))
+                                .and_then(|c| c.as_array())
+                                .and_then(|conditions| {
+                                    conditions.iter().find(|c| {
+                                        c.get("type")
+                                            .and_then(|t| t.as_str())
+                                            .map(|t| t == "Reconciling")
+                                            .unwrap_or(false)
+                                    })
+                                })
+                                .and_then(|c| c.get("status"))
+                                .and_then(|s| s.as_str())
+                                .map(|s| s == "True")
+                                .unwrap_or(false);
+
+                            if is_reconciling {
+                                // Still reconciling - wait for it to complete
+                                warn!(
+                                    "⏳ GitRepository {}/{} is still reconciling, waiting for artifact",
+                                    config.spec.source_ref.namespace, config.spec.source_ref.name
+                                );
+                                info!(
+                                    "👀 Waiting for GitRepository to become ready (trigger source: watch-event)",
+                                );
+                                // Update status to Pending (waiting for GitRepository to be ready)
+                                let _ = ctx
+                                    .update_status_phase(
+                                        &config,
+                                        "Pending",
+                                        Some("GitRepository is reconciling, waiting for artifact"),
+                                    )
+                                    .await;
+                                // Wait for watch event - GitRepository status updates will trigger reconciliation
+                                return Ok(Action::await_change());
+                            } else {
+                                // Not reconciling and not ready - likely a permanent failure
+                                let reason = status
+                                    .and_then(|s| s.get("conditions"))
+                                    .and_then(|c| c.as_array())
+                                    .and_then(|conditions| {
+                                        conditions.iter().find(|c| {
+                                            c.get("type")
+                                                .and_then(|t| t.as_str())
+                                                .map(|t| t == "Ready")
+                                                .unwrap_or(false)
+                                        })
+                                    })
+                                    .and_then(|c| c.get("reason"))
+                                    .and_then(|r| r.as_str())
+                                    .unwrap_or("Unknown");
+
+                                error!(
+                                    "❌ GitRepository {}/{} is not ready (reason: {}), cannot proceed",
+                                    config.spec.source_ref.namespace, config.spec.source_ref.name, reason
+                                );
+                                observability::metrics::increment_reconciliation_errors();
+                                // Update status to Failed
+                                let _ = ctx
+                                    .update_status_phase(
+                                        &config,
+                                        "Failed",
+                                        Some(&format!("GitRepository not ready: {}", reason)),
+                                    )
+                                    .await;
+                                return Err(ReconcilerError::ReconciliationFailed(
+                                    anyhow::anyhow!("GitRepository not ready: {}", reason),
+                                ));
+                            }
+                        }
+
+                        // GitRepository is ready but artifact path extraction failed
+                        // This is unexpected - log error and fail
                         error!("Failed to get FluxCD artifact path: {}", e);
                         observability::metrics::increment_reconciliation_errors();
-                        // Update status to Failed - this is a permanent error (not retryable)
+                        // Update status to Failed
                         let _ = ctx
                             .update_status_phase(
                                 &config,
@@ -1213,10 +1306,19 @@ impl Reconciler {
             .context("FluxCD GitRepository has no artifact in status")?;
 
         // Get artifact URL - this is the HTTP endpoint to download the tar.gz
-        let artifact_url = status
+        // FluxCD sometimes includes a dot before the path (e.g., cluster.local./path)
+        // which causes HTTP requests to fail, so we normalize it
+        let artifact_url_raw = status
             .get("url")
             .and_then(|u| u.as_str())
             .context("FluxCD GitRepository artifact has no URL")?;
+
+        // Normalize URL: remove dots before path separators (e.g., cluster.local./path -> cluster.local/path)
+        // This handles cases where Kubernetes DNS FQDNs include trailing dots before paths
+        let artifact_url = artifact_url_raw
+            .replace("./", "/")
+            .trim_end_matches('.')
+            .to_string();
 
         // Get revision for caching - use revision to determine if we need to re-download
         let revision = status
@@ -1323,7 +1425,7 @@ impl Reconciler {
             .context("Failed to create HTTP client")?;
 
         let response = client
-            .get(artifact_url)
+            .get(&artifact_url)
             .send()
             .await
             .context(format!("Failed to download artifact from {}", artifact_url))?;

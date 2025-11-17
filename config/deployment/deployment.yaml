@@ -16,7 +16,7 @@ spec:
       serviceAccountName: secret-manager-controller
       containers:
       - name: controller
-        image: localhost:5002/secret-manager-controller
+        image: localhost:5000/secret-manager-controller
         imagePullPolicy: IfNotPresent
         env:
         - name: RUST_LOG
@@ -77,5 +77,11 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
-
+        volumeMounts:
+        - name: artifact-cache
+          mountPath: /tmp/smc
+      volumes:
+      - name: artifact-cache
+        persistentVolumeClaim:
+          claimName: secret-manager-controller-cache
 

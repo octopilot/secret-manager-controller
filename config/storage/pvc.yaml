@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: secret-manager-controller-cache
+  namespace: microscaler-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # Use default storage class (standard for Kind, or cluster default for production)
+  # For Kind: uses local-path provisioner (hostPath)
+  # For production: uses cluster's default storage class
+  storageClassName: standard
+

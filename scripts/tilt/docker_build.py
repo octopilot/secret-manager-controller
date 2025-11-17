@@ -30,7 +30,7 @@ def run_command(cmd_list, check=False, capture_output=True):
 
 def main():
     """Main Docker build function."""
-    image_name = os.getenv("IMAGE_NAME", "localhost:5002/secret-manager-controller")
+    image_name = os.getenv("IMAGE_NAME", "localhost:5000/secret-manager-controller")
     controller_name = os.getenv("CONTROLLER_NAME", "secret-manager-controller")
     controller_dir = os.getenv("CONTROLLER_DIR", ".")
     expected_ref = os.getenv("EXPECTED_REF", f"{image_name}:tilt")

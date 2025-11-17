@@ -11,7 +11,6 @@ This document tracks the migration of all shell scripts to Python replacements.
 | `copy-binary.sh` | `copy_binary.py` | ✅ Complete | Used by Tiltfile |
 | `host-aware-build.sh` | `host_aware_build.py` | ✅ Complete | Used by Tiltfile |
 | `setup-sops-key.sh` | `setup_sops_key.py` | ✅ Complete | Renamed from .sh to .py |
-| `setup-k3s.sh` | `setup_k3s.py` | ✅ Complete | Standalone setup script |
 | `setup-kind.sh` | `setup_kind.py` | ✅ Complete | Standalone setup script |
 | `build-and-push.sh` | `build_and_push.py` | ✅ Complete | Production build script |
 | `extract-crd.sh` | `extract_crd.py` | ✅ Complete | CRD extraction utility |
@@ -46,14 +45,6 @@ This document tracks the migration of all shell scripts to Python replacements.
 - Selects build strategy based on host OS/arch
 - macOS: Uses `cargo zigbuild`
 - Linux x86_64: Uses `cargo build` with musl-gcc linker
-
-### `setup_k3s.py`
-**Replaces:** `setup-k3s.sh`  
-**Usage:** `python3 scripts/setup_k3s.py`  
-**Functionality:**
-- Creates local k3s cluster
-- Sets up Docker registry
-- Configures kubeconfig
 
 ### `setup_kind.py`
 **Replaces:** `setup-kind.sh`  
