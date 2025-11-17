@@ -11,8 +11,8 @@ resources:
   - rbac/rolebinding.yaml
   - rbac/clusterrole.yaml
   - rbac/clusterrolebinding.yaml
-  - rbac/role-sops-secret.yaml
-  - rbac/rolebinding-sops-secret.yaml
+  # Note: role-sops-secret.yaml and rolebinding-sops-secret.yaml were removed as redundant
+  # They duplicated permissions already granted by role.yaml and rolebinding.yaml
   # Note: PVC is created during Kind cluster setup (not managed by Tilt to avoid deletion issues)
   # See scripts/setup_kind.py create_pvc() function
   # - storage/pvc.yaml

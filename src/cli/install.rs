@@ -37,9 +37,8 @@ mod manifests {
     const ROLEBINDING: &str = include_str!("../../config/rbac/rolebinding.yaml");
     const CLUSTER_ROLE: &str = include_str!("../../config/rbac/clusterrole.yaml");
     const CLUSTER_ROLE_BINDING: &str = include_str!("../../config/rbac/clusterrolebinding.yaml");
-    const ROLE_SOPS_SECRET: &str = include_str!("../../config/rbac/role-sops-secret.yaml");
-    const ROLEBINDING_SOPS_SECRET: &str =
-        include_str!("../../config/rbac/rolebinding-sops-secret.yaml");
+    // Note: role-sops-secret.yaml and rolebinding-sops-secret.yaml were removed as redundant
+    // They duplicated permissions already granted by role.yaml and rolebinding.yaml
 
     // Include deployment
     const DEPLOYMENT: &str = include_str!("../../config/deployment/deployment.yaml");
@@ -56,8 +55,7 @@ mod manifests {
             ROLEBINDING,
             CLUSTER_ROLE,
             CLUSTER_ROLE_BINDING,
-            ROLE_SOPS_SECRET,
-            ROLEBINDING_SOPS_SECRET,
+            // Note: ROLE_SOPS_SECRET and ROLEBINDING_SOPS_SECRET removed (redundant)
             DEPLOYMENT,
             METRICS_SERVICE,
         ]
