@@ -66,6 +66,8 @@ aws-credential-types = "1"  # For credentials handling
 # Fork: https://github.com/microscaler/azure-sdk-for-rust/tree/fix/rustls-support
 # This fork adds reqwest_rustls feature to enable rustls instead of native-tls
 azure_core = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", default-features = false, features = ["reqwest", "reqwest_deflate", "reqwest_gzip", "reqwest_rustls"] }
+# typespec_client_core is needed for OffsetDateTime in mock credentials for Pact testing
+typespec_client_core = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support" }
 azure_identity = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", package = "azure_identity" }
 azure_security_keyvault_secrets = { git = "https://github.com/microscaler/azure-sdk-for-rust", branch = "fix/rustls-support", package = "azure_security_keyvault_secrets" }
 

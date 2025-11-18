@@ -22,7 +22,7 @@ use crate::controller::reconciler::validation::{
 use crate::observability;
 use crate::provider::aws::AwsSecretManager;
 use crate::provider::azure::AzureKeyVault;
-use crate::provider::gcp::SecretManagerClient as GcpSecretManagerClient;
+use crate::provider::gcp::create_gcp_provider;
 use crate::provider::SecretManagerProvider;
 use crate::{ProviderConfig, SecretManagerConfig};
 use anyhow::Context;
@@ -575,14 +575,14 @@ async fn reconcile_internal(
             };
 
             let service_account_email = service_account_email_owned.as_deref();
-            match GcpSecretManagerClient::new(
+            match create_gcp_provider(
                 gcp_config.project_id.clone(),
                 auth_type,
                 service_account_email,
             )
             .await
             {
-                Ok(gcp_client) => Box::new(gcp_client),
+                Ok(gcp_client) => gcp_client,
                 Err(e) => {
                     error!("Failed to create GCP Secret Manager client: {}", e);
                     return Err(ReconcilerError::ReconciliationFailed(e));

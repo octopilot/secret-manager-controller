@@ -3,6 +3,21 @@
 //! These tests define the contract between the Secret Manager Controller and GCP Secret Manager API.
 //! They use Pact to create a mock server that simulates GCP Secret Manager responses.
 
+#[cfg(test)]
+mod common;
+
+use common::init_rustls;
+use std::sync::Once;
+
+static RUSTLS_INIT: Once = Once::new();
+
+/// Initialize rustls before tests
+fn init() {
+    RUSTLS_INIT.call_once(|| {
+        init_rustls();
+    });
+}
+
 use pact_consumer::prelude::*;
 use serde_json::json;
 
@@ -34,6 +49,7 @@ async fn make_request(
 
 #[tokio::test]
 async fn test_gcp_create_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("create a new secret in GCP Secret Manager", "", |mut i| {
@@ -97,6 +113,7 @@ async fn test_gcp_create_secret_contract() {
 
 #[tokio::test]
 async fn test_gcp_add_secret_version_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("add a secret version to an existing secret", "", |mut i| {
@@ -160,6 +177,7 @@ async fn test_gcp_add_secret_version_contract() {
 
 #[tokio::test]
 async fn test_gcp_get_secret_version_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("get the latest version of a secret", "", |mut i| {
@@ -208,6 +226,7 @@ async fn test_gcp_get_secret_version_contract() {
 
 #[tokio::test]
 async fn test_gcp_secret_not_found_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("get a secret that does not exist", "", |mut i| {
@@ -254,6 +273,7 @@ async fn test_gcp_secret_not_found_contract() {
 
 #[tokio::test]
 async fn test_gcp_list_secrets_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("list secrets in a project", "", |mut i| {
@@ -307,6 +327,7 @@ async fn test_gcp_list_secrets_contract() {
 
 #[tokio::test]
 async fn test_gcp_list_secret_versions_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("list versions of a secret", "", |mut i| {
@@ -356,6 +377,7 @@ async fn test_gcp_list_secret_versions_contract() {
 
 #[tokio::test]
 async fn test_gcp_delete_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("delete a secret", "", |mut i| {
@@ -388,6 +410,7 @@ async fn test_gcp_delete_secret_contract() {
 
 #[tokio::test]
 async fn test_gcp_disable_secret_version_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("disable a secret version", "", |mut i| {
@@ -430,6 +453,7 @@ async fn test_gcp_disable_secret_version_contract() {
 
 #[tokio::test]
 async fn test_gcp_enable_secret_version_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("enable a secret version", "", |mut i| {
@@ -472,6 +496,7 @@ async fn test_gcp_enable_secret_version_contract() {
 
 #[tokio::test]
 async fn test_gcp_destroy_secret_version_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("destroy a secret version", "", |mut i| {
@@ -515,6 +540,7 @@ async fn test_gcp_destroy_secret_version_contract() {
 
 #[tokio::test]
 async fn test_gcp_get_secret_metadata_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("get secret metadata", "", |mut i| {
@@ -561,6 +587,7 @@ async fn test_gcp_get_secret_metadata_contract() {
 
 #[tokio::test]
 async fn test_gcp_patch_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "GCP-Secret-Manager");
 
     pact_builder.interaction("update secret metadata", "", |mut i| {

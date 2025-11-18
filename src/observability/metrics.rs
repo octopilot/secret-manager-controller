@@ -105,15 +105,23 @@ static DURATION_PARSING_ERRORS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
 static SOPS_DECRYPTION_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     IntCounter::new(
         "secret_manager_sops_decryption_total",
-        "Total number of SOPS decryption operations",
+        "Total number of SOPS decryption operations (attempts)",
     )
     .expect("Failed to create SOPS_DECRYPTION_TOTAL metric - this should never happen")
+});
+
+static SOPS_DECRYPTION_SUCCESS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+    IntCounter::new(
+        "secret_manager_sops_decrypt_success_total",
+        "Total number of successful SOPS decryption operations",
+    )
+    .expect("Failed to create SOPS_DECRYPTION_SUCCESS_TOTAL metric - this should never happen")
 });
 
 static SOPS_DECRYPTION_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     Histogram::with_opts(
         prometheus::HistogramOpts::new(
-            "secret_manager_sops_decryption_duration_seconds",
+            "secret_manager_sops_decrypt_duration_seconds",
             "Duration of SOPS decryption operations in seconds",
         )
         .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0]),
@@ -342,6 +350,7 @@ pub fn register_metrics() -> Result<()> {
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATION_DURATION.clone()))?;
     REGISTRY.register(Box::new(DURATION_PARSING_ERRORS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(SOPS_DECRYPTION_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(SOPS_DECRYPTION_SUCCESS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(SOPS_DECRYPTION_DURATION.clone()))?;
     REGISTRY.register(Box::new(SOPS_DECRYPTION_ERRORS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(SOPS_DECRYPTION_ERRORS_TOTAL_BY_REASON.clone()))?;
@@ -434,6 +443,10 @@ pub fn increment_duration_parsing_errors() {
 
 pub fn increment_sops_decryption_total() {
     SOPS_DECRYPTION_TOTAL.inc();
+}
+
+pub fn increment_sops_decrypt_success_total() {
+    SOPS_DECRYPTION_SUCCESS_TOTAL.inc();
 }
 
 pub fn observe_sops_decryption_duration(duration: f64) {
@@ -642,6 +655,14 @@ mod tests {
         let before = SOPS_DECRYPTION_TOTAL.get();
         increment_sops_decryption_total();
         let after = SOPS_DECRYPTION_TOTAL.get();
+        assert_eq!(after, before + 1u64);
+    }
+
+    #[test]
+    fn test_increment_sops_decrypt_success_total() {
+        let before = SOPS_DECRYPTION_SUCCESS_TOTAL.get();
+        increment_sops_decrypt_success_total();
+        let after = SOPS_DECRYPTION_SUCCESS_TOTAL.get();
         assert_eq!(after, before + 1u64);
     }
 

@@ -79,20 +79,48 @@ impl AwsSecretManager {
         // The role ARN from the config is informational - the actual role comes from the pod annotation
         info!("IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}", role_arn);
 
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.to_string()))
-            .load()
-            .await;
+        let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.to_string()));
+
+        // Support Pact mock server integration via environment variable
+        // When PACT_MODE=true, route requests to Pact mock server instead of real AWS
+        if std::env::var("PACT_MODE").is_ok() {
+            if let Ok(endpoint) = std::env::var("AWS_SECRETS_MANAGER_ENDPOINT") {
+                info!(
+                    "Pact mode enabled: routing AWS Secrets Manager requests to {}",
+                    endpoint
+                );
+                builder = builder.endpoint_url(&endpoint);
+            } else {
+                info!("Pact mode enabled but AWS_SECRETS_MANAGER_ENDPOINT not set, using default AWS endpoint");
+            }
+        }
+
+        let sdk_config = builder.load().await;
 
         Ok(sdk_config)
     }
 
     /// Create AWS SDK config using default credential chain
     async fn create_default_config(region: &str) -> Result<SdkConfig> {
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.to_string()))
-            .load()
-            .await;
+        let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.to_string()));
+
+        // Support Pact mock server integration via environment variable
+        // When PACT_MODE=true, route requests to Pact mock server instead of real AWS
+        if std::env::var("PACT_MODE").is_ok() {
+            if let Ok(endpoint) = std::env::var("AWS_SECRETS_MANAGER_ENDPOINT") {
+                info!(
+                    "Pact mode enabled: routing AWS Secrets Manager requests to {}",
+                    endpoint
+                );
+                builder = builder.endpoint_url(&endpoint);
+            } else {
+                info!("Pact mode enabled but AWS_SECRETS_MANAGER_ENDPOINT not set, using default AWS endpoint");
+            }
+        }
+
+        let sdk_config = builder.load().await;
 
         Ok(sdk_config)
     }
@@ -122,14 +150,20 @@ impl SecretManagerProvider for AwsSecretManager {
             let operation_type = if !secret_exists {
                 // Create secret
                 info!("Creating AWS secret: {}", secret_name);
-                match self
+                // In Pact mode, use a fixed ClientRequestToken for deterministic testing
+                let mut create_request = self
                     .client
                     .create_secret()
                     .name(secret_name)
-                    .secret_string(secret_value)
-                    .send()
-                    .await
-                {
+                    .secret_string(secret_value);
+
+                if std::env::var("PACT_MODE").is_ok() {
+                    // Use a fixed UUID for Pact testing to ensure request body matches
+                    create_request =
+                        create_request.client_request_token("00000000-0000-0000-0000-000000000000");
+                }
+
+                match create_request.send().await {
                     Ok(_) => {
                         metrics::record_secret_operation(
                             "aws",
@@ -177,14 +211,20 @@ impl SecretManagerProvider for AwsSecretManager {
 
                 // Update secret (creates new version automatically)
                 info!("Updating AWS secret: {}", secret_name);
-                match self
+                // In Pact mode, use a fixed ClientRequestToken for deterministic testing
+                let mut put_request = self
                     .client
                     .put_secret_value()
                     .secret_id(secret_name)
-                    .secret_string(secret_value)
-                    .send()
-                    .await
-                {
+                    .secret_string(secret_value);
+
+                if std::env::var("PACT_MODE").is_ok() {
+                    // Use a fixed UUID for Pact testing to ensure request body matches
+                    put_request =
+                        put_request.client_request_token("00000000-0000-0000-0000-000000000000");
+                }
+
+                match put_request.send().await {
                     Ok(_) => {
                         metrics::record_secret_operation(
                             "aws",

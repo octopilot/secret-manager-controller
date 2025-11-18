@@ -3,6 +3,21 @@
 //! These tests define the contract between the Secret Manager Controller and Azure Key Vault Secrets API.
 //! They use Pact to create a mock server that simulates Azure Key Vault responses.
 
+#[cfg(test)]
+mod common;
+
+use common::init_rustls;
+use std::sync::Once;
+
+static RUSTLS_INIT: Once = Once::new();
+
+/// Initialize rustls before tests
+fn init() {
+    RUSTLS_INIT.call_once(|| {
+        init_rustls();
+    });
+}
+
 use pact_consumer::prelude::*;
 use serde_json::json;
 
@@ -42,6 +57,7 @@ async fn make_request(
 
 #[tokio::test]
 async fn test_azure_set_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("set a secret in Azure Key Vault", "", |mut i| {
@@ -101,6 +117,7 @@ async fn test_azure_set_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_get_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("get the latest version of a secret", "", |mut i| {
@@ -154,6 +171,7 @@ async fn test_azure_get_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_get_secret_version_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("get a specific version of a secret", "", |mut i| {
@@ -207,6 +225,7 @@ async fn test_azure_get_secret_version_contract() {
 
 #[tokio::test]
 async fn test_azure_delete_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("delete a secret", "", |mut i| {
@@ -259,6 +278,7 @@ async fn test_azure_delete_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_secret_not_found_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder
@@ -309,6 +329,7 @@ async fn test_azure_secret_not_found_contract() {
 
 #[tokio::test]
 async fn test_azure_list_secrets_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("list secrets in Azure Key Vault", "", |mut i| {
@@ -370,6 +391,7 @@ async fn test_azure_list_secrets_contract() {
 
 #[tokio::test]
 async fn test_azure_list_secret_versions_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("list versions of a secret", "", |mut i| {
@@ -431,6 +453,7 @@ async fn test_azure_list_secret_versions_contract() {
 
 #[tokio::test]
 async fn test_azure_update_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("update secret attributes", "", |mut i| {
@@ -489,6 +512,7 @@ async fn test_azure_update_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_backup_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("backup a secret", "", |mut i| {
@@ -532,6 +556,7 @@ async fn test_azure_backup_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_restore_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("restore a secret from backup", "", |mut i| {
@@ -589,6 +614,7 @@ async fn test_azure_restore_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_purge_deleted_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("purge a deleted secret", "", |mut i| {
@@ -627,6 +653,7 @@ async fn test_azure_purge_deleted_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_get_deleted_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("get a deleted secret", "", |mut i| {
@@ -676,6 +703,7 @@ async fn test_azure_get_deleted_secret_contract() {
 
 #[tokio::test]
 async fn test_azure_list_deleted_secrets_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("list deleted secrets", "", |mut i| {
@@ -731,6 +759,7 @@ async fn test_azure_list_deleted_secrets_contract() {
 
 #[tokio::test]
 async fn test_azure_recover_deleted_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
     pact_builder.interaction("recover a deleted secret", "", |mut i| {

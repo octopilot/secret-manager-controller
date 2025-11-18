@@ -19,3 +19,12 @@ resources:
   - deployment/deployment.yaml
   - service/metrics-service.yaml
 
+# Pact Mode Patch
+# Adds environment variables to route cloud provider requests to Pact mock servers
+# This enables testing without real cloud accounts
+patches:
+  - path: deployment/pact-env-patch.yaml
+    target:
+      kind: Deployment
+      name: secret-manager-controller
+

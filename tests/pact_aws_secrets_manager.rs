@@ -3,8 +3,22 @@
 //! These tests define the contract between the Secret Manager Controller and AWS Secrets Manager API.
 //! They use Pact to create a mock server that simulates AWS Secrets Manager responses.
 
+#[cfg(test)]
+mod common;
+
+use common::init_rustls;
 use pact_consumer::prelude::*;
 use serde_json::json;
+use std::sync::Once;
+
+static RUSTLS_INIT: Once = Once::new();
+
+/// Initialize rustls before tests
+fn init() {
+    RUSTLS_INIT.call_once(|| {
+        init_rustls();
+    });
+}
 
 // Helper function to make HTTP requests to the mock server
 async fn make_request(
@@ -42,6 +56,7 @@ async fn make_request(
 
 #[tokio::test]
 async fn test_aws_create_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -101,6 +116,7 @@ async fn test_aws_create_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_put_secret_value_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -159,6 +175,7 @@ async fn test_aws_put_secret_value_contract() {
 
 #[tokio::test]
 async fn test_aws_get_secret_value_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -216,6 +233,7 @@ async fn test_aws_get_secret_value_contract() {
 
 #[tokio::test]
 async fn test_aws_describe_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -275,6 +293,7 @@ async fn test_aws_describe_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_secret_not_found_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder.interaction("get a secret that does not exist", "", |mut i| {
@@ -334,6 +353,7 @@ async fn test_aws_secret_not_found_contract() {
 
 #[tokio::test]
 async fn test_aws_list_secrets_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -392,6 +412,7 @@ async fn test_aws_list_secrets_contract() {
 
 #[tokio::test]
 async fn test_aws_list_secret_version_ids_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -456,6 +477,7 @@ async fn test_aws_list_secret_version_ids_contract() {
 
 #[tokio::test]
 async fn test_aws_delete_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -510,6 +532,7 @@ async fn test_aws_delete_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_tag_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder.interaction("tag a secret", "", |mut i| {
@@ -581,6 +604,7 @@ async fn test_aws_tag_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_untag_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder.interaction("untag a secret", "", |mut i| {
@@ -634,6 +658,7 @@ async fn test_aws_untag_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_update_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -688,6 +713,7 @@ async fn test_aws_update_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_restore_secret_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder
@@ -739,6 +765,7 @@ async fn test_aws_restore_secret_contract() {
 
 #[tokio::test]
 async fn test_aws_get_resource_policy_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
     pact_builder

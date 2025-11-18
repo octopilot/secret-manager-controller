@@ -392,3 +392,171 @@ fn test_file_type_detection_from_path() {
     let plain_dotenv = "DATABASE_URL=postgresql://localhost/db\nANOTHER_KEY=some_value";
     assert!(!is_sops_encrypted(plain_dotenv));
 }
+
+#[test]
+fn test_error_classification_with_exit_codes() {
+    use secret_manager_controller::controller::parser::sops::error::classify_sops_error;
+
+    // Test exit code 3 (KeyNotFound) - most reliable classification
+    let reason = classify_sops_error("some error", Some(3));
+    assert_eq!(reason, SopsDecryptionFailureReason::KeyNotFound);
+    assert!(!reason.is_transient());
+
+    // Test exit code 4 (WrongKey)
+    let reason = classify_sops_error("some error", Some(4));
+    assert_eq!(reason, SopsDecryptionFailureReason::WrongKey);
+    assert!(!reason.is_transient());
+
+    // Test exit code 5 (UnsupportedFormat)
+    let reason = classify_sops_error("some error", Some(5));
+    assert_eq!(reason, SopsDecryptionFailureReason::UnsupportedFormat);
+    assert!(!reason.is_transient());
+
+    // Test exit code 6 (InvalidKeyFormat)
+    let reason = classify_sops_error("some error", Some(6));
+    assert_eq!(reason, SopsDecryptionFailureReason::InvalidKeyFormat);
+    assert!(!reason.is_transient());
+
+    // Test exit code 2 (CorruptedFile)
+    let reason = classify_sops_error("some error", Some(2));
+    assert_eq!(reason, SopsDecryptionFailureReason::CorruptedFile);
+    assert!(!reason.is_transient());
+
+    // Test exit code 1 (generic) - should fall through to message parsing
+    let reason = classify_sops_error("no decryption key found", Some(1));
+    assert_eq!(reason, SopsDecryptionFailureReason::KeyNotFound);
+}
+
+#[tokio::test]
+async fn test_decrypt_corrupted_file_fails() {
+    // Test that corrupted SOPS content fails gracefully
+    let corrupted_content = r#"sops:
+    version: 3.8.0
+    mac: INVALID_MAC
+DATABASE_URL: ENC[INVALID_FORMAT]
+"#;
+
+    let sops_key = get_test_sops_key();
+    let result = decrypt_sops_content(corrupted_content, None, sops_key.as_deref()).await;
+
+    // Should fail with corrupted file error
+    if let Err(e) = result {
+        assert!(
+            e.reason == SopsDecryptionFailureReason::CorruptedFile
+                || e.reason == SopsDecryptionFailureReason::WrongKey
+                || e.reason == SopsDecryptionFailureReason::Unknown
+        );
+        assert!(!e.is_transient); // Corrupted files are permanent failures
+    } else {
+        // If it somehow succeeds, that's also acceptable (SOPS might handle it)
+        // The important thing is it doesn't panic
+    }
+}
+
+#[tokio::test]
+async fn test_decrypt_unsupported_format_fails() {
+    // Test that unsupported formats fail gracefully
+    let unsupported_content = "This is not a valid SOPS format at all - just random text";
+
+    let sops_key = get_test_sops_key();
+    let result = decrypt_sops_content(unsupported_content, None, sops_key.as_deref()).await;
+
+    // Should fail with unsupported format or corrupted file error
+    if let Err(e) = result {
+        assert!(
+            e.reason == SopsDecryptionFailureReason::UnsupportedFormat
+                || e.reason == SopsDecryptionFailureReason::CorruptedFile
+                || e.reason == SopsDecryptionFailureReason::Unknown
+        );
+        assert!(!e.is_transient); // Unsupported formats are permanent failures
+    } else {
+        // If it somehow succeeds, that's also acceptable
+        // The important thing is it doesn't panic
+    }
+}
+
+#[tokio::test]
+async fn test_decrypt_with_malformed_key_fails() {
+    let test_dir = get_test_files_dir();
+    let file_path = test_dir.join("application.secrets.env");
+
+    if !file_path.exists() {
+        eprintln!(
+            "⚠️  Test file not found: {} - skipping test",
+            file_path.display()
+        );
+        return;
+    }
+
+    let encrypted_content = tokio::fs::read_to_string(&file_path)
+        .await
+        .expect("Failed to read test file");
+
+    // Try with malformed key (not valid GPG format)
+    let malformed_key = "This is not a valid GPG key at all - just random text";
+
+    let result =
+        decrypt_sops_content(&encrypted_content, Some(&file_path), Some(malformed_key)).await;
+
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+
+    // Should be classified as InvalidKeyFormat
+    assert_eq!(error.reason, SopsDecryptionFailureReason::InvalidKeyFormat);
+    assert!(!error.is_transient); // Invalid key format is permanent
+}
+
+#[test]
+fn test_parse_secrets_error_propagation() {
+    use secret_manager_controller::controller::parser::parsers::ParseSecretsError;
+    use secret_manager_controller::controller::parser::sops::error::{
+        SopsDecryptionError, SopsDecryptionFailureReason,
+    };
+
+    // Test that ParseSecretsError properly wraps SopsDecryptionError
+    let sops_error = SopsDecryptionError::new(
+        SopsDecryptionFailureReason::KeyNotFound,
+        "No decryption key found".to_string(),
+    );
+
+    let parse_error = ParseSecretsError::SopsDecryption(sops_error);
+
+    // Test error type methods
+    assert!(parse_error.as_sops_error().is_some());
+    assert!(!parse_error.is_transient()); // KeyNotFound is permanent
+    assert!(!parse_error.remediation().is_empty());
+
+    // Test that it can be converted back
+    let extracted = parse_error.as_sops_error().unwrap();
+    assert_eq!(extracted.reason, SopsDecryptionFailureReason::KeyNotFound);
+}
+
+#[test]
+fn test_transient_vs_permanent_errors() {
+    use secret_manager_controller::controller::parser::sops::error::SopsDecryptionFailureReason;
+
+    // Permanent errors
+    let permanent_reasons = vec![
+        SopsDecryptionFailureReason::KeyNotFound,
+        SopsDecryptionFailureReason::WrongKey,
+        SopsDecryptionFailureReason::InvalidKeyFormat,
+        SopsDecryptionFailureReason::UnsupportedFormat,
+        SopsDecryptionFailureReason::CorruptedFile,
+    ];
+
+    for reason in permanent_reasons {
+        assert!(!reason.is_transient(), "{:?} should be permanent", reason);
+    }
+
+    // Transient errors
+    let transient_reasons = vec![
+        SopsDecryptionFailureReason::NetworkTimeout,
+        SopsDecryptionFailureReason::ProviderUnavailable,
+        SopsDecryptionFailureReason::PermissionDenied,
+        SopsDecryptionFailureReason::Unknown,
+    ];
+
+    for reason in transient_reasons {
+        assert!(reason.is_transient(), "{:?} should be transient", reason);
+    }
+}

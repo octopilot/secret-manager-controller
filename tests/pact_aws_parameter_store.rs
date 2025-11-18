@@ -3,6 +3,21 @@
 //! These tests define the contract between the Secret Manager Controller and AWS Parameter Store API.
 //! They use Pact to create a mock server that simulates AWS Parameter Store responses.
 
+#[cfg(test)]
+mod common;
+
+use common::init_rustls;
+use std::sync::Once;
+
+static RUSTLS_INIT: Once = Once::new();
+
+/// Initialize rustls before tests
+fn init() {
+    RUSTLS_INIT.call_once(|| {
+        init_rustls();
+    });
+}
+
 use pact_consumer::prelude::*;
 use serde_json::json;
 
@@ -41,6 +56,7 @@ async fn make_request(
 
 #[tokio::test]
 async fn test_aws_put_parameter_create_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Parameter-Store");
 
     pact_builder.interaction(
@@ -107,6 +123,7 @@ async fn test_aws_put_parameter_create_contract() {
 
 #[tokio::test]
 async fn test_aws_put_parameter_update_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Parameter-Store");
 
     pact_builder.interaction(
@@ -173,6 +190,7 @@ async fn test_aws_put_parameter_update_contract() {
 
 #[tokio::test]
 async fn test_aws_get_parameter_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Parameter-Store");
 
     pact_builder
@@ -233,6 +251,7 @@ async fn test_aws_get_parameter_contract() {
 
 #[tokio::test]
 async fn test_aws_get_parameter_not_found_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Parameter-Store");
 
     pact_builder.interaction("get a parameter that does not exist", "", |mut i| {
@@ -291,6 +310,7 @@ async fn test_aws_get_parameter_not_found_contract() {
 
 #[tokio::test]
 async fn test_aws_delete_parameter_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Parameter-Store");
 
     pact_builder.interaction(
@@ -346,6 +366,7 @@ async fn test_aws_delete_parameter_contract() {
 
 #[tokio::test]
 async fn test_aws_get_parameters_by_path_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Parameter-Store");
 
     pact_builder.interaction("list parameters by path", "", |mut i| {

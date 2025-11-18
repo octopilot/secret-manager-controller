@@ -107,6 +107,7 @@ pub async fn decrypt_sops_content(
                 span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
                 span_clone.record("operation.success", true);
                 metrics::increment_sops_decryption_total();
+                metrics::increment_sops_decrypt_success_total();
                 metrics::observe_sops_decryption_duration(start.elapsed().as_secs_f64());
             }
             Err(e) => {

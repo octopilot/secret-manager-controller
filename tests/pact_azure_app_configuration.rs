@@ -5,8 +5,23 @@
 //!
 //! Azure App Configuration REST API endpoints:
 //! - PUT /kv - Create or update a key-value pair
-//! - GET /kv/{key} - Get a key-value pair
+//! - GET /kv/{key} - Get a key-value pair  
 //! - DELETE /kv/{key} - Delete a key-value pair
+
+#[cfg(test)]
+mod common;
+
+use common::init_rustls;
+use std::sync::Once;
+
+static RUSTLS_INIT: Once = Once::new();
+
+/// Initialize rustls before tests
+fn init() {
+    RUSTLS_INIT.call_once(|| {
+        init_rustls();
+    });
+}
 
 use pact_consumer::prelude::*;
 use serde_json::json;
@@ -38,6 +53,7 @@ async fn make_request(
 
 #[tokio::test]
 async fn test_azure_app_config_put_key_value_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-App-Configuration");
 
     pact_builder.interaction(
@@ -98,6 +114,7 @@ async fn test_azure_app_config_put_key_value_contract() {
 
 #[tokio::test]
 async fn test_azure_app_config_get_key_value_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-App-Configuration");
 
     pact_builder.interaction(
@@ -144,6 +161,7 @@ async fn test_azure_app_config_get_key_value_contract() {
 
 #[tokio::test]
 async fn test_azure_app_config_get_key_value_not_found_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-App-Configuration");
 
     pact_builder.interaction(
@@ -180,6 +198,7 @@ async fn test_azure_app_config_get_key_value_not_found_contract() {
 
 #[tokio::test]
 async fn test_azure_app_config_delete_key_value_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-App-Configuration");
 
     pact_builder.interaction(
@@ -215,6 +234,7 @@ async fn test_azure_app_config_delete_key_value_contract() {
 
 #[tokio::test]
 async fn test_azure_app_config_delete_key_value_not_found_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-App-Configuration");
 
     pact_builder.interaction(
@@ -252,6 +272,7 @@ async fn test_azure_app_config_delete_key_value_not_found_contract() {
 
 #[tokio::test]
 async fn test_azure_app_config_update_existing_key_value_contract() {
+    init();
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-App-Configuration");
 
     pact_builder.interaction(

@@ -1,0 +1,46 @@
+# Pact Mode Environment Variables Patch
+# This patch adds Pact mode environment variables for testing/development
+# Apply this patch only when you want to use Pact mock servers instead of real cloud APIs
+#
+# IMPORTANT: This is NOT included in the default deployment.
+# Only apply when you need to test without cloud accounts.
+#
+# Usage:
+#   kubectl patch deployment secret-manager-controller -n microscaler-system --patch-file config/deployment/pact-env-patch.yaml
+#
+# Or add to kustomization.yaml overlay:
+#   patches:
+#     - path: deployment/pact-env-patch.yaml
+#       target:
+#         kind: Deployment
+#         name: secret-manager-controller
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-manager-controller
+  namespace: microscaler-system
+spec:
+  template:
+    spec:
+      containers:
+      - name: controller
+        env:
+        # Enable Pact mode - routes cloud provider requests to Pact mock servers
+        - name: PACT_MODE
+          value: "true"
+        # AWS Secrets Manager endpoint - point to Pact mock server
+        # Uses Kubernetes service name for in-cluster communication
+        - name: AWS_SECRETS_MANAGER_ENDPOINT
+          value: "http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292"
+        # Azure Key Vault endpoint - point to Pact mock server
+        # Uses Kubernetes service name for in-cluster communication
+        # Note: If running separate Pact mock servers, update port accordingly
+        - name: AZURE_KEY_VAULT_ENDPOINT
+          value: "http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292"
+        # GCP Secret Manager endpoint - point to Pact mock server
+        # Uses Kubernetes service name for in-cluster communication
+        # Note: GCP SDK uses gRPC by default, so Pact mode may require HTTP wrapper implementation
+        - name: GCP_SECRET_MANAGER_ENDPOINT
+          value: "http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292"
+

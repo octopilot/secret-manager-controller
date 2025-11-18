@@ -8,7 +8,17 @@ pub const SMC_BASE_PATH: &str = "/tmp/smc";
 
 /// Sanitize a string for use in filesystem paths
 /// Replaces characters that are problematic in filenames with safe alternatives
+#[cfg(test)]
+pub fn sanitize_path_component(s: &str) -> String {
+    sanitize_path_component_impl(s)
+}
+
+#[cfg(not(test))]
 pub(crate) fn sanitize_path_component(s: &str) -> String {
+    sanitize_path_component_impl(s)
+}
+
+fn sanitize_path_component_impl(s: &str) -> String {
     s.replace(['@', '/', ':', '\\', ' ', '\t', '\n', '\r'], "-")
         .replace("..", "-")
         .chars()

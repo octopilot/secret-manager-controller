@@ -8,10 +8,50 @@ use crate::controller::parser::types::ApplicationFiles;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
+use thiserror::Error;
 use tracing::debug;
+
+/// Error type for parsing secrets
+/// Wraps SOPS decryption errors and file I/O errors
+#[derive(Debug, Error)]
+pub enum ParseSecretsError {
+    #[error("SOPS decryption failed: {0}")]
+    SopsDecryption(#[from] SopsDecryptionError),
+    #[error("File I/O error: {0}")]
+    Io(#[from] anyhow::Error),
+}
+
+impl ParseSecretsError {
+    /// Check if this is a SOPS decryption error
+    pub fn as_sops_error(&self) -> Option<&SopsDecryptionError> {
+        match self {
+            ParseSecretsError::SopsDecryption(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    /// Check if this error is transient (should retry)
+    pub fn is_transient(&self) -> bool {
+        match self {
+            ParseSecretsError::SopsDecryption(e) => e.is_transient,
+            ParseSecretsError::Io(_) => false, // File I/O errors are usually permanent
+        }
+    }
+
+    /// Get remediation guidance for this error
+    pub fn remediation(&self) -> String {
+        match self {
+            ParseSecretsError::SopsDecryption(e) => e.remediation(),
+            ParseSecretsError::Io(e) => format!("File I/O error: {}", e),
+        }
+    }
+}
 
 /// Parse secrets from application.secrets.env and application.secrets.yaml
 /// Supports SOPS-encrypted files
+///
+/// Returns `ParseSecretsError` which can be either a `SopsDecryptionError` or file I/O error.
+/// This allows callers to properly classify errors as transient vs permanent.
 #[allow(
     clippy::missing_errors_doc,
     reason = "Error documentation is provided in doc comments"
@@ -19,7 +59,7 @@ use tracing::debug;
 pub async fn parse_secrets(
     app_files: &ApplicationFiles,
     sops_private_key: Option<&str>,
-) -> Result<HashMap<String, String>> {
+) -> Result<HashMap<String, String>, ParseSecretsError> {
     let mut secrets = HashMap::new();
 
     // Parse application.secrets.env
@@ -56,10 +96,11 @@ pub async fn parse_properties(app_files: &ApplicationFiles) -> Result<HashMap<St
 pub(crate) async fn parse_env_file(
     path: &Path,
     sops_private_key: Option<&str>,
-) -> Result<HashMap<String, String>> {
+) -> Result<HashMap<String, String>, ParseSecretsError> {
     let content = tokio::fs::read_to_string(path)
         .await
-        .context(format!("Failed to read: {}", path.display()))?;
+        .context(format!("Failed to read: {}", path.display()))
+        .map_err(ParseSecretsError::Io)?;
 
     // Check if file is SOPS-encrypted
     // SECURITY: Decrypted content exists only in memory, never written to disk
@@ -67,14 +108,7 @@ pub(crate) async fn parse_env_file(
         debug!("Detected SOPS-encrypted file: {}", path.display());
         decrypt_sops_content(&content, Some(path), sops_private_key)
             .await
-            .map_err(|e: SopsDecryptionError| {
-                // Convert SopsDecryptionError to anyhow::Error with context
-                anyhow::anyhow!(
-                    "SOPS decryption failed (reason: {}): {}",
-                    e.reason.as_str(),
-                    e.message
-                )
-            })?
+            .map_err(ParseSecretsError::SopsDecryption)?
     } else {
         content
     };
@@ -106,10 +140,11 @@ pub(crate) async fn parse_env_file(
 pub(crate) async fn parse_yaml_secrets(
     path: &Path,
     sops_private_key: Option<&str>,
-) -> Result<HashMap<String, String>> {
+) -> Result<HashMap<String, String>, ParseSecretsError> {
     let content = tokio::fs::read_to_string(path)
         .await
-        .context(format!("Failed to read: {}", path.display()))?;
+        .context(format!("Failed to read: {}", path.display()))
+        .map_err(ParseSecretsError::Io)?;
 
     // Check if file is SOPS-encrypted
     // SECURITY: Decrypted content exists only in memory, never written to disk
@@ -117,20 +152,15 @@ pub(crate) async fn parse_yaml_secrets(
         debug!("Detected SOPS-encrypted file: {}", path.display());
         decrypt_sops_content(&content, Some(path), sops_private_key)
             .await
-            .map_err(|e: SopsDecryptionError| {
-                // Convert SopsDecryptionError to anyhow::Error with context
-                anyhow::anyhow!(
-                    "SOPS decryption failed (reason: {}): {}",
-                    e.reason.as_str(),
-                    e.message
-                )
-            })?
+            .map_err(ParseSecretsError::SopsDecryption)?
     } else {
         content
     };
 
     // Parse YAML from in-memory buffer (no disk writes)
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&content).context("Failed to parse YAML")?;
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
+        .context("Failed to parse YAML")
+        .map_err(ParseSecretsError::Io)?;
 
     let mut secrets = HashMap::new();
     flatten_yaml_value(&yaml, String::new(), &mut secrets);

@@ -179,6 +179,78 @@ sequenceDiagram
     Controller->>GCP: Sync updated secrets<br/>(Git overwrites manual changes)
 ```
 
+### Reconciliation State Machine
+
+The controller follows a formal state machine for reconciliation. Each `SecretManagerConfig` resource transitions through states based on reconciliation results:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Suspended: spec.suspend = true
+    
+    [*] --> Pending: Resource created
+    Pending --> Pending: GitRepository not found<br/>(Action::await_change)
+    Pending --> Pending: GitRepository reconciling<br/>(Action::await_change)
+    Pending --> Reconciling: GitRepository ready
+    
+    Reconciling --> Ready: Secrets synced successfully<br/>(Action::requeue(interval))
+    Reconciling --> Retrying: Transient error<br/>(Action::requeue(30s))
+    Reconciling --> Failed: Permanent error
+    
+    Retrying --> Reconciling: Retry after backoff
+    Retrying --> Failed: Max retries exceeded
+    
+    Ready --> Reconciling: Timer-based trigger<br/>(Action::requeue(interval))
+    Ready --> Reconciling: Watch event trigger
+    Ready --> Reconciling: Manual trigger<br/>(annotation)
+    
+    Failed --> Reconciling: Manual trigger<br/>(annotation)
+    Failed --> Reconciling: Configuration fixed
+    
+    Suspended --> Pending: spec.suspend = false<br/>(Action::await_change)
+    
+    note right of Pending
+        Waiting states use Action::await_change()
+        to avoid blocking the event loop
+    end note
+    
+    note right of Ready
+        Success path uses single
+        Action::requeue(interval)
+        based on reconcileInterval
+    end note
+    
+    note right of Retrying
+        Transient errors use
+        Action::requeue(30s)
+        with Fibonacci backoff
+        in error_policy()
+    end note
+```
+
+**State Definitions:**
+
+- **Suspended**: Reconciliation is disabled via `spec.suspend = true`. Returns `Action::await_change()` to wait for suspend to be cleared.
+- **Pending**: Waiting for dependencies (GitRepository/Application) to be ready. Uses `Action::await_change()` to avoid blocking the event loop.
+- **Reconciling**: Actively processing secrets (downloading artifacts, decrypting SOPS, syncing to cloud provider).
+- **Ready**: Successfully synced all secrets. Uses `Action::requeue(interval)` based on `spec.reconcileInterval` for timer-based reconciliation.
+- **Retrying**: Transient error occurred (network timeout, temporary unavailability). Uses `Action::requeue(30s)` with Fibonacci backoff managed in `error_policy()`.
+- **Failed**: Permanent error (validation failure, wrong key, corrupted file). Requires manual intervention or configuration fix.
+
+**Action Types:**
+
+- `Action::await_change()`: Used for waiting states (Suspended, Pending). Waits for watch events without blocking the timer loop.
+- `Action::requeue(duration)`: Used for scheduling next reconciliation:
+  - **Success path**: `Action::requeue(reconcileInterval)` - single interval-based requeue
+  - **Transient errors**: `Action::requeue(30s)` - fixed delay with backoff in `error_policy()`
+  - **Duration parsing errors**: `Action::requeue(backoff_duration)` - Fibonacci backoff
+
+**Key Design Principles:**
+
+1. **No nested requeue calls**: Each reconciliation returns exactly one `Action`.
+2. **Waiting uses await_change**: All "waiting for X" paths use `Action::await_change()` to prevent deadlocks.
+3. **Success path is single requeue**: Successful reconciliation uses a single `Action::requeue(interval)` based on `reconcileInterval`.
+4. **Backoff in error_policy**: Fibonacci backoff is managed in the `error_policy()` layer, not in the reconcile function.
+
 ## CRD Definition
 
 ### Multi-Cloud Provider Support
@@ -537,6 +609,103 @@ python3 scripts/test-sops-quick.py --env dev
 ```
 
 This copies SOPS-encrypted files directly to the path where the controller expects them, bypassing Git/Flux setup. See `docs/QUICK_TEST_SOPS.md` for details.
+
+### SOPS Troubleshooting
+
+The controller provides detailed status fields and metrics to help diagnose SOPS decryption issues.
+
+#### Status Fields
+
+Check the `SecretManagerConfig` status for SOPS decryption information:
+
+```bash
+kubectl get secretmanagerconfig <name> -n <namespace> -o yaml
+```
+
+**Key Status Fields:**
+
+- `status.decryptionStatus`: Current decryption status (`"Success"`, `"TransientFailure"`, `"PermanentFailure"`)
+- `status.lastDecryptionAttempt`: Timestamp of last decryption attempt (RFC3339)
+- `status.lastDecryptionError`: Error message from last failed decryption attempt
+- `status.sopsKeyAvailable`: Whether SOPS private key is available in the resource namespace
+- `status.sopsKeySecretName`: Name of the SOPS key secret found
+- `status.sopsKeyNamespace`: Namespace where the SOPS key was found
+
+#### Common Errors and Solutions
+
+| Error Reason | Status | Metrics | Solution |
+|-------------|--------|---------|----------|
+| **Key Not Found** | `decryptionStatus: "PermanentFailure"`<br>`sopsKeyAvailable: false` | `sops_decryption_errors_total_by_reason{reason="key_not_found"}` | Create SOPS private key secret in the resource namespace:<br>`kubectl create secret generic sops-private-key -n <namespace> --from-file=private-key=<key-file>` |
+| **Wrong Key** | `decryptionStatus: "PermanentFailure"`<br>`lastDecryptionError: "wrong key"` | `sops_decryption_errors_total_by_reason{reason="wrong_key"}` | Verify the SOPS private key matches the encryption key used in `.sops.yaml`. Check the key fingerprint in the file metadata. |
+| **Invalid Key Format** | `decryptionStatus: "PermanentFailure"` | `sops_decryption_errors_total_by_reason{reason="invalid_key_format"}` | Ensure the SOPS private key is in ASCII-armored GPG format:<br>`-----BEGIN PGP PRIVATE KEY BLOCK-----`<br>`...`<br>`-----END PGP PRIVATE KEY BLOCK-----` |
+| **Network Timeout** | `decryptionStatus: "TransientFailure"` | `sops_decryption_errors_total_by_reason{reason="network_timeout"}` | Usually transient - controller will retry automatically. Check GPG service availability. |
+| **Provider Unavailable** | `decryptionStatus: "TransientFailure"` | `sops_decryption_errors_total_by_reason{reason="provider_unavailable"}` | Check if GPG service is running and accessible. Usually transient - controller will retry. |
+| **Permission Denied** | `decryptionStatus: "TransientFailure"` | `sops_decryption_errors_total_by_reason{reason="permission_denied"}` | Verify RBAC is configured correctly. ServiceAccount needs `get` permission for the SOPS key secret. |
+
+#### Metrics
+
+Monitor SOPS decryption health using Prometheus metrics:
+
+```promql
+# Total SOPS decryption attempts
+secret_manager_sops_decryption_total
+
+# Successful decryptions
+secret_manager_sops_decrypt_success_total
+
+# Decryption errors by reason
+secret_manager_sops_decryption_errors_total_by_reason{reason="key_not_found"}
+secret_manager_sops_decryption_errors_total_by_reason{reason="wrong_key"}
+secret_manager_sops_decryption_errors_total_by_reason{reason="network_timeout"}
+
+# Decryption duration
+secret_manager_sops_decrypt_duration_seconds
+```
+
+#### Debugging Steps
+
+1. **Check SOPS Key Availability:**
+   ```bash
+   kubectl get secretmanagerconfig <name> -n <namespace> -o jsonpath='{.status.sopsKeyAvailable}'
+   ```
+
+2. **Verify Key Secret Exists:**
+   ```bash
+   kubectl get secret sops-private-key -n <namespace>
+   # Or check alternative names:
+   kubectl get secret sops-gpg-key -n <namespace>
+   kubectl get secret gpg-key -n <namespace>
+   ```
+
+3. **Check Controller Logs:**
+   ```bash
+   kubectl logs -n microscaler-system -l app=secret-manager-controller | grep -i sops
+   ```
+
+4. **Verify Key Format:**
+   ```bash
+   kubectl get secret sops-private-key -n <namespace> -o jsonpath='{.data.private-key}' | base64 -d | head -1
+   # Should output: -----BEGIN PGP PRIVATE KEY BLOCK-----
+   ```
+
+5. **Test Decryption Locally:**
+   ```bash
+   # Export key from Kubernetes secret
+   kubectl get secret sops-private-key -n <namespace> -o jsonpath='{.data.private-key}' | base64 -d > /tmp/key.asc
+   
+   # Import into GPG
+   gpg --import /tmp/key.asc
+   
+   # Test decryption
+   sops -d <encrypted-file>
+   ```
+
+6. **Check RBAC Permissions:**
+   ```bash
+   kubectl auth can-i get secrets -n <namespace> --as=system:serviceaccount:microscaler-system:secret-manager-controller
+   ```
+
+For more detailed SOPS setup and configuration, see [`docs/SOPS_DECRYPTION.md`](docs/SOPS_DECRYPTION.md).
 
 ### Prerequisites
 

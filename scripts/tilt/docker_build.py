@@ -33,12 +33,14 @@ def cleanup_docker_resources():
     print("🧹 Cleaning up Docker resources to free space...")
     
     # Remove dangling images (unused intermediate layers)
+    # Note: This won't remove the Pact CLI image as it's not a dangling image
     print("  Removing dangling images...")
     result = run_command(["docker", "image", "prune", "-f"], check=False)
     if result.stdout:
         print(f"Total reclaimed space: {result.stdout.strip()}")
     
     # Remove old build cache aggressively (keeps only last 1 hour for faster builds)
+    # This doesn't affect images, only build cache layers
     print("  Pruning build cache...")
     result = run_command(["docker", "builder", "prune", "-a", "-f", "--filter", "until=1h"], check=False)
     if result.stdout:
@@ -46,17 +48,28 @@ def cleanup_docker_resources():
     
     # Remove ALL untagged images (these are old Tilt builds)
     # These accumulate quickly and take up significant space
-    print("  Removing untagged images (old Tilt builds)...")
+    # Exclude Pact CLI image as it's stable and should be kept
+    print("  Removing untagged images (old Tilt builds, excluding Pact CLI)...")
     result = run_command(
-        ["docker", "images", "--filter", "dangling=true", "--format", "{{.ID}}"],
+        ["docker", "images", "--filter", "dangling=true", "--format", "{{.ID}}\t{{.Repository}}"],
         check=False
     )
     if result.returncode == 0 and result.stdout:
-        image_ids = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+        image_ids = []
+        for line in result.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.strip().split('\t')
+            if len(parts) >= 2:
+                img_id = parts[0]
+                repo = parts[1]
+                # Skip Pact CLI image - it's stable and should be kept
+                if "pactfoundation/pact-cli" not in repo:
+                    image_ids.append(img_id)
         if image_ids:
             for img_id in image_ids:
                 run_command(["docker", "rmi", "-f", img_id], check=False)
-            print(f"  Removed {len(image_ids)} untagged image(s)")
+            print(f"  Removed {len(image_ids)} untagged image(s) (Pact CLI excluded)")
     
     # Remove old Tilt images (keep only the 2 most recent tagged images)
     print("  Removing old Tilt images (keeping 2 most recent)...")
@@ -83,7 +96,10 @@ def cleanup_docker_resources():
     
     # Remove unused images (not just dangling) - more aggressive
     # This removes images not used by any container, older than 1 hour
-    print("  Removing unused images...")
+    # Note: docker image prune doesn't support excluding specific images,
+    # but it won't remove images that are in use or recently pulled
+    # Pact CLI image should be safe as it's actively used
+    print("  Removing unused images (Pact CLI will be preserved if recently used)...")
     result = run_command(["docker", "image", "prune", "-a", "-f", "--filter", "until=1h"], check=False)
     if result.stdout:
         print(f"Total reclaimed space: {result.stdout.strip()}")

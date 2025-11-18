@@ -71,10 +71,19 @@ pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
         .sops_capability_ready
         .store(new_key.is_some(), std::sync::atomic::Ordering::Relaxed);
 
+    let controller_namespace =
+        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+
     if new_key.is_some() {
-        info!("✅ SOPS capability ready - key reloaded from controller namespace");
+        info!(
+            "✅ SOPS capability ready - key reloaded from controller namespace '{}'",
+            controller_namespace
+        );
     } else {
-        warn!("⚠️  SOPS capability disabled - key removed from controller namespace");
+        warn!(
+            "⚠️  SOPS capability disabled - key removed from controller namespace '{}'",
+            controller_namespace
+        );
     }
 
     Ok(())
@@ -113,7 +122,7 @@ pub async fn reload_sops_private_key_from_namespace(
                             reconciler
                                 .sops_capability_ready
                                 .store(true, std::sync::atomic::Ordering::Relaxed);
-                            info!("✅ SOPS capability restored - key added back to controller namespace");
+                            info!("✅ SOPS capability restored - key added back to controller namespace '{}'", namespace);
                         }
 
                         info!(
@@ -265,7 +274,7 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                                     reconciler
                                         .sops_capability_ready
                                         .store(true, std::sync::atomic::Ordering::Relaxed);
-                                    info!("✅ SOPS capability restored - key added back to controller namespace");
+                                    info!("✅ SOPS capability restored - key added back to controller namespace '{}'", secret_namespace);
                                 }
 
                                 // Reload from the namespace where the secret changed
@@ -319,12 +328,15 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                                     reconciler
                                         .sops_capability_ready
                                         .store(false, std::sync::atomic::Ordering::Relaxed);
-                                    warn!("⚠️  SOPS capability disabled - key removed from controller namespace");
+                                    warn!("⚠️  SOPS capability disabled - key removed from controller namespace '{}'", secret_namespace);
                                 }
 
                                 // Try to reload from controller namespace as fallback
+                                let controller_namespace_for_reload =
+                                    std::env::var("POD_NAMESPACE")
+                                        .unwrap_or_else(|_| "microscaler-system".to_string());
                                 if let Err(e) = reload_sops_private_key(&reconciler).await {
-                                    warn!("Failed to reload SOPS private key from controller namespace: {}", e);
+                                    warn!("Failed to reload SOPS private key from controller namespace '{}': {}", controller_namespace_for_reload, e);
                                     // Clear the key if reload fails
                                     let mut key_guard = reconciler.sops_private_key.lock().await;
                                     *key_guard = None;
@@ -332,7 +344,7 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                                     reconciler
                                         .sops_capability_ready
                                         .store(false, std::sync::atomic::Ordering::Relaxed);
-                                    warn!("⚠️  SOPS capability disabled - key cleared");
+                                    warn!("⚠️  SOPS capability disabled - key cleared from controller namespace '{}'", controller_namespace_for_reload);
                                 }
 
                                 // Update status for all resources in this namespace

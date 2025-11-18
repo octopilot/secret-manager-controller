@@ -167,7 +167,10 @@ def check_port_forward(url: str, username: str, password: str) -> bool:
 def run_pact_tests() -> int:
     """Run Pact contract tests."""
     print("Running Pact contract tests...")
-    cmd = ["cargo", "test", "--test", "pact_*", "--no-fail-fast"]
+    # Run tests sequentially to avoid environment variable conflicts
+    # Integration tests share environment variables (PACT_MODE, endpoint URLs, etc.)
+    # and must run one at a time to prevent interference
+    cmd = ["cargo", "test", "--test", "pact_*", "--no-fail-fast", "--", "--test-threads=1"]
     try:
         result = run_command(cmd, check=False)
         if result.returncode == 0:
@@ -339,6 +342,11 @@ def main() -> int:
         action="store_true",
         help="Skip port forwarding setup (assumes broker is accessible)"
     )
+    parser.add_argument(
+        "--allow-test-failures",
+        action="store_true",
+        help="Allow publishing even if tests fail (useful when fixing tests)"
+    )
     
     args = parser.parse_args()
     
@@ -369,21 +377,29 @@ def main() -> int:
         
         # Publish Pact files if they exist
         pact_dir = Path(args.pact_dir)
+        publish_success = True
         if pact_dir.exists() and any(pact_dir.glob("*.json")):
             branch, commit = get_git_info()
-            if not publish_pact_files(
+            publish_success = publish_pact_files(
                 pact_dir,
                 args.broker_url,
                 args.username,
                 args.password,
                 commit,
                 branch
-            ):
+            )
+            if not publish_success:
                 return 1
         else:
             print("⏭️  No Pact files found to publish")
         
-        return test_exit_code
+        # Return test exit code, unless --allow-test-failures is set
+        if args.allow_test_failures:
+            if test_exit_code != 0:
+                print(f"⚠️  Tests failed (exit code {test_exit_code}) but --allow-test-failures is set, continuing...")
+            return 0 if publish_success else 1
+        else:
+            return test_exit_code
         
     finally:
         # Clean up port forward

@@ -3,7 +3,7 @@
 # This matches PriceWhisperer's pattern
 
 ARG TARGETPLATFORM=linux/amd64
-FROM --platform=${TARGETPLATFORM} debian:bookworm-slim
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
 # git: Required for ArgoCD support (cloning repositories)
@@ -33,7 +33,11 @@ WORKDIR /app
 # Note: Binary must exist before Docker build (ensured by Tilt resource_deps)
 COPY ./build_artifacts/secret-manager-controller /app/secret-manager-controller
 COPY ./build_artifacts/crdgen /usr/local/bin/crdgen
-RUN chmod +x /app/secret-manager-controller /usr/local/bin/crdgen
+# Make binaries executable
+# Verify files exist and set permissions (fail fast if files are missing)
+RUN test -f /app/secret-manager-controller && \
+    test -f /usr/local/bin/crdgen && \
+    chmod +x /app/secret-manager-controller /usr/local/bin/crdgen
 
 # Create directories with write permissions for live updates
 RUN chmod -R 777 /app

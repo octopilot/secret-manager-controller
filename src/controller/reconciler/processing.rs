@@ -174,7 +174,7 @@ pub async fn process_application_files(
             key_guard.clone() // Clone the Option<String> to avoid lifetime issues
         };
 
-        // Parse secrets - handle SOPS decryption errors with classification
+        // Parse secrets - handle SOPS decryption errors with proper classification
         let secrets = match parser::parse_secrets(app_files, sops_private_key.as_deref()).await {
             Ok(secrets) => {
                 // Update decryption status on success (if SOPS files were processed)
@@ -192,52 +192,59 @@ pub async fn process_application_files(
                 }
                 secrets
             }
-            Err(e) => {
-                // Check if this is a SOPS decryption error by examining the error chain
-                // If it contains SopsDecryptionError information, extract it
-                let error_msg = e.to_string();
-                let is_transient = error_msg.contains("network_timeout")
-                    || error_msg.contains("provider_unavailable")
-                    || error_msg.contains("permission_denied");
+            Err(parse_err) => {
+                // Use proper error type classification instead of string matching
+                let is_transient = parse_err.is_transient();
+                let error_msg = parse_err.to_string();
+                let remediation = parse_err.remediation();
 
-                // Update decryption status
-                if has_sops_files {
-                    let status = if is_transient {
-                        "TransientFailure"
-                    } else {
-                        "PermanentFailure"
-                    };
-                    if let Err(update_err) = update_decryption_status(
-                        reconciler,
-                        config,
-                        status,
-                        Some(&error_msg),
-                    )
-                    .await
-                    {
-                        warn!("Failed to update decryption status: {}", update_err);
+                // Check if this is a SOPS decryption error for detailed status
+                if parse_err.as_sops_error().is_some() {
+                    // Update decryption status with SOPS-specific information
+                    if has_sops_files {
+                        let status = if is_transient {
+                            "TransientFailure"
+                        } else {
+                            "PermanentFailure"
+                        };
+                        if let Err(update_err) = update_decryption_status(
+                            reconciler,
+                            config,
+                            status,
+                            Some(&error_msg),
+                        )
+                        .await
+                        {
+                            warn!("Failed to update decryption status: {}", update_err);
+                        }
                     }
-                }
 
-                if is_transient {
-                    warn!("SOPS decryption failed (transient): {}. Will retry.", error_msg);
-                    // Return error but mark as transient - reconciler will retry
-                    return Err(anyhow::anyhow!("SOPS decryption failed (transient): {}", error_msg));
-                } else {
-                    error!("SOPS decryption failed (permanent): {}. Action required.", error_msg);
-                    // Extract remediation guidance if available
-                    let remediation = if error_msg.contains("key_not_found") {
-                        "Create SOPS private key secret in the resource namespace"
-                    } else if error_msg.contains("wrong_key") {
-                        "Verify the SOPS private key matches the encryption key used in .sops.yaml"
-                    } else if error_msg.contains("invalid_key_format") {
-                        "Ensure the SOPS private key is in ASCII-armored GPG format"
+                    if is_transient {
+                        warn!("SOPS decryption failed (transient): {}. Will retry.", error_msg);
+                        // Return error but mark as transient - reconciler will retry
+                        return Err(anyhow::anyhow!("SOPS decryption failed (transient): {}", error_msg));
                     } else {
-                        "Check controller logs for detailed error message"
-                    };
-                    error!("Remediation: {}", remediation);
-                    // Return error as permanent - reconciler will mark as Failed
-                    return Err(anyhow::anyhow!("SOPS decryption failed (permanent): {}. {}", error_msg, remediation));
+                        error!("SOPS decryption failed (permanent): {}. Action required.", error_msg);
+                        error!("Remediation: {}", remediation);
+                        // Return error as permanent - reconciler will mark as Failed
+                        return Err(anyhow::anyhow!("SOPS decryption failed (permanent): {}. {}", error_msg, remediation));
+                    }
+                } else {
+                    // Non-SOPS error (file I/O, etc.) - treat as permanent
+                    error!("Failed to parse secrets: {}", error_msg);
+                    if has_sops_files {
+                        if let Err(update_err) = update_decryption_status(
+                            reconciler,
+                            config,
+                            "PermanentFailure",
+                            Some(&error_msg),
+                        )
+                        .await
+                        {
+                            warn!("Failed to update decryption status: {}", update_err);
+                        }
+                    }
+                    return Err(anyhow::anyhow!("Failed to parse secrets: {}", error_msg));
                 }
             }
         };
