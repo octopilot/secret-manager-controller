@@ -55,12 +55,24 @@ def check_cluster_exists():
 
 
 def check_contour_exists():
-    """Check if Contour already exists."""
+    """Check if Contour is already installed."""
+    # Check if Contour Helm release exists (more reliable than namespace check)
+    # Namespace might exist even if installation failed
     result = run_command(
-        "kubectl get namespace projectcontour --context kind-secret-manager-controller",
-        check=False
+        "helm list -n projectcontour",
+        check=False,
+        capture_output=True
     )
-    return result.returncode == 0
+    if result.returncode == 0 and "contour" in result.stdout:
+        return True
+    
+    # Also check if CRDs exist (definitive proof Contour is installed)
+    crd_result = run_command(
+        "kubectl get crd httpproxies.projectcontour.io",
+        check=False,
+        capture_output=True
+    )
+    return crd_result.returncode == 0
 
 
 def check_helm():
@@ -283,7 +295,7 @@ def main():
     
     # Check if already installed
     if check_contour_exists():
-        log_info("projectcontour namespace already exists")
+        log_info("Contour is already installed")
         # Check if NON_INTERACTIVE mode is set (called from Tilt)
         if os.getenv("NON_INTERACTIVE", "").lower() in ("1", "true", "yes"):
             log_info("Using existing Contour installation")

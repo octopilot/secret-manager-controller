@@ -22,9 +22,16 @@ resources:
 # Pact Mode Patch
 # Adds environment variables to route cloud provider requests to Pact mock servers
 # This enables testing without real cloud accounts
-patches:
-  - path: deployment/pact-env-patch.yaml
-    target:
-      kind: Deployment
-      name: secret-manager-controller
+# 
+# NOTE: This patch is DISABLED by default for production deployments.
+# The controller should use real cloud provider APIs in production.
+# 
+# To enable Pact mode for testing/development, uncomment the patch below
+# or use a kustomize overlay (see config/deployment/README.md)
+#
+# patches:
+#   - path: deployment/pact-env-patch.yaml
+#     target:
+#       kind: Deployment
+#       name: secret-manager-controller
 

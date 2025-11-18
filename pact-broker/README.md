@@ -59,6 +59,27 @@ kubectl port-forward -n secret-manager-controller-pact-broker service/pact-broke
 
 Then access at: `http://localhost:9292`
 
+## Axum Pact Mock Server
+
+A Rust/Axum-based Pact mock server is deployed alongside the broker to serve contracts as a mock API. This allows the controller to use Pact contracts for testing without real cloud provider credentials.
+
+- **Service**: `axum-pact-mock-server`
+- **Port**: `1234`
+- **Endpoint**: `http://axum-pact-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234`
+
+The mock server:
+- Loads contracts from the Pact broker on startup
+- Serves GCP Secret Manager REST API endpoints based on contracts
+- Falls back to default mock responses if contracts aren't available
+
+### Usage
+
+The controller can be configured to use the mock server by setting:
+- `PACT_MODE=true`
+- `GCP_SECRET_MANAGER_ENDPOINT=http://axum-pact-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234`
+
+See `config/deployment/pact-env-patch.yaml` for the full configuration.
+
 ## Isolation
 
 This Pact Broker is completely isolated from:

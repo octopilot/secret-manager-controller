@@ -1,0 +1,99 @@
+---
+# GCP Secret Manager Mock Server Deployment
+# Rust/Axum-based mock API server for GCP Secret Manager
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-mock-server
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: gcp-mock-server
+    provider: gcp
+    app.kubernetes.io/component: pact-mock-server
+    app.kubernetes.io/part-of: secret-manager-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gcp-mock-server
+  template:
+    metadata:
+      labels:
+        app: gcp-mock-server
+        provider: gcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: gcp-mock-server
+        image: pact-mock-server
+        imagePullPolicy: Always
+        command: ["/app/gcp-mock-server"]
+        ports:
+        - name: http
+          containerPort: 1234
+          protocol: TCP
+        env:
+        - name: PACT_BROKER_URL
+          value: "http://pact-broker:9292"
+        - name: PACT_BROKER_USERNAME
+          value: "pact"
+        - name: PACT_BROKER_PASSWORD
+          value: "pact"
+        - name: PACT_PROVIDER
+          value: "GCP-Secret-Manager"
+        - name: PACT_CONSUMER
+          value: "Secret-Manager-Controller"
+        - name: PORT
+          value: "1234"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 2
+          periodSeconds: 5
+          timeoutSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gcp-mock-server
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: gcp-mock-server
+    provider: gcp
+spec:
+  type: ClusterIP
+  ports:
+  - port: 1234
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: gcp-mock-server
+

@@ -8,6 +8,15 @@
 # 5. Deploys to Kubernetes using kustomize
 #
 # Usage: tilt up
+#
+# Resources are organized into parallel streams using labels:
+# - 'controllers' label: Controller build, deployment, and related resources
+# - 'infrastructure' label: FluxCD, ArgoCD, Contour, GitOps setup
+# - 'pact' label: Pact broker and mock servers for contract testing
+#
+# Each stream can build in parallel independently. Use 'tilt up controllers' to run
+# only controller resources, 'tilt up infrastructure' for infrastructure, or
+# 'tilt up pact' for Pact resources.
 
 # Note: restart_container() is deprecated, but for k8s resources we can use run() to restart
 # The restart_process extension is primarily for docker_build resources
@@ -19,6 +28,11 @@
 
 # Restrict to kind cluster
 allow_k8s_contexts(['kind-secret-manager-controller'])
+
+# Configure default registry for Kind cluster
+# Tilt will automatically push docker_build images to this registry
+# The registry is set up by scripts/setup_kind.py
+default_registry('localhost:5000')
 
 # Get the directory where this Tiltfile is located
 # Since the Tiltfile is in the controller directory, use '.' for relative paths
@@ -34,49 +48,6 @@ CRDGEN_NATIVE_PATH = '%s/target/debug/crdgen' % CONTROLLER_DIR
 ARTIFACT_PATH = 'build_artifacts/%s' % BINARY_NAME
 CRDGEN_ARTIFACT_PATH = 'build_artifacts/crdgen'
 
-# ====================
-# Code Quality Checks
-# ====================
-# Run formatting and linting checks
-# Disabled for now
-# local_resource(
-#     'secret-manager-controller-fmt-check',
-#     cmd='''
-#         echo "🎨 Checking code formatting..."
-#         cargo fmt --all -- --check || {
-#             echo "❌ Formatting check failed. Run 'cargo fmt' to fix."
-#             exit 1
-#         }
-#         echo "✅ Formatting check passed"
-#     ''',
-#     deps=[
-#         '%s/src' % CONTROLLER_DIR,
-#         '%s/Cargo.toml' % CONTROLLER_DIR,
-#     ],
-#     resource_deps=[],
-#     labels=['code-quality'],
-#     allow_parallel=True,
-# )
-
-# local_resource(
-#     'secret-manager-controller-clippy',
-#     cmd='''
-#         echo "🔍 Running clippy..."
-#         cargo clippy --all-targets --all-features -- -D warnings || {
-#             echo "❌ Clippy check failed. Fix the warnings above."
-#             exit 1
-#         }
-#         echo "✅ Clippy check passed"
-#     ''',
-#     deps=[
-#         '%s/src' % CONTROLLER_DIR,
-#         '%s/Cargo.toml' % CONTROLLER_DIR,
-#         '%s/Cargo.lock' % CONTROLLER_DIR,
-#     ],
-#     resource_deps=[],
-#     labels=['code-quality'],
-#     allow_parallel=True,
-# )
 
 
 # ====================
@@ -240,14 +211,38 @@ local_resource(
 # Contour uses Envoy as the data plane and exposes it via NodePort
 # Default credentials: admin / (get password with: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 # Apply ingress after ArgoCD and Contour are installed
+# Wait for Contour HTTPProxy CRD to be ready before applying ingress
 local_resource(
     'argocd-ingress-apply',
-    cmd='kubectl apply -f gitops/cluster/argocd/ingress.yaml',
+    cmd='''
+        # Wait for Contour HTTPProxy CRD to be available
+        echo "Waiting for Contour HTTPProxy CRD to be ready..."
+        timeout=60
+        elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+            if kubectl get crd httpproxies.projectcontour.io >/dev/null 2>&1; then
+                echo "✅ Contour HTTPProxy CRD is ready"
+                break
+            fi
+            echo "  Waiting for CRD... (${elapsed}s/${timeout}s)"
+            sleep 2
+            elapsed=$((elapsed + 2))
+        done
+        
+        if ! kubectl get crd httpproxies.projectcontour.io >/dev/null 2>&1; then
+            echo "❌ Error: Contour HTTPProxy CRD not found after ${timeout}s"
+            echo "Please ensure Contour is installed: python3 scripts/setup_contour.py"
+            exit 1
+        fi
+        
+        # Apply ingress configuration
+        kubectl apply -f gitops/cluster/argocd/ingress.yaml
+    ''',
     deps=[
         'gitops/cluster/argocd/ingress.yaml',
     ],
     labels=['infrastructure',],
-    resource_deps=['argocd-install', 'ingress-install'],
+    resource_deps=['argocd-install'],
     allow_parallel=False,
 )
 
@@ -335,6 +330,86 @@ k8s_resource(
 # Use 'tilt up pact' to run only Pact resources, or filter by label in UI.
 # Note: Labels on k8s_resource() ensure isolation - controller won't wait for pact resources.
 
+# Build Pact mock server binaries on host (cross-compilation)
+# Separate build resources for each binary - simpler and more targeted
+local_resource(
+    'gcp-mock-server-build',
+    cmd='python3 scripts/tilt/build_mock_server_binary.py gcp-mock-server',
+    deps=[
+        'pact-broker/mock-server/src/lib.rs',
+        'pact-broker/mock-server/src/bin/gcp.rs',
+        'pact-broker/mock-server/Cargo.toml',
+        'pact-broker/mock-server/Cargo.lock',
+        './scripts/host_aware_build.py',
+        './scripts/copy_binary.py',
+        './scripts/tilt/build_mock_server_binary.py',
+    ],
+    labels=['pact'],
+    allow_parallel=True,
+)
+
+local_resource(
+    'aws-mock-server-build',
+    cmd='python3 scripts/tilt/build_mock_server_binary.py aws-mock-server',
+    deps=[
+        'pact-broker/mock-server/src/lib.rs',
+        'pact-broker/mock-server/src/bin/aws.rs',
+        'pact-broker/mock-server/Cargo.toml',
+        'pact-broker/mock-server/Cargo.lock',
+        './scripts/host_aware_build.py',
+        './scripts/copy_binary.py',
+        './scripts/tilt/build_mock_server_binary.py',
+    ],
+    labels=['pact'],
+    allow_parallel=True,
+)
+
+local_resource(
+    'azure-mock-server-build',
+    cmd='python3 scripts/tilt/build_mock_server_binary.py azure-mock-server',
+    deps=[
+        'pact-broker/mock-server/src/lib.rs',
+        'pact-broker/mock-server/src/bin/azure.rs',
+        'pact-broker/mock-server/Cargo.toml',
+        'pact-broker/mock-server/Cargo.lock',
+        './scripts/host_aware_build.py',
+        './scripts/copy_binary.py',
+        './scripts/tilt/build_mock_server_binary.py',
+    ],
+    labels=['pact'],
+    allow_parallel=True,
+)
+
+# Build Pact mock server Docker image (Rust/Axum)
+# Binaries are built on host and copied in (matches controller pattern)
+# Use custom_build for better dependency control
+custom_build(
+    'localhost:5000/pact-mock-server',
+    'python3 scripts/tilt/docker_build_mock_server.py',
+    deps=[
+        'build_artifacts/mock-server/gcp-mock-server',
+        'build_artifacts/mock-server/aws-mock-server',
+        'build_artifacts/mock-server/azure-mock-server',
+        'pact-broker/Dockerfile',
+        './scripts/tilt/docker_build_mock_server.py',
+    ],
+    env={
+        'IMAGE_NAME': 'localhost:5000/pact-mock-server',
+    },
+    tag='tilt',
+    live_update=[
+        # Sync the updated binary into the running container
+        # Each deployment uses a different binary, so we sync all three
+        sync('build_artifacts/mock-server/gcp-mock-server', '/app/gcp-mock-server'),
+        sync('build_artifacts/mock-server/aws-mock-server', '/app/aws-mock-server'),
+        sync('build_artifacts/mock-server/azure-mock-server', '/app/azure-mock-server'),
+        # Send SIGHUP to restart the process (graceful restart)
+        # The process will pick up the new binary on restart
+        run('kill -HUP 1'),
+    ],
+    skips_local_docker=False,
+)
+
 k8s_yaml(kustomize('pact-broker/k8s'))
 
 k8s_resource(
@@ -342,6 +417,30 @@ k8s_resource(
     labels=['pact'],
     port_forwards=['9292:9292'],
     # No resource_deps - completely independent from controllers
+)
+
+k8s_resource(
+    'gcp-mock-server',
+    labels=['pact'],
+    resource_deps=['gcp-mock-server-build'],
+    # Tilt automatically substitutes image from custom_build('pact-mock-server')
+    # The image name 'pact-mock-server' in the YAML matches the custom_build name
+)
+
+k8s_resource(
+    'aws-mock-server',
+    labels=['pact'],
+    resource_deps=['aws-mock-server-build'],
+    # Tilt automatically substitutes image from custom_build('pact-mock-server')
+    # The image name 'pact-mock-server' in the YAML matches the custom_build name
+)
+
+k8s_resource(
+    'azure-mock-server',
+    labels=['pact'],
+    resource_deps=['azure-mock-server-build'],
+    # Tilt automatically substitutes image from custom_build('pact-mock-server')
+    # The image name 'pact-mock-server' in the YAML matches the custom_build name
 )
 
 # ====================

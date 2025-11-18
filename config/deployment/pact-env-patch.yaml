@@ -29,18 +29,19 @@ spec:
         # Enable Pact mode - routes cloud provider requests to Pact mock servers
         - name: PACT_MODE
           value: "true"
-        # AWS Secrets Manager endpoint - point to Pact mock server
+        # AWS Secrets Manager endpoint - point to Axum Pact mock server
         # Uses Kubernetes service name for in-cluster communication
+        # Note: For multiple providers, you may need separate mock server instances
         - name: AWS_SECRETS_MANAGER_ENDPOINT
-          value: "http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292"
-        # Azure Key Vault endpoint - point to Pact mock server
+          value: "http://axum-pact-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
+        # Azure Key Vault endpoint - point to Axum Pact mock server
         # Uses Kubernetes service name for in-cluster communication
-        # Note: If running separate Pact mock servers, update port accordingly
+        # Note: For multiple providers, you may need separate mock server instances
         - name: AZURE_KEY_VAULT_ENDPOINT
-          value: "http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292"
-        # GCP Secret Manager endpoint - point to Pact mock server
+          value: "http://axum-pact-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
+        # GCP Secret Manager endpoint - point to Axum Pact mock server
         # Uses Kubernetes service name for in-cluster communication
-        # Note: GCP SDK uses gRPC by default, so Pact mode may require HTTP wrapper implementation
+        # The Axum Pact mock server loads contracts from the broker and serves them as a mock API
         - name: GCP_SECRET_MANAGER_ENDPOINT
-          value: "http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292"
+          value: "http://axum-pact-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
 

@@ -1,0 +1,56 @@
+[package]
+name = "pact-mock-server"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+authors = ["Microscaler <info@microscaler.io>"]
+description = "Unified Pact Mock Server for GCP, AWS, and Azure Secret Manager APIs"
+license = "BSL-1.1"
+
+[lib]
+name = "pact_mock_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gcp-mock-server"
+path = "src/bin/gcp.rs"
+
+[[bin]]
+name = "aws-mock-server"
+path = "src/bin/aws.rs"
+
+[[bin]]
+name = "azure-mock-server"
+path = "src/bin/azure.rs"
+
+[dependencies]
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6.6", features = ["trace"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rustls = { version = "0.23", features = ["ring"], default-features = false }
+
+[lints.rust]
+ambiguous_negative_literals = "warn"
+missing_debug_implementations = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"
+
+[lints.clippy]
+cargo = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+

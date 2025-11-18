@@ -112,7 +112,13 @@ def main():
     controller_dir = os.getenv("CONTROLLER_DIR", ".")
     expected_ref = os.getenv("EXPECTED_REF", f"{image_name}:tilt")
     
+    # Determine Dockerfile path - check for Dockerfile or Dockerfile.dev
     dockerfile_path = os.path.join(controller_dir, "Dockerfile.dev")
+    if not os.path.exists(dockerfile_path):
+        dockerfile_path = os.path.join(controller_dir, "Dockerfile")
+    if not os.path.exists(dockerfile_path):
+        print(f"❌ Error: Dockerfile not found in {controller_dir}", file=sys.stderr)
+        sys.exit(1)
     
     # Clean up Docker resources before building to prevent "No space left on device" errors
     # This is especially important when Docker Desktop's VM disk is getting full
