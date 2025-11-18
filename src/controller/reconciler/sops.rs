@@ -64,12 +64,17 @@ pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
 pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
     let new_key = load_sops_private_key(&reconciler.client).await?;
     let mut key_guard = reconciler.sops_private_key.lock().await;
-    *key_guard = new_key;
+    *key_guard = new_key.clone();
 
-    if key_guard.is_some() {
-        info!("✅ Reloaded SOPS private key from Kubernetes secret");
+    // Update capability flag based on whether key was loaded
+    reconciler
+        .sops_capability_ready
+        .store(new_key.is_some(), std::sync::atomic::Ordering::Relaxed);
+
+    if new_key.is_some() {
+        info!("✅ SOPS capability ready - key reloaded from controller namespace");
     } else {
-        warn!("SOPS private key secret not found, SOPS decryption will be disabled");
+        warn!("⚠️  SOPS capability disabled - key removed from controller namespace");
     }
 
     Ok(())
@@ -100,6 +105,17 @@ pub async fn reload_sops_private_key_from_namespace(
                             .map_err(|e| anyhow::anyhow!("Failed to decode private key: {e}"))?;
                         let mut key_guard = reconciler.sops_private_key.lock().await;
                         *key_guard = Some(key);
+
+                        // Update capability flag if this is controller namespace
+                        let controller_namespace = std::env::var("POD_NAMESPACE")
+                            .unwrap_or_else(|_| "microscaler-system".to_string());
+                        if namespace == controller_namespace {
+                            reconciler
+                                .sops_capability_ready
+                                .store(true, std::sync::atomic::Ordering::Relaxed);
+                            info!("✅ SOPS capability restored - key added back to controller namespace");
+                        }
+
                         info!(
                             "✅ Reloaded SOPS private key from secret '{}/{}'",
                             namespace, secret_name
@@ -241,6 +257,17 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                                     "SOPS private key secret '{}/{}' changed, reloading...",
                                     secret_namespace, secret_name
                                 );
+
+                                // Update bootstrap flag if this is controller namespace
+                                let controller_namespace = std::env::var("POD_NAMESPACE")
+                                    .unwrap_or_else(|_| "microscaler-system".to_string());
+                                if secret_namespace == controller_namespace {
+                                    reconciler
+                                        .sops_capability_ready
+                                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                                    info!("✅ SOPS capability restored - key added back to controller namespace");
+                                }
+
                                 // Reload from the namespace where the secret changed
                                 if let Err(e) = reload_sops_private_key_from_namespace(
                                     &reconciler,
@@ -252,6 +279,26 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                                         "Failed to reload SOPS private key from namespace {}: {}",
                                         secret_namespace, e
                                     );
+                                } else {
+                                    // Update status for all resources in this namespace
+                                    if let Err(e) = crate::controller::reconciler::status::update_all_resources_in_namespace(
+                                        &reconciler,
+                                        secret_namespace,
+                                        true, // key_available
+                                        Some(secret_name.to_string()),
+                                    )
+                                    .await
+                                    {
+                                        warn!(
+                                            "Failed to update SOPS key status for resources in namespace {}: {}",
+                                            secret_namespace, e
+                                        );
+                                    } else {
+                                        info!(
+                                            "✅ SOPS key available in namespace '{}' - updated all SecretManagerConfig resources",
+                                            secret_namespace
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -264,13 +311,48 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                                     "SOPS private key secret '{}/{}' was deleted",
                                     secret_namespace, secret_name
                                 );
+
+                                // Update bootstrap flag if this is controller namespace
+                                let controller_namespace = std::env::var("POD_NAMESPACE")
+                                    .unwrap_or_else(|_| "microscaler-system".to_string());
+                                if secret_namespace == controller_namespace {
+                                    reconciler
+                                        .sops_capability_ready
+                                        .store(false, std::sync::atomic::Ordering::Relaxed);
+                                    warn!("⚠️  SOPS capability disabled - key removed from controller namespace");
+                                }
+
                                 // Try to reload from controller namespace as fallback
                                 if let Err(e) = reload_sops_private_key(&reconciler).await {
                                     warn!("Failed to reload SOPS private key from controller namespace: {}", e);
                                     // Clear the key if reload fails
                                     let mut key_guard = reconciler.sops_private_key.lock().await;
                                     *key_guard = None;
-                                    warn!("SOPS private key cleared, decryption will be disabled");
+                                    // Update capability flag
+                                    reconciler
+                                        .sops_capability_ready
+                                        .store(false, std::sync::atomic::Ordering::Relaxed);
+                                    warn!("⚠️  SOPS capability disabled - key cleared");
+                                }
+
+                                // Update status for all resources in this namespace
+                                if let Err(e) = crate::controller::reconciler::status::update_all_resources_in_namespace(
+                                    &reconciler,
+                                    secret_namespace,
+                                    false, // key_available
+                                    None, // secret_name (no longer exists)
+                                )
+                                .await
+                                {
+                                    warn!(
+                                        "Failed to update SOPS key status for resources in namespace {}: {}",
+                                        secret_namespace, e
+                                    );
+                                } else {
+                                    warn!(
+                                        "⚠️  SOPS key removed from namespace '{}' - updated all SecretManagerConfig resources",
+                                        secret_namespace
+                                    );
                                 }
                             }
                         }

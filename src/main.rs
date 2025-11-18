@@ -523,6 +523,22 @@ pub struct SecretManagerConfigStatus {
     /// Only set when decryption fails
     #[serde(default)]
     pub last_decryption_error: Option<String>,
+    /// Whether SOPS private key is available in the resource namespace
+    /// Updated when key secret changes (via watch)
+    /// Used to avoid redundant API calls on every reconcile
+    #[serde(default)]
+    pub sops_key_available: Option<bool>,
+    /// Name of the SOPS key secret found in the resource namespace
+    /// Example: "sops-private-key"
+    #[serde(default)]
+    pub sops_key_secret_name: Option<String>,
+    /// Namespace where the SOPS key was found
+    /// Usually the resource namespace, but could be controller namespace if fallback
+    #[serde(default)]
+    pub sops_key_namespace: Option<String>,
+    /// Last time the SOPS key availability was checked (RFC3339)
+    #[serde(default)]
+    pub sops_key_last_checked: Option<String>,
 }
 
 /// Condition represents a status condition for the resource

@@ -6,7 +6,7 @@ use crate::controller::backoff::FibonacciBackoff;
 use anyhow::Result;
 use kube::Client;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 use thiserror::Error;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -79,6 +79,10 @@ pub struct Reconciler {
     // In the future, we might want to cache clients per auth config
     // SOPS private key is wrapped in Arc<AsyncMutex> to allow hot-reloading when secret changes
     pub sops_private_key: Arc<AsyncMutex<Option<String>>>,
+    // SOPS capability bootstrap flag - tracks if SOPS is configured globally (controller namespace)
+    // Set to true once key is successfully loaded, updated by watch when key changes
+    // This separates "system readiness" from "per-file decryption" concerns
+    pub sops_capability_ready: Arc<AtomicBool>,
     // Backoff state per resource (identified by namespace/name)
     // Moved to error_policy() layer to prevent blocking watch/timer paths
     pub backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
@@ -102,9 +106,21 @@ impl Reconciler {
         let sops_private_key =
             crate::controller::reconciler::sops::load_sops_private_key(&client).await?;
 
+        // Set capability flag based on whether key was loaded
+        // This proves "SOPS is configured and ready" at bootstrap time
+        let sops_capability_ready = Arc::new(AtomicBool::new(sops_private_key.is_some()));
+
+        if sops_private_key.is_some() {
+            tracing::info!("✅ SOPS capability ready - GPG key loaded from controller namespace");
+        } else {
+            tracing::warn!("⚠️  SOPS capability not ready - no key in controller namespace");
+            tracing::warn!("   SOPS decryption will be disabled until key is added");
+        }
+
         Ok(Self {
             client,
             sops_private_key: Arc::new(AsyncMutex::new(sops_private_key)),
+            sops_capability_ready,
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
         })
     }

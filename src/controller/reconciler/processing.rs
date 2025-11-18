@@ -43,13 +43,6 @@ pub async fn process_application_files(
     let result = async move {
         let secret_prefix = service_name;
 
-        // Parse secrets from files (with SOPS decryption if needed)
-        // Get SOPS private key from Arc<AsyncMutex> for this reconciliation
-        let sops_private_key = {
-            let key_guard = reconciler.sops_private_key.lock().await;
-            key_guard.clone() // Clone the Option<String> to avoid lifetime issues
-        };
-
         // Check if any files are SOPS-encrypted to determine if we need to track decryption status
         let has_sops_files = {
             let mut has_sops = false;
@@ -66,6 +59,119 @@ pub async fn process_application_files(
                 }
             }
             has_sops
+        };
+
+        // Check SOPS capability and key availability before attempting decryption
+        // This separates "system readiness" from "data decryption" concerns
+        if has_sops_files {
+            // Check global SOPS capability (bootstrap flag)
+            if !reconciler.sops_capability_ready.load(std::sync::atomic::Ordering::Relaxed) {
+                // SOPS is not configured globally - this is a permanent failure
+                let error_msg = format!(
+                    "SOPS decryption not available: No GPG key found in controller namespace. \
+                     Add 'sops-private-key' secret to enable SOPS decryption."
+                );
+                error!("{}", error_msg);
+
+                // Update decryption status
+                if let Err(e) = update_decryption_status(
+                    reconciler,
+                    config,
+                    "PermanentFailure",
+                    Some(&error_msg),
+                )
+                .await
+                {
+                    warn!("Failed to update decryption status: {}", e);
+                }
+
+                return Err(anyhow::anyhow!("{}", error_msg));
+            }
+
+            // Check per-resource key availability (from status field)
+            let sops_key_available = config.status
+                .as_ref()
+                .and_then(|s| s.sops_key_available)
+                .unwrap_or(false);
+
+            if !sops_key_available {
+                // Key not available for this resource - check if we need to update status
+                let resource_namespace = config.metadata.namespace.as_deref().unwrap_or("default");
+
+                // If status is None, check once and update
+                if config.status.as_ref().and_then(|s| s.sops_key_available).is_none() {
+                    let (key_available, secret_name) = crate::controller::reconciler::status::check_sops_key_availability(
+                        reconciler,
+                        resource_namespace,
+                    )
+                    .await
+                    .unwrap_or((false, None));
+
+                    // Update status with key availability
+                    if let Err(e) = crate::controller::reconciler::status::update_sops_key_status(
+                        reconciler,
+                        config,
+                        key_available,
+                        secret_name,
+                    )
+                    .await
+                    {
+                        warn!("Failed to update SOPS key status: {}", e);
+                    }
+
+                    if !key_available {
+                        let error_msg = format!(
+                            "SOPS decryption not available: No GPG key found in namespace '{}'. \
+                             Status shows sops_key_available=false. Add 'sops-private-key' secret to enable SOPS decryption.",
+                            resource_namespace
+                        );
+                        error!("{}", error_msg);
+
+                        // Update decryption status
+                        if let Err(e) = update_decryption_status(
+                            reconciler,
+                            config,
+                            "PermanentFailure",
+                            Some(&error_msg),
+                        )
+                        .await
+                        {
+                            warn!("Failed to update decryption status: {}", e);
+                        }
+
+                        return Err(anyhow::anyhow!("{}", error_msg));
+                    }
+                } else {
+                    // Status shows key is not available - permanent failure
+                    let error_msg = format!(
+                        "SOPS decryption not available: No GPG key found in namespace '{}'. \
+                         Status shows sops_key_available=false. Add 'sops-private-key' secret to enable SOPS decryption.",
+                        resource_namespace
+                    );
+                    error!("{}", error_msg);
+
+                    // Update decryption status
+                    if let Err(e) = update_decryption_status(
+                        reconciler,
+                        config,
+                        "PermanentFailure",
+                        Some(&error_msg),
+                    )
+                    .await
+                    {
+                        warn!("Failed to update decryption status: {}", e);
+                    }
+
+                    return Err(anyhow::anyhow!("{}", error_msg));
+                }
+            }
+        }
+
+        // Get SOPS private key from Arc<AsyncMutex> for this reconciliation
+        // Key is available (either from controller namespace or resource namespace)
+        let sops_private_key = {
+            let key_guard = reconciler.sops_private_key.lock().await;
+            key_guard.clone() // Clone the Option<String> to avoid lifetime issues
         };
 
         // Parse secrets - handle SOPS decryption errors with classification

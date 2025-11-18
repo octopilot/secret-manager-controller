@@ -34,6 +34,9 @@ pub mod validation;
 pub use reconcile::reconcile;
 pub use sops::start_sops_key_watch;
 pub use source::start_source_watch;
+pub use status::{
+    check_sops_key_availability, update_all_resources_in_namespace, update_sops_key_status,
+};
 pub use types::{BackoffState, Reconciler, ReconcilerError, TriggerSource};
 
 // Re-export for tests
