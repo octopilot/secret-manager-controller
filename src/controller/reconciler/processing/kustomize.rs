@@ -6,7 +6,7 @@ use crate::controller::reconciler::utils::construct_secret_name;
 use crate::crd::{ProviderConfig, SecretManagerConfig};
 use crate::observability;
 use crate::provider::SecretManagerProvider;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{error, info, info_span, warn};
@@ -85,4 +85,3 @@ pub async fn process_kustomize_secrets(
     observability::metrics::increment_secrets_synced(i64::from(count));
     Ok(count)
 }
-

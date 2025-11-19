@@ -2,13 +2,13 @@
 //!
 //! Handles storing properties in config stores (Parameter Store, App Configuration) or as secrets.
 
+use crate::controller::reconciler::types::Reconciler;
 use crate::controller::reconciler::utils::construct_secret_name;
 use crate::crd::{ProviderConfig, SecretManagerConfig};
 use crate::observability;
 use crate::provider::aws::AwsParameterStore;
 use crate::provider::azure::AzureAppConfiguration;
 use crate::provider::{ConfigStoreProvider, SecretManagerProvider};
-use crate::controller::reconciler::types::Reconciler;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -94,10 +94,7 @@ pub async fn store_properties(
                             config_count += 1;
                             if was_updated {
                                 config_updated_count += 1;
-                                info!(
-                                    "Updated config {} from git (GitOps source of truth)",
-                                    key
-                                );
+                                info!("Updated config {} from git (GitOps source of truth)", key);
                             }
                         }
                         Err(e) => {
@@ -130,10 +127,7 @@ pub async fn store_properties(
                             config_count += 1;
                             if was_updated {
                                 config_updated_count += 1;
-                                info!(
-                                    "Updated config {} from git (GitOps source of truth)",
-                                    key
-                                );
+                                info!("Updated config {} from git (GitOps source of truth)", key);
                             }
                         }
                         Err(e) => {
@@ -180,4 +174,3 @@ pub async fn store_properties(
         }
     }
 }
-

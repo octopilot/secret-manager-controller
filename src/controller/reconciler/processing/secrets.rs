@@ -7,7 +7,7 @@ use crate::controller::reconciler::utils::construct_secret_name;
 use crate::crd::SecretManagerConfig;
 use crate::observability;
 use crate::provider::SecretManagerProvider;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tracing::{debug, error, info, warn};
 
 /// Process and store secrets (enabled and disabled)
@@ -33,7 +33,10 @@ pub async fn store_secrets(
 
         if entry.enabled {
             // Enabled secret: create/update as normal, and ensure it's enabled
-            match provider.create_or_update_secret(&secret_name, &entry.value).await {
+            match provider
+                .create_or_update_secret(&secret_name, &entry.value)
+                .await
+            {
                 Ok(was_updated) => {
                     count += 1;
                     observability::metrics::increment_secrets_published_total(provider_name, 1);
@@ -54,7 +57,10 @@ pub async fn store_secrets(
 
             // Ensure secret is enabled (in case it was previously disabled)
             if let Err(e) = provider.enable_secret(&secret_name).await {
-                warn!("Failed to enable secret {} (may have been disabled): {}", secret_name, e);
+                warn!(
+                    "Failed to enable secret {} (may have been disabled): {}",
+                    secret_name, e
+                );
                 // Don't fail the entire operation, just log a warning
             } else {
                 enabled_count += 1;
@@ -63,19 +69,28 @@ pub async fn store_secrets(
             // Disabled secret: update value if changed, then disable
             // First, check if secret exists and update value if needed
             let current_value = provider.get_secret_value(&secret_name).await?;
-            let value_changed = current_value.as_ref().map(|v| v != &entry.value).unwrap_or(true);
+            let value_changed = current_value
+                .as_ref()
+                .map(|v| v != &entry.value)
+                .unwrap_or(true);
 
             if value_changed {
                 // Update the value even though it's disabled
                 // This handles the case: #FOO_SECRET=baz (disabled but value updated)
-                match provider.create_or_update_secret(&secret_name, &entry.value).await {
+                match provider
+                    .create_or_update_secret(&secret_name, &entry.value)
+                    .await
+                {
                     Ok(_) => {
                         debug!("Updated disabled secret {} value from git", secret_name);
                     }
                     Err(e) => {
                         // If secret doesn't exist, that's okay - we'll just disable it when it's created later
                         if !e.to_string().contains("not found") && !e.to_string().contains("404") {
-                            warn!("Failed to update disabled secret {} value: {}", secret_name, e);
+                            warn!(
+                                "Failed to update disabled secret {} value: {}",
+                                secret_name, e
+                            );
                         }
                     }
                 }
@@ -109,13 +124,18 @@ pub async fn store_secrets(
     }
 
     if disabled_count > 0 {
-        info!("Disabled {} secret(s) (commented out in git)", disabled_count);
+        info!(
+            "Disabled {} secret(s) (commented out in git)",
+            disabled_count
+        );
     }
 
     if enabled_count > 0 {
-        info!("Re-enabled {} secret(s) (uncommented in git)", enabled_count);
+        info!(
+            "Re-enabled {} secret(s) (uncommented in git)",
+            enabled_count
+        );
     }
 
     Ok(count)
 }
-
