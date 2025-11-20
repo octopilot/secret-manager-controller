@@ -11,13 +11,7 @@ FROM debian:bookworm-slim
 # curl: Required for downloading kustomize and sops
 # gnupg: Required for GPG key handling in SOPS decryption
 # ca-certificates: Required for HTTPS connections
-# Note: GPG signature issues can occur in some Docker environments.
-# We work around this by updating GPG keys first, then installing packages.
-RUN apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/* && \
-    # Update GPG keys for Debian repositories
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 6ED0E7B82643E131 && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
