@@ -4,6 +4,7 @@
 # The individual mock server Dockerfiles then just copy their specific binaries onto this base
 
 ARG TARGETPLATFORM=linux/amd64
+ARG TARGETARCH
 FROM debian:bookworm-slim
 
 # Create non-root user for all pact mock servers

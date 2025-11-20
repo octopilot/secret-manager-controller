@@ -146,19 +146,7 @@ jobs:
             ${{ matrix.image.dockerhub_name }}:latest
           cache-from: type=registry,ref=${{ matrix.image.ghcr_name }}:buildcache
           cache-to: type=registry,ref=${{ matrix.image.ghcr_name }}:buildcache,mode=max
-          platforms: linux/amd64
-      
-      - name: Set package visibility to public
-        if: steps.build.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 scripts/set_package_visibility.py \
-            "${{ matrix.image.ghcr_name }}:${{ steps.version.outputs.version }}" \
-            --org "${{ env.REGISTRY_ORG }}" \
-            --gh-token "${{ secrets.GITHUB_TOKEN }}" \
-            --max-attempts 30 \
-            --delay 2 
+          platforms: linux/amd64,linux/arm64
     
       - name: Build summary
         if: always()

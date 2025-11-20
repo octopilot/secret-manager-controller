@@ -4,6 +4,7 @@
 # The controller Dockerfiles then just copy the binary onto this base image
 
 ARG TARGETPLATFORM=linux/amd64
+ARG TARGETARCH
 FROM debian:bookworm-slim
 
 # Version declarations
@@ -23,16 +24,20 @@ RUN apt-get update && \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-    # Install kustomize
-RUN curl -Lf "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" -o /tmp/kustomize.tar.gz && \
+# Install kustomize
+RUN ARCH="${TARGETARCH:-amd64}" && \
+    curl -Lf "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_${ARCH}.tar.gz" -o /tmp/kustomize.tar.gz && \
     tar -xz -f /tmp/kustomize.tar.gz -C /usr/local/bin && \
     rm /tmp/kustomize.tar.gz && \
     chmod +x /usr/local/bin/kustomize
-    # Install sops
-RUN curl -Lf "https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops && \
-    chmod +x /usr/local/bin/sops && \
-    # Verify installations
-    kustomize version && \
+
+# Install sops
+RUN ARCH="${TARGETARCH:-amd64}" && \
+    curl -Lf "https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${ARCH}" -o /usr/local/bin/sops && \
+    chmod +x /usr/local/bin/sops
+
+# Verify installations
+RUN kustomize version && \
     sops --version
 
 # Create app directory with proper permissions
