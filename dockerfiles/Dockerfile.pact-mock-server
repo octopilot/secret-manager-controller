@@ -2,7 +2,7 @@
 # Uses shared base image with all common setup
 # Binaries are cross-compiled on host and copied in (matches controller pattern)
 
-FROM ghcr.io/microscaler/pact-mock-server-base-image:latest
+FROM microscaler/pact-mock-server-base-image:latest
 
 # Base image already has:
 # - Non-root user (pact)

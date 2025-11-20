@@ -5,7 +5,7 @@
 # Stage 1: Build the Rust binary
 # Uses pre-built Rust builder base image with all build dependencies
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM ghcr.io/microscaler/rust-builder-base-image:latest AS builder
+FROM --platform=$BUILDPLATFORM microscaler/rust-builder-base-image:latest AS builder
 
 # Build arguments for build.rs
 ARG BUILD_GIT_HASH=unknown
