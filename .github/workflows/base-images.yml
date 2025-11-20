@@ -69,20 +69,20 @@ jobs:
         with:
           fetch-depth: 2  # Need depth for change detection
       
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
       - name: Install GH CLI
         uses: dev-hanz-ops/install-gh-cli-action@v0.2.1
         with:
           gh-cli-version: 2.65.0
-    
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
     
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.TOKEN_GITHUB }}
+          password: ${{ secrets.GITHUB_TOKEN }}
     
       - name: Check for changes
         id: check-changes
@@ -122,26 +122,40 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "📌 Using version: ${VERSION}"
     
-      - name: Build base image
+      - name: Build and push base image
         id: build
         if: steps.check-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch' || github.event.inputs.force == 'true'
-        run: |
-          python3 scripts/build_base_image.py \
-            "${{ matrix.image.name }}" \
-            --version "${{ steps.version.outputs.version }}" \
-            --dockerfile "${{ matrix.image.dockerfile }}"
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          push: true
+          tags: |
+            ${{ matrix.image.full_name }}:${{ steps.version.outputs.version }}
+            ${{ matrix.image.full_name }}:latest
+          cache-from: type=registry,ref=${{ matrix.image.full_name }}:buildcache
+          cache-to: type=registry,ref=${{ matrix.image.full_name }}:buildcache,mode=max
+          platforms: linux/amd64
       
-      - name: Make package public
+      - name: Set package visibility to public
         if: steps.build.outcome == 'success'
         env:
-          GH_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Make the package public so it can be pulled without authentication
-          # Extract package name from full image name (e.g., ghcr.io/microscaler/controller-base-image -> controller-base-image)
+          # Extract package name from full image name
           FULL_NAME="${{ matrix.image.full_name }}"
           PACKAGE_NAME="${FULL_NAME#ghcr.io/${{ env.REGISTRY_ORG }}/}"
           
-          gh api -X PATCH "/orgs/${{ env.REGISTRY_ORG }}/packages/container/${PACKAGE_NAME}" -f visibility=public
+          echo "📦 Setting package visibility to public: ${PACKAGE_NAME}"
+          
+          # Use GitHub API to set package visibility to public
+          # Note: For organization packages, use /orgs/{org}/packages/container/{package-name}
+          # For user packages, use /user/packages/container/{package-name}
+          gh api \
+            --method PATCH \
+            -H "Accept: application/vnd.github.v3+json" \
+            "/orgs/${{ env.REGISTRY_ORG }}/packages/container/${PACKAGE_NAME}" \
+            -f visibility=public 
     
       - name: Build summary
         if: always()

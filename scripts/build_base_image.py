@@ -176,27 +176,9 @@ def build_image(
             # Clean up
             run_command(["docker", "rm", container_id], check=False)
     
-    # Push to registry (if not in dry-run mode)
-    if not dry_run:
-        print(f"📤 Pushing image to registry...")
-        push_result = run_command(
-            ["docker", "push", tagged_image],
-            check=False
-        )
-        if push_result.returncode != 0:
-            print("❌ Error: Failed to push image", file=sys.stderr)
-            sys.exit(1)
-        
-        latest_result = run_command(
-            ["docker", "push", f"{full_image_name}:latest"],
-            check=False
-        )
-        if latest_result.returncode != 0:
-            print("⚠️  Warning: Failed to push 'latest' tag", file=sys.stderr)
-        
-        print("✅ Image pushed successfully")
-    else:
-        print("🔍 Dry-run mode: Skipping push")
+    # Note: Push is now handled by docker/build-push-action in GitHub Actions
+    # This script only builds the image locally
+    print("✅ Image built successfully (push handled by GitHub Actions)")
     
     print(f"✅ Base image build complete: {tagged_image}")
 
