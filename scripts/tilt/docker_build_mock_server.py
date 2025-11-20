@@ -30,11 +30,16 @@ def run_command(cmd, check=True, shell=False):
 
 def main():
     """Main build function."""
-    image_name = os.getenv("IMAGE_NAME", "localhost:5000/axum-pact-mock-server")
-    tag = os.getenv("TAG", "tilt")
+    # Tilt provides EXPECTED_REF which is the full image reference it expects
+    # This includes the registry, image name, and tag
+    expected_ref = os.getenv("EXPECTED_REF")
+    if not expected_ref:
+        # Fallback for manual execution
+        image_name = os.getenv("IMAGE_NAME", "localhost:5000/pact-mock-server")
+        tag = os.getenv("TAG", "tilt")
+        expected_ref = f"{image_name}:{tag}"
     
-    # Full image name with tag
-    tagged_image = f"{image_name}:{tag}"
+    tagged_image = expected_ref
     
     # Verify binaries exist
     binary_paths = [
@@ -76,7 +81,7 @@ def main():
         sys.exit(1)
     
     # Push to registry (for Kind cluster access)
-    if image_name.startswith("localhost:5000"):
+    if tagged_image.startswith("localhost:5000"):
         print(f"📤 Pushing image to registry: {tagged_image}")
         push_result = run_command(["docker", "push", tagged_image], check=False)
         if push_result.returncode != 0:

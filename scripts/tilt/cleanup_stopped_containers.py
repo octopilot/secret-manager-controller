@@ -125,6 +125,7 @@ def cleanup_unused_images():
     - Base images (rust:alpine, debian, etc.)
     - Pact broker images
     - Other dependencies we download
+    - Our published base images (docker.io/microscaler/*, ghcr.io/microscaler/*)
     This causes re-downloads and hits Docker rate limits.
     
     Tilt-specific images are handled separately by cleanup_old_tilt_images().
@@ -415,11 +416,20 @@ def cleanup_old_tilt_images():
     print("🏷️  Removing old Tilt images (keeping last 2 per service)...")
     
     # CRITICAL: List of infrastructure images that must NEVER be removed
-    # These are used by Kind clusters and local registries
+    # These are used by Kind clusters, local registries, and base images
     protected_images = {
         "kindest/node",
         "registry:",
         "registry/registry:",
+        "docker.io/microscaler/rust-builder-base-image",
+        "docker.io/microscaler/secret-manager-controller-base-image",
+        "docker.io/microscaler/pact-mock-server-base-image",
+        "ghcr.io/microscaler/rust-builder-base-image",
+        "ghcr.io/microscaler/secret-manager-controller-base-image",
+        "ghcr.io/microscaler/pact-mock-server-base-image",
+        "microscaler/rust-builder-base-image",
+        "microscaler/secret-manager-controller-base-image",
+        "microscaler/pact-mock-server-base-image",
     }
     
     # Get all images with tilt-* tags (all Tilt services)
@@ -462,13 +472,29 @@ def cleanup_old_tilt_images():
     for repo, images in repos.items():
         repo_tag_prefix = f"{repo}:"
         
-        # CRITICAL: Never remove infrastructure images
+        # CRITICAL: Never remove infrastructure images or base images
         is_protected = False
         for protected_pattern in protected_images:
             if protected_pattern in repo_tag_prefix:
                 is_protected = True
-                print(f"    🔒 Protected (infrastructure): {repo}")
+                print(f"    🔒 Protected (infrastructure/base image): {repo}")
                 break
+        
+        # Also protect base images by repository name (regardless of tag)
+        base_image_repos = [
+            "docker.io/microscaler/rust-builder-base-image",
+            "docker.io/microscaler/secret-manager-controller-base-image",
+            "docker.io/microscaler/pact-mock-server-base-image",
+            "ghcr.io/microscaler/rust-builder-base-image",
+            "ghcr.io/microscaler/secret-manager-controller-base-image",
+            "ghcr.io/microscaler/pact-mock-server-base-image",
+            "microscaler/rust-builder-base-image",
+            "microscaler/secret-manager-controller-base-image",
+            "microscaler/pact-mock-server-base-image",
+        ]
+        if repo in base_image_repos:
+            is_protected = True
+            print(f"    🔒 Protected (base image): {repo}")
         
         if is_protected:
             kept_count += len(images)

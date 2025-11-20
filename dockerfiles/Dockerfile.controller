@@ -5,7 +5,7 @@
 # Stage 1: Build the Rust binary
 # Uses pre-built Rust builder base image with all build dependencies
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM microscaler/rust-builder-base-image:latest AS builder
+FROM --platform=$BUILDPLATFORM docker.io/microscaler/rust-builder-base-image:latest AS builder
 
 # Build arguments for build.rs
 ARG BUILD_GIT_HASH=unknown
@@ -42,7 +42,7 @@ RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
 
 # Stage 2: Runtime image
 # Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
-FROM ghcr.io/microscaler/secret-manager-controller-base-image:latest
+FROM docker.io/microscaler/secret-manager-controller-base-image:latest
 
 # Base image already has:
 # - git, curl, gnupg, ca-certificates

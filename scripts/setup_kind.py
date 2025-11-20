@@ -126,10 +126,18 @@ def setup_registry():
     # No registry found, create a new one
     log_info("Creating local Docker registry...")
     # Bind to 127.0.0.1 only to avoid conflicts with macOS Control Center on port 5000
+    # Use a named volume for persistent storage (survives container restarts)
+    # This prevents losing images when the registry container is recreated
+    volume_name = f"{REGISTRY_NAME}-data"
     run_command(
-        f"docker run -d --restart=always -p 127.0.0.1:{REGISTRY_PORT}:5000 --name {REGISTRY_NAME} registry:2"
+        f"docker volume create {volume_name}",
+        check=False  # Volume may already exist
     )
-    log_info(f"✅ Created registry '{REGISTRY_NAME}' on port {REGISTRY_PORT}")
+    run_command(
+        f"docker run -d --restart=always -p 127.0.0.1:{REGISTRY_PORT}:5000 "
+        f"-v {volume_name}:/var/lib/registry --name {REGISTRY_NAME} registry:2"
+    )
+    log_info(f"✅ Created registry '{REGISTRY_NAME}' on port {REGISTRY_PORT} with persistent volume '{volume_name}'")
     return REGISTRY_NAME
 
 

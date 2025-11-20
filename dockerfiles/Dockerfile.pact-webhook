@@ -2,7 +2,7 @@
 # Uses shared base image with all common setup
 # Binary is cross-compiled on host and copied in (matches controller pattern)
 
-FROM microscaler/pact-mock-server-base-image:latest
+FROM docker.io/microscaler/pact-mock-server-base-image:latest
 
 # Base image already has:
 # - Non-root user (pact)
@@ -12,16 +12,21 @@ FROM microscaler/pact-mock-server-base-image:latest
 
 # WORKDIR is already set to /app in base image
 
+# Switch to root to copy and set permissions
+USER root
+
 # Copy pre-built webhook binary from build_artifacts (x86_64 Linux musl target)
 # Note: Binary must exist before Docker build (ensured by Tilt resource_deps)
 # Build context is root, so paths are relative to that
 COPY ./build_artifacts/mock-server/webhook /app/webhook
 
-# Verify file exists and set permissions (fail fast if file is missing)
+# Verify file exists, set permissions and ownership (fail fast if file is missing)
 RUN test -f /app/webhook && \
-    chmod +x /app/webhook
+    chmod +x /app/webhook && \
+    chown pact:pact /app/webhook
 
-# Base image already has proper permissions and user setup
+# Switch back to non-root user
+USER pact
 
 # Run webhook server
 CMD ["/app/webhook"]

@@ -4,7 +4,7 @@
 # Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
 
 ARG TARGETPLATFORM=linux/amd64
-FROM microscaler/secret-manager-controller-base-image:latest
+FROM docker.io/microscaler/secret-manager-controller-base-image:latest
 
 # Base image already has:
 # - git, curl, gnupg, ca-certificates

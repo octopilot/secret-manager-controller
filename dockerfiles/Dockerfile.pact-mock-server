@@ -2,7 +2,7 @@
 # Uses shared base image with all common setup
 # Binaries are cross-compiled on host and copied in (matches controller pattern)
 
-FROM microscaler/pact-mock-server-base-image:latest
+FROM docker.io/microscaler/pact-mock-server-base-image:latest
 
 # Base image already has:
 # - Non-root user (pact)
@@ -11,6 +11,9 @@ FROM microscaler/pact-mock-server-base-image:latest
 # - Exposed ports (1234, 8080)
 
 # WORKDIR is already set to /app in base image
+
+# Switch to root to copy and set permissions
+USER root
 
 # Copy pre-built binaries from build_artifacts (x86_64 Linux musl target)
 # Note: Binaries must exist before Docker build (ensured by Tilt resource_deps)
@@ -22,14 +25,16 @@ COPY ./build_artifacts/mock-server/gcp-mock-server \
      ./build_artifacts/mock-server/webhook \
      /app/
 
-# Verify files exist and set permissions (fail fast if files are missing)
+# Verify files exist, set permissions and ownership (fail fast if files are missing)
 RUN test -f /app/gcp-mock-server && \
     test -f /app/aws-mock-server && \
     test -f /app/azure-mock-server && \
     test -f /app/webhook && \
-    chmod +x /app/gcp-mock-server /app/aws-mock-server /app/azure-mock-server /app/webhook
+    chmod +x /app/gcp-mock-server /app/aws-mock-server /app/azure-mock-server /app/webhook && \
+    chown -R pact:pact /app
 
-# Base image already has proper permissions and user setup
+# Switch back to non-root user
+USER pact
 
 # Default command (can be overridden in deployment)
 # Each deployment will specify which binary to run
