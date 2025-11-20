@@ -48,6 +48,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Required for making packages public via GitHub API
+      administration: write
     
     strategy:
       matrix:
@@ -68,6 +70,11 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 2  # Need depth for change detection
+      
+      - name: Set up GitHub CLI
+        uses: cli/cli-action@v2
+        with:
+          version: latest
     
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -125,6 +132,25 @@ jobs:
             "${{ matrix.image.name }}" \
             --version "${{ steps.version.outputs.version }}" \
             --dockerfile "${{ matrix.image.dockerfile }}"
+      
+      - name: Make package public
+        if: steps.build.outcome == 'success'
+        run: |
+          # Make the package public so it can be pulled without authentication
+          # Extract package name from full image name (e.g., ghcr.io/microscaler/controller-base-image -> controller-base-image)
+          FULL_NAME="${{ matrix.image.full_name }}"
+          PACKAGE_NAME="${FULL_NAME#ghcr.io/${{ env.REGISTRY_ORG }}/}"
+          
+          echo "📦 Making package public: ${PACKAGE_NAME}"
+          
+          # Use GitHub API to set package visibility to public
+          gh api \
+            -X PATCH \
+            "/orgs/${{ env.REGISTRY_ORG }}/packages/container/${PACKAGE_NAME}" \
+            -f visibility=public \
+            || echo "⚠️  Warning: Failed to make package public. You may need to:"
+          echo "   1. Go to https://github.com/orgs/${{ env.REGISTRY_ORG }}/packages/container/${PACKAGE_NAME}/settings"
+          echo "   2. Change visibility to 'Public'"
     
       - name: Build summary
         if: always()
