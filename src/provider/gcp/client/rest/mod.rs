@@ -24,8 +24,6 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use tracing::{debug, info, warn};
 
-use super::common::format_secret_path;
-
 /// GCP Secret Manager REST client
 pub struct SecretManagerREST {
     http_client: Client,

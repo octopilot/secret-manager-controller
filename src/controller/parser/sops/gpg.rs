@@ -2,7 +2,6 @@
 //!
 //! Handles importing GPG private keys into temporary keyrings for SOPS decryption.
 
-use crate::controller::parser::sops::error::SopsDecryptionError;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Stdio;

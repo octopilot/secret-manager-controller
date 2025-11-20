@@ -194,6 +194,62 @@ pub async fn reconcile(
         warn!("Failed to update status to Started: {}", e);
     }
 
+    // Set up notifications if configured
+    // Note: FluxCD and ArgoCD notifications are configured independently:
+    // - FluxCD shops only need fluxcd.providerRef (for GitRepository sources)
+    // - ArgoCD shops only need argocd (for Application sources)
+    // - Both can be configured if using both GitOps tools
+    if let Some(notifications) = &config.spec.notifications {
+        // FluxCD: Ensure Alert CRD exists for GitRepository sources
+        // Only set up if fluxcd.providerRef is configured AND source is GitRepository
+        if let Some(fluxcd_config) = &notifications.fluxcd {
+            if config.spec.source_ref.kind == "GitRepository" {
+                if let Err(e) = crate::controller::reconciler::notifications::ensure_fluxcd_alert(
+                    &ctx,
+                    &config,
+                    &fluxcd_config.provider_ref,
+                )
+                .await
+                {
+                    warn!("Failed to set up FluxCD notification alert: {}", e);
+                    // Don't fail reconciliation if notification setup fails
+                }
+            } else {
+                // fluxcd configured but source is not GitRepository - skip silently
+                // This allows users to have the same config template for both GitOps tools
+                debug!(
+                    "Skipping FluxCD notification setup - fluxcd configured but source is {} (not GitRepository)",
+                    config.spec.source_ref.kind
+                );
+            }
+        }
+
+        // ArgoCD: Add annotations to Application resource
+        // Only set up if argocd is configured AND source is Application
+        if let Some(argocd_config) = &notifications.argocd {
+            if config.spec.source_ref.kind == "Application" {
+                if let Err(e) =
+                    crate::controller::reconciler::notifications::send_argocd_notification(
+                        &ctx,
+                        &config.spec.source_ref,
+                        &argocd_config.subscriptions,
+                    )
+                    .await
+                {
+                    warn!("Failed to set up ArgoCD notification annotations: {}", e);
+                    // Don't fail reconciliation if notification setup fails
+                }
+            } else {
+                // argocd configured but source is not Application - skip silently
+                // This allows users to have the same config template for both GitOps tools
+                debug!(
+                    "Skipping ArgoCD notification setup - argocd configured but source is {} (not Application)",
+                    config.spec.source_ref.kind
+                );
+            }
+        }
+    }
+
     // Validate and log SecretManagerConfig resource first
     debug!(
         "Reconciling SecretManagerConfig: {} in namespace: {}",

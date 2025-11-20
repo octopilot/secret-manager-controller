@@ -3,10 +3,9 @@
 //! Handles updating SOPS decryption status.
 
 use crate::controller::reconciler::types::Reconciler;
-use crate::crd::{SecretManagerConfig, SecretManagerConfigStatus};
+use crate::crd::SecretManagerConfig;
 use anyhow::Result;
 use kube::api::PatchParams;
-use kube::Api;
 use tracing::debug;
 
 /// Update SOPS decryption status

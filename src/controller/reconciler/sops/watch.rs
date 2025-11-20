@@ -7,7 +7,7 @@ use crate::controller::reconciler::sops::rbac::verify_rbac_for_sops_watch;
 use crate::controller::reconciler::types::Reconciler;
 use futures::{pin_mut, StreamExt};
 use k8s_openapi::api::core::v1::Secret;
-use kube::{Api, Client};
+use kube::Api;
 use kube_runtime::watcher;
 use std::sync::Arc;
 use tracing::{error, info, warn};

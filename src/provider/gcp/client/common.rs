@@ -68,6 +68,7 @@ pub fn format_secret_path(project_id: &str, secret_name: &str) -> String {
 }
 
 /// Formats a GCP secret version path
+#[allow(dead_code)]
 pub fn format_secret_version_path(project_id: &str, secret_name: &str) -> String {
     format!(
         "projects/{}/secrets/{}/versions/latest",

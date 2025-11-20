@@ -21,6 +21,7 @@
 //! 6. Update status
 
 pub mod artifact;
+pub mod notifications;
 pub mod processing;
 pub mod reconcile;
 pub mod sops;

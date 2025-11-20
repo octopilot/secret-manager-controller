@@ -10,4 +10,5 @@ resources:
   - mock-server-gcp.yaml
   - mock-server-aws.yaml
   - mock-server-azure.yaml
+  - mock-webhook.yaml
 

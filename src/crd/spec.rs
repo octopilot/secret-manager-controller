@@ -102,6 +102,11 @@ pub struct SecretManagerConfigSpec {
     /// Default: false (Git pulls enabled)
     #[serde(default = "default_false")]
     pub suspend_git_pulls: bool,
+    /// Notification configuration for drift detection alerts
+    /// Supports both FluxCD (via Provider reference) and ArgoCD (via Application annotations)
+    /// When drift is detected, notifications are sent according to this configuration
+    #[serde(default)]
+    pub notifications: Option<crate::crd::NotificationConfig>,
 }
 
 /// Default value for source kind

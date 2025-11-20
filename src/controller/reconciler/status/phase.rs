@@ -7,7 +7,6 @@ use crate::controller::reconciler::validation::parse_kubernetes_duration;
 use crate::crd::{Condition, SecretManagerConfig, SecretManagerConfigStatus};
 use anyhow::Result;
 use kube::api::PatchParams;
-use kube::Api;
 use tracing::debug;
 
 /// Update status phase and description

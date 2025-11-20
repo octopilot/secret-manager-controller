@@ -310,7 +310,7 @@ pub async fn process_application_files(
         let publish_start = Instant::now();
 
         // Store secrets using extracted module
-        let secret_count = store_secrets(
+        let (secret_count, _drift_detected) = store_secrets(
             provider,
             config,
             &parsed_secrets,
@@ -318,6 +318,7 @@ pub async fn process_application_files(
             provider_name,
         )
         .await?;
+        // Note: drift_detected is returned for future notification support
 
         // Record successful publish metrics and span
         publish_span.record(

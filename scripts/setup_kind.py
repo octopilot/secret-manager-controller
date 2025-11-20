@@ -133,17 +133,56 @@ def setup_registry():
     return REGISTRY_NAME
 
 
+def get_registry_ip():
+    """Get the registry container's IP address on the kind network."""
+    # Get the registry container's IP on the kind network
+    result = run_command(
+        f"docker inspect {REGISTRY_NAME} --format='{{{{range .NetworkSettings.Networks}}}}{{{{.IPAddress}}}}{{{{end}}}}'",
+        check=False,
+        capture_output=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        # Try to find IP on kind network specifically
+        result = run_command(
+            f"docker inspect {REGISTRY_NAME} --format='{{{{range $key, $value := .NetworkSettings.Networks}}}}{{{{if eq $key \"kind\"}}}}{{{{.IPAddress}}}}{{{{end}}}}{{{{end}}}}'",
+            check=False,
+            capture_output=True
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    
+    # Fallback: try to get any IP
+    result = run_command(
+        f"docker inspect {REGISTRY_NAME} --format='{{{{.NetworkSettings.IPAddress}}}}'",
+        check=False,
+        capture_output=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    
+    return None
+
+
 def configure_containerd_registry():
     """Configure containerd on all nodes to use local registry."""
     # Get all node names
     result = run_command("kubectl get nodes -o jsonpath='{.items[*].metadata.name}'", check=True)
     nodes = result.stdout.strip().split()
     
+    # Get registry IP address on kind network
+    registry_ip = get_registry_ip()
+    if not registry_ip:
+        log_warn("Could not determine registry IP address, using container name")
+        registry_endpoint = f"http://{REGISTRY_NAME}:5000"
+    else:
+        log_info(f"Using registry IP: {registry_ip}")
+        registry_endpoint = f"http://{registry_ip}:5000"
+    
     # Containerd config patch to add registry mirror
-    # This will be appended to the config file
-    containerd_patch = """
+    # Use IP address for reliable connectivity (avoids DNS resolution issues)
+    containerd_patch = f"""
 [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
-  endpoint = ["http://secret-manager-controller-registry:5000"]
+  endpoint = ["{registry_endpoint}"]
 """
     
     for node in nodes:
@@ -182,7 +221,7 @@ def configure_containerd_registry():
         # Wait a moment for containerd to restart
         time.sleep(2)
         
-        log_info(f"✅ Configured registry mirror on {node}")
+        log_info(f"✅ Configured registry mirror on {node} (endpoint: {registry_endpoint})")
 
 
 def create_pvc():

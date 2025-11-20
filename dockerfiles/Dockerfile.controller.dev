@@ -1,33 +1,19 @@
 # Development Dockerfile for Secret Manager Controller (Tilt)
 # Binary is cross-compiled on host (Apple Silicon -> x86_64 Linux) and copied in
 # This matches PriceWhisperer's pattern
+# Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
 
 ARG TARGETPLATFORM=linux/amd64
-FROM debian:bookworm-slim
+FROM gchr.io/microscaler/secret-manager-controller-base-image:latest
 
-# Install runtime dependencies
-# git: Required for ArgoCD support (cloning repositories)
-# kustomize: Required for Kustomize Build Mode
-# sops: Required for SOPS file decryption
-# gnupg: Required for GPG key handling in SOPS decryption
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    git \
-    curl \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/* && \
-    # Install kustomize
-    KUSTOMIZE_VERSION=5.8.0 && \
-    curl -L "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | \
-    tar -xz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/kustomize && \
-    # Install sops
-    SOPS_VERSION=3.8.1 && \
-    curl -L "https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops && \
-    chmod +x /usr/local/bin/sops
+# Base image already has:
+# - git, curl, gnupg, ca-certificates
+# - kustomize (v5.8.0)
+# - sops (v3.8.1)
+# - /app directory with proper permissions
+# - Environment variables (RUST_BACKTRACE, RUST_LOG)
 
-# Create app directory with proper permissions for live updates
-WORKDIR /app
+# WORKDIR is already set to /app in base image
 
 # Copy pre-built binaries from build_artifacts (x86_64 Linux musl target)
 # Note: Binary must exist before Docker build (ensured by Tilt resource_deps)

@@ -29,7 +29,6 @@ pub async fn get_flux_git_repository(
     // Use Kubernetes API to get GitRepository
     // GitRepository is a CRD from source.toolkit.fluxcd.io/v1beta2
     use kube::api::ApiResource;
-    use kube::core::DynamicObject;
 
     let span = info_span!(
         "gitrepository.get_artifact",

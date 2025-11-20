@@ -1,0 +1,31 @@
+# Base image for Pact Mock Servers (GCP, AWS, Azure, Webhook)
+# All pact mock servers share this base image since they're all Rust/Axum statically linked binaries
+# This base image is built once and published to ghcr.io/microscaler/pact-mock-server-base-image
+# The individual mock server Dockerfiles then just copy their specific binaries onto this base
+
+ARG TARGETPLATFORM=linux/amd64
+FROM debian:bookworm-slim
+
+# Create non-root user for all pact mock servers
+RUN groupadd -g 1001 pact && \
+    useradd -u 1001 -g 1001 -m -s /bin/bash pact
+
+# Note: No runtime dependencies needed - Rust binaries are statically linked (musl target)
+# ca-certificates are bundled in the statically linked binaries if needed
+
+# Create app directory with proper permissions for live updates
+WORKDIR /app
+RUN chmod -R 777 /app
+
+# Switch to non-root user
+USER pact
+
+# Expose common ports (individual services will expose their specific ports)
+# 1234: GCP/AWS/Azure mock servers
+# 8080: Webhook server
+EXPOSE 1234 8080
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+

@@ -1,0 +1,40 @@
+# Rust Builder Base Image
+# Contains all build dependencies for compiling Rust projects
+# This base image is built once and published to ghcr.io/microscaler/rust-builder-base-image
+# The controller production Dockerfile then uses this for the builder stage
+
+ARG BUILDPLATFORM=linux/amd64
+FROM --platform=$BUILDPLATFORM rust:1.82-bookworm
+
+# Install build dependencies
+# pkg-config: Required for finding system libraries
+# libssl-dev: Required for OpenSSL (used by many Rust crates)
+# git: Required for git dependencies in Cargo.toml
+# curl: Required for downloading dependencies
+# Note: GPG signature issues can occur in some Docker environments.
+# We work around this by updating GPG keys first, then installing packages.
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/* && \
+    # Update GPG keys for Debian repositories
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 6ED0E7B82643E131 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure git to fetch full history for git dependencies
+# This ensures Cargo can access branches and commits from git dependencies
+# Required when using git dependencies with branches or specific commits
+RUN git config --global --add safe.directory '*' && \
+    git config --global init.defaultBranch main
+
+# Set working directory
+WORKDIR /build
+
+# Set build environment
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV RUST_BACKTRACE=1
+

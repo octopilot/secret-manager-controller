@@ -246,6 +246,7 @@ pub fn create_gcp_test_config(
             trigger_update: true,
             suspend: false,
             suspend_git_pulls: false,
+            notifications: None,
         },
         status: None,
     }
@@ -290,6 +291,7 @@ pub fn create_aws_test_config(
             trigger_update: true,
             suspend: false,
             suspend_git_pulls: false,
+            notifications: None,
         },
         status: None,
     }
@@ -334,6 +336,7 @@ pub fn create_azure_test_config(
             trigger_update: true,
             suspend: false,
             suspend_git_pulls: false,
+            notifications: None,
         },
         status: None,
     }

@@ -62,6 +62,7 @@ mod tests {
                 trigger_update: true,
                 suspend: false,
                 suspend_git_pulls: false,
+                notifications: None,
             },
             status: None,
         }

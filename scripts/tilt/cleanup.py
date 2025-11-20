@@ -60,7 +60,10 @@ def main():
         check=False
     )
     
-    # Force remove dangling images
+    # Remove dangling images (unused intermediate layers only)
+    # NOTE: This only removes truly dangling images, not images referenced by
+    # other images (like kindest/node). Docker is smart enough to preserve
+    # shared layers.
     run_command(["docker", "image", "prune", "-f"], check=False)
     
     print("✅ Cleanup complete")

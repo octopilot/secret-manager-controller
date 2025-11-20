@@ -1,0 +1,50 @@
+# Base image for Secret Manager Controller
+# Contains all runtime dependencies: git, curl, gnupg, kustomize, sops
+# This base image is built once and published to gchr.io/microscaler/secret-manager-controller-base-image
+# The controller Dockerfiles then just copy the binary onto this base image
+
+ARG TARGETPLATFORM=linux/amd64
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+# git: Required for ArgoCD support (cloning repositories)
+# curl: Required for downloading kustomize and sops
+# gnupg: Required for GPG key handling in SOPS decryption
+# ca-certificates: Required for HTTPS connections
+# Note: GPG signature issues can occur in some Docker environments.
+# We work around this by updating GPG keys first, then installing packages.
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/* && \
+    # Update GPG keys for Debian repositories
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 6ED0E7B82643E131 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    curl \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/* && \
+    # Install kustomize
+    KUSTOMIZE_VERSION=5.8.0 && \
+    curl -L "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | \
+    tar -xz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/kustomize && \
+    # Install sops
+    SOPS_VERSION=3.8.1 && \
+    curl -L "https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops && \
+    chmod +x /usr/local/bin/sops && \
+    # Verify installations
+    kustomize version && \
+    sops --version
+
+# Create app directory with proper permissions
+WORKDIR /app
+RUN chmod -R 777 /app
+
+# Expose metrics port
+EXPOSE 5000
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+

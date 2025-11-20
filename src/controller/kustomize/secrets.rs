@@ -4,11 +4,10 @@
 
 use crate::observability::metrics;
 use anyhow::Result;
-use k8s_openapi::api::core::v1::Secret;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{debug, info, info_span, warn};
+use tracing::{debug, info, info_span};
 
 use super::build::run_kustomize_build;
 use super::parse::parse_secrets_from_yaml;

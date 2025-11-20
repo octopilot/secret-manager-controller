@@ -34,6 +34,11 @@ allow_k8s_contexts(['kind-secret-manager-controller'])
 # The registry is set up by scripts/setup_kind.py
 default_registry('localhost:5000')
 
+# Suppress warnings for images that Tilt correctly substitutes
+# Tilt expands 'mock-webhook' to 'localhost:5000/mock-webhook' but the custom_build
+# is named 'mock-webhook', which Tilt correctly matches during substitution
+update_settings(suppress_unused_image_warnings=['localhost:5000/mock-webhook'])
+
 # Get the directory where this Tiltfile is located
 # Since the Tiltfile is in the controller directory, use '.' for relative paths
 CONTROLLER_DIR = '.'
@@ -108,7 +113,7 @@ custom_build(
     deps=[
         ARTIFACT_PATH,
         CRDGEN_ARTIFACT_PATH,
-        '%s/Dockerfile.dev' % CONTROLLER_DIR,
+        'dockerfiles/Dockerfile.controller.dev',
         './scripts/tilt/docker_build.py',
     ],
     env={
@@ -177,15 +182,16 @@ local_resource(
 # Required for ArgoCD ingress access
 # Idempotent - can be run multiple times safely
 
-local_resource(
-    'ingress-install',
-    cmd='NON_INTERACTIVE=1 python3 scripts/setup_contour.py',
-    deps=[
-        './scripts/setup_contour.py',
-    ],
-    labels=['infrastructure'],
-    allow_parallel=False,
-)
+# Disabling contour, not sure its actually needed as we communicate with k8s svc
+# local_resource(
+#     'ingress-install',
+#     cmd='NON_INTERACTIVE=1 python3 scripts/setup_contour.py',
+#     deps=[
+#         './scripts/setup_contour.py',
+#     ],
+#     labels=['infrastructure'],
+#     allow_parallel=False,
+# )
 
 # ====================
 # ArgoCD Installation
@@ -201,7 +207,7 @@ local_resource(
         './scripts/tilt/install_argocd.py',
     ],
     labels=['infrastructure'],
-    resource_deps=['ingress-install'],
+    resource_deps=['fluxcd-install'],
     allow_parallel=False,
 )
 
@@ -212,39 +218,41 @@ local_resource(
 # Default credentials: admin / (get password with: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 # Apply ingress after ArgoCD and Contour are installed
 # Wait for Contour HTTPProxy CRD to be ready before applying ingress
-local_resource(
-    'argocd-ingress-apply',
-    cmd='''
-        # Wait for Contour HTTPProxy CRD to be available
-        echo "Waiting for Contour HTTPProxy CRD to be ready..."
-        timeout=60
-        elapsed=0
-        while [ $elapsed -lt $timeout ]; do
-            if kubectl get crd httpproxies.projectcontour.io >/dev/null 2>&1; then
-                echo "✅ Contour HTTPProxy CRD is ready"
-                break
-            fi
-            echo "  Waiting for CRD... (${elapsed}s/${timeout}s)"
-            sleep 2
-            elapsed=$((elapsed + 2))
-        done
+
+# Disabled as we don't need to log into argo
+# local_resource(
+#     'argocd-ingress-apply',
+#     cmd='''
+#         # Wait for Contour HTTPProxy CRD to be available
+#         echo "Waiting for Contour HTTPProxy CRD to be ready..."
+#         timeout=60
+#         elapsed=0
+#         while [ $elapsed -lt $timeout ]; do
+#             if kubectl get crd httpproxies.projectcontour.io >/dev/null 2>&1; then
+#                 echo "✅ Contour HTTPProxy CRD is ready"
+#                 break
+#             fi
+#             echo "  Waiting for CRD... (${elapsed}s/${timeout}s)"
+#             sleep 2
+#             elapsed=$((elapsed + 2))
+#         done
         
-        if ! kubectl get crd httpproxies.projectcontour.io >/dev/null 2>&1; then
-            echo "❌ Error: Contour HTTPProxy CRD not found after ${timeout}s"
-            echo "Please ensure Contour is installed: python3 scripts/setup_contour.py"
-            exit 1
-        fi
+#         if ! kubectl get crd httpproxies.projectcontour.io >/dev/null 2>&1; then
+#             echo "❌ Error: Contour HTTPProxy CRD not found after ${timeout}s"
+#             echo "Please ensure Contour is installed: python3 scripts/setup_contour.py"
+#             exit 1
+#         fi
         
-        # Apply ingress configuration
-        kubectl apply -f gitops/cluster/argocd/ingress.yaml
-    ''',
-    deps=[
-        'gitops/cluster/argocd/ingress.yaml',
-    ],
-    labels=['infrastructure',],
-    resource_deps=['argocd-install'],
-    allow_parallel=False,
-)
+#         # Apply ingress configuration
+#         kubectl apply -f gitops/cluster/argocd/ingress.yaml
+#     ''',
+#     deps=[
+#         'gitops/cluster/argocd/ingress.yaml',
+#     ],
+#     labels=['infrastructure',],
+#     resource_deps=['argocd-install'],
+#     allow_parallel=False,
+# )
 
 # ====================
 # Git Credentials Setup
@@ -380,17 +388,35 @@ local_resource(
     allow_parallel=True,
 )
 
+local_resource(
+    'webhook-build',
+    cmd='python3 scripts/tilt/build_mock_server_binary.py webhook',
+    deps=[
+        'pact-broker/mock-server/src/bin/webhook.rs',
+        'pact-broker/mock-server/Cargo.toml',
+        'pact-broker/mock-server/Cargo.lock',
+        './scripts/host_aware_build.py',
+        './scripts/copy_binary.py',
+        './scripts/tilt/build_mock_server_binary.py',
+    ],
+    labels=['pact'],
+    allow_parallel=True,
+)
+
 # Build Pact mock server Docker image (Rust/Axum)
 # Binaries are built on host and copied in (matches controller pattern)
 # Use custom_build for better dependency control
+# Note: Image name is 'pact-mock-server' (without registry prefix)
+# Tilt will automatically prepend default_registry('localhost:5000') when substituting
 custom_build(
-    'localhost:5000/pact-mock-server',
+    'pact-mock-server',
     'python3 scripts/tilt/docker_build_mock_server.py',
     deps=[
         'build_artifacts/mock-server/gcp-mock-server',
         'build_artifacts/mock-server/aws-mock-server',
         'build_artifacts/mock-server/azure-mock-server',
-        'pact-broker/Dockerfile',
+        'build_artifacts/mock-server/webhook',
+        'dockerfiles/Dockerfile.pact-mock-server',
         './scripts/tilt/docker_build_mock_server.py',
     ],
     env={
@@ -403,8 +429,31 @@ custom_build(
         sync('build_artifacts/mock-server/gcp-mock-server', '/app/gcp-mock-server'),
         sync('build_artifacts/mock-server/aws-mock-server', '/app/aws-mock-server'),
         sync('build_artifacts/mock-server/azure-mock-server', '/app/azure-mock-server'),
+        sync('build_artifacts/mock-server/webhook', '/app/webhook'),
         # Send SIGHUP to restart the process (graceful restart)
         # The process will pick up the new binary on restart
+        run('kill -HUP 1'),
+    ],
+    skips_local_docker=False,
+)
+
+# Build webhook server Docker image (separate from mock servers)
+# Note: Image name is 'mock-webhook' (without registry prefix)
+# Tilt will automatically prepend default_registry('localhost:5000') when substituting
+custom_build(
+    'mock-webhook',
+    'python3 scripts/tilt/docker_build_webhook.py',
+    deps=[
+        'build_artifacts/mock-server/webhook',
+        'dockerfiles/Dockerfile.pact-webhook',
+        './scripts/tilt/docker_build_webhook.py',
+    ],
+    env={
+        'IMAGE_NAME': 'localhost:5000/mock-webhook',
+    },
+    tag='tilt',
+    live_update=[
+        sync('build_artifacts/mock-server/webhook', '/app/webhook'),
         run('kill -HUP 1'),
     ],
     skips_local_docker=False,
@@ -441,6 +490,16 @@ k8s_resource(
     resource_deps=['azure-mock-server-build'],
     # Tilt automatically substitutes image from custom_build('pact-mock-server')
     # The image name 'pact-mock-server' in the YAML matches the custom_build name
+)
+
+k8s_resource(
+    'mock-webhook',
+    labels=['pact'],
+    resource_deps=['webhook-build'],
+    port_forwards=['8080:8080'],
+    # Tilt automatically substitutes image from custom_build('mock-webhook')
+    # The image name 'mock-webhook' in the YAML matches the custom_build name
+    # Warning about 'localhost:5000/mock-webhook' can be ignored - Tilt will substitute correctly
 )
 
 # ====================

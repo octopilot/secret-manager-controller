@@ -3,6 +3,7 @@
 //! Handles storing secrets in cloud provider secret stores, including enabled/disabled state management.
 
 use crate::controller::parser;
+use crate::controller::reconciler::processing::diff_discovery::detect_secret_diff;
 use crate::controller::reconciler::utils::construct_secret_name;
 use crate::crd::SecretManagerConfig;
 use crate::observability;
@@ -11,17 +12,19 @@ use anyhow::Result;
 use tracing::{debug, error, info, warn};
 
 /// Process and store secrets (enabled and disabled)
+/// Returns (secrets_count, drift_detected)
 pub async fn store_secrets(
     provider: &dyn SecretManagerProvider,
     config: &SecretManagerConfig,
     parsed_secrets: &parser::ParsedSecrets,
     secret_prefix: &str,
     provider_name: &str,
-) -> Result<i32> {
+) -> Result<(i32, bool)> {
     let mut count = 0;
     let mut updated_count = 0;
     let mut disabled_count = 0;
     let mut enabled_count = 0;
+    let mut drift_detected = false;
 
     // Process all secrets (both enabled and disabled)
     for (key, entry) in &parsed_secrets.secrets {
@@ -32,27 +35,74 @@ pub async fn store_secrets(
         );
 
         if entry.enabled {
-            // Enabled secret: create/update as normal, and ensure it's enabled
-            match provider
-                .create_or_update_secret(&secret_name, &entry.value)
-                .await
-            {
-                Ok(was_updated) => {
-                    count += 1;
-                    observability::metrics::increment_secrets_published_total(provider_name, 1);
-                    if was_updated {
-                        updated_count += 1;
-                        info!(
-                            "Updated secret {} from git (GitOps source of truth)",
-                            secret_name
+            // Diff discovery: Compare Git value with cloud provider value
+            // This detects if secrets were tampered with externally
+            if config.spec.diff_discovery {
+                if let Ok(has_diff) = detect_secret_diff(provider, &secret_name, &entry.value).await
+                {
+                    if has_diff {
+                        drift_detected = true;
+                        observability::metrics::increment_secrets_diff_detected_total(
+                            provider_name,
                         );
                     }
                 }
-                Err(e) => {
-                    observability::metrics::increment_secrets_skipped_total(provider_name, "error");
-                    error!("Failed to store secret {}: {}", secret_name, e);
-                    return Err(e.context(format!("Failed to store secret: {secret_name}")));
+            }
+
+            // Check if secret exists in cloud provider
+            let secret_exists = provider
+                .get_secret_value(&secret_name)
+                .await
+                .map(|v| v.is_some())
+                .unwrap_or(false);
+
+            // triggerUpdate logic: Only update if flag is enabled OR secret doesn't exist
+            // When triggerUpdate is false, we only create missing secrets, don't update existing ones
+            let should_update = if config.spec.trigger_update {
+                // Always update when triggerUpdate is enabled (default behavior)
+                true
+            } else {
+                // When triggerUpdate is disabled, only create missing secrets
+                !secret_exists
+            };
+
+            if should_update {
+                // Enabled secret: create/update as normal, and ensure it's enabled
+                match provider
+                    .create_or_update_secret(&secret_name, &entry.value)
+                    .await
+                {
+                    Ok(was_updated) => {
+                        count += 1;
+                        observability::metrics::increment_secrets_published_total(provider_name, 1);
+                        if was_updated {
+                            updated_count += 1;
+                            if secret_exists {
+                                info!(
+                                    "Updated secret {} from git (GitOps source of truth)",
+                                    secret_name
+                                );
+                            } else {
+                                info!("Created secret {} from git", secret_name);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        observability::metrics::increment_secrets_skipped_total(
+                            provider_name,
+                            "error",
+                        );
+                        error!("Failed to store secret {}: {}", secret_name, e);
+                        return Err(e.context(format!("Failed to store secret: {secret_name}")));
+                    }
                 }
+            } else {
+                // triggerUpdate is disabled and secret exists - skip update
+                debug!(
+                    "Skipping update for secret {} (triggerUpdate disabled, secret already exists)",
+                    secret_name
+                );
+                count += 1; // Count as processed even though we didn't update
             }
 
             // Ensure secret is enabled (in case it was previously disabled)
@@ -137,5 +187,5 @@ pub async fn store_secrets(
         );
     }
 
-    Ok(count)
+    Ok((count, drift_detected))
 }

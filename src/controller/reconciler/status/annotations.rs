@@ -6,7 +6,6 @@ use crate::controller::reconciler::types::Reconciler;
 use crate::crd::SecretManagerConfig;
 use anyhow::{Context, Result};
 use kube::api::PatchParams;
-use kube::Api;
 use tracing::debug;
 
 /// Clear the manual trigger annotation from a SecretManagerConfig resource

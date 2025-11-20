@@ -41,6 +41,7 @@ def main():
         Path("build_artifacts/mock-server/gcp-mock-server"),
         Path("build_artifacts/mock-server/aws-mock-server"),
         Path("build_artifacts/mock-server/azure-mock-server"),
+        Path("build_artifacts/mock-server/webhook"),
     ]
     
     for binary_path in binary_paths:
@@ -49,7 +50,7 @@ def main():
             print("   Please run the build resources first", file=sys.stderr)
             sys.exit(1)
     
-    dockerfile = Path("pact-broker/Dockerfile")
+    dockerfile = Path("dockerfiles/Dockerfile.pact-mock-server")
     if not dockerfile.exists():
         print(f"❌ Error: Dockerfile not found: {dockerfile}", file=sys.stderr)
         sys.exit(1)
@@ -68,6 +69,10 @@ def main():
     result = run_command(cmd, check=False)
     if result.returncode != 0:
         print("❌ Error: Docker build failed", file=sys.stderr)
+        if result.stdout:
+            print(result.stdout, file=sys.stderr)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
         sys.exit(1)
     
     # Push to registry (for Kind cluster access)

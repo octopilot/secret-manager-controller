@@ -29,80 +29,107 @@ def run_command(cmd_list, check=False, capture_output=True):
 
 
 def cleanup_docker_resources():
-    """Clean up Docker resources to free space before building."""
+    """Clean up Docker resources to free space before building.
+    
+    Only cleans up images we build ourselves (localhost:5000/* with tilt-* tags),
+    not base images or dependencies. This prevents re-downloading images and
+    hitting Docker rate limits.
+    
+    CRITICAL: Never removes infrastructure images like kindest/node or registry:2.
+    """
     print("🧹 Cleaning up Docker resources to free space...")
     
-    # Remove dangling images (unused intermediate layers)
-    # Note: This won't remove the Pact CLI image as it's not a dangling image
-    print("  Removing dangling images...")
+    # CRITICAL: List of infrastructure images that must NEVER be removed
+    # These are used by Kind clusters and local registries
+    protected_images = {
+        "kindest/node",
+        "registry:",
+        "registry/registry:",
+    }
+    
+    # Remove dangling images (unused intermediate layers from our builds)
+    # This is safe - only removes intermediate layers, not base images
+    # However, we need to be careful not to remove layers shared with kindest/node
+    print("  Removing dangling images (intermediate build layers only)...")
     result = run_command(["docker", "image", "prune", "-f"], check=False)
     if result.stdout:
         print(f"Total reclaimed space: {result.stdout.strip()}")
     
-    # Remove old build cache aggressively (keeps only last 1 hour for faster builds)
+    # Remove old build cache (keeps only last 1 hour for faster builds)
     # This doesn't affect images, only build cache layers
-    print("  Pruning build cache...")
+    print("  Pruning build cache (older than 1 hour)...")
     result = run_command(["docker", "builder", "prune", "-a", "-f", "--filter", "until=1h"], check=False)
     if result.stdout:
         print(f"Total: {result.stdout.strip()}")
     
-    # Remove ALL untagged images (these are old Tilt builds)
-    # These accumulate quickly and take up significant space
-    # Exclude Pact CLI image as it's stable and should be kept
-    print("  Removing untagged images (old Tilt builds, excluding Pact CLI)...")
+    # Remove old Tilt images - keep only the last 2 per service
+    # For Tilt deployments, we only need the last 2 images per service
+    print("  Removing old Tilt images (keeping last 2 per service)...")
+    
+    # Get all images with tilt-* tags (all Tilt services)
+    # Group by repository and keep only the 2 most recent per repository
     result = run_command(
-        ["docker", "images", "--filter", "dangling=true", "--format", "{{.ID}}\t{{.Repository}}"],
+        ["docker", "images", "--format", "{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}"],
         check=False
     )
+    
     if result.returncode == 0 and result.stdout:
-        image_ids = []
+        # Group images by repository, filtering for tilt-* tags
+        repos = {}
         for line in result.stdout.strip().split('\n'):
             if not line.strip():
                 continue
             parts = line.strip().split('\t')
-            if len(parts) >= 2:
-                img_id = parts[0]
-                repo = parts[1]
-                # Skip Pact CLI image - it's stable and should be kept
-                if "pactfoundation/pact-cli" not in repo:
-                    image_ids.append(img_id)
-        if image_ids:
-            for img_id in image_ids:
-                run_command(["docker", "rmi", "-f", img_id], check=False)
-            print(f"  Removed {len(image_ids)} untagged image(s) (Pact CLI excluded)")
-    
-    # Remove old Tilt images (keep only the 2 most recent tagged images)
-    print("  Removing old Tilt images (keeping 2 most recent)...")
-    image_name = os.getenv("IMAGE_NAME", "localhost:5000/secret-manager-controller")
-    # Get all tilt images sorted by creation date (newest first)
-    result = run_command(
-        ["docker", "images", image_name, "--format", "{{.ID}}\t{{.Tag}}\t{{.CreatedAt}}"],
-        check=False
-    )
-    if result.returncode == 0 and result.stdout:
-        lines = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
-        # Keep only the 2 most recent images (skip first 2 lines)
-        if len(lines) > 2:
-            old_image_ids = []
-            for line in lines[2:]:  # Skip first 2 (most recent)
-                image_id = line.split('\t')[0]
-                old_image_ids.append(image_id)
+            if len(parts) >= 4:
+                repo = parts[0]
+                tag = parts[1]
+                img_id = parts[2]
+                created = parts[3]
+                
+                # Only process tilt-* tags or "tilt" tag (Tilt builds)
+                if tag.startswith("tilt-") or tag == "tilt":
+                    if repo not in repos:
+                        repos[repo] = []
+                    repos[repo].append((created, img_id, tag))
+        
+        # For each repository, keep only the 2 most recent images
+        total_removed = 0
+        for repo, images in repos.items():
+            repo_tag_prefix = f"{repo}:"
             
-            if old_image_ids:
-                # Remove old images
-                for img_id in old_image_ids:
-                    run_command(["docker", "rmi", "-f", img_id], check=False)
-                print(f"  Removed {len(old_image_ids)} old Tilt image(s)")
+            # CRITICAL: Never remove infrastructure images
+            is_protected = False
+            for protected_pattern in protected_images:
+                if protected_pattern in repo_tag_prefix:
+                    is_protected = True
+                    print(f"    🔒 Protected (infrastructure): {repo}")
+                    break
+            
+            if is_protected:
+                continue
+            
+            # Sort by creation date (newest first)
+            images.sort(key=lambda x: x[0], reverse=True)
+            
+            # Keep the 2 most recent, remove the rest
+            if len(images) > 2:
+                for created, img_id, tag in images[2:]:  # Skip first 2 (most recent)
+                    repo_tag = f"{repo}:{tag}"
+                    # CRITICAL: Remove by repository:tag, NOT by ID (to avoid removing shared layers)
+                    remove_result = run_command(["docker", "rmi", repo_tag], check=False)
+                    if remove_result.returncode == 0:
+                        total_removed += 1
+                        print(f"    Removed (old): {repo_tag}")
+        
+        if total_removed > 0:
+            print(f"  Removed {total_removed} old Tilt image(s) (kept last 2 per service)")
     
-    # Remove unused images (not just dangling) - more aggressive
-    # This removes images not used by any container, older than 1 hour
-    # Note: docker image prune doesn't support excluding specific images,
-    # but it won't remove images that are in use or recently pulled
-    # Pact CLI image should be safe as it's actively used
-    print("  Removing unused images (Pact CLI will be preserved if recently used)...")
-    result = run_command(["docker", "image", "prune", "-a", "-f", "--filter", "until=1h"], check=False)
-    if result.stdout:
-        print(f"Total reclaimed space: {result.stdout.strip()}")
+    # NOTE: We do NOT run 'docker image prune -a' as it would remove:
+    # - Base images (rust:alpine, debian, etc.)
+    # - Pact broker images
+    # - kindest/node images (used by Kind clusters)
+    # - Other dependencies we download
+    # This causes re-downloads and hits Docker rate limits
 
 
 def main():
@@ -112,12 +139,12 @@ def main():
     controller_dir = os.getenv("CONTROLLER_DIR", ".")
     expected_ref = os.getenv("EXPECTED_REF", f"{image_name}:tilt")
     
-    # Determine Dockerfile path - check for Dockerfile or Dockerfile.dev
-    dockerfile_path = os.path.join(controller_dir, "Dockerfile.dev")
+    # Determine Dockerfile path - use dockerfiles directory
+    dockerfile_path = "dockerfiles/Dockerfile.controller.dev"
     if not os.path.exists(dockerfile_path):
-        dockerfile_path = os.path.join(controller_dir, "Dockerfile")
+        dockerfile_path = "dockerfiles/Dockerfile.controller"
     if not os.path.exists(dockerfile_path):
-        print(f"❌ Error: Dockerfile not found in {controller_dir}", file=sys.stderr)
+        print(f"❌ Error: Dockerfile not found: {dockerfile_path}", file=sys.stderr)
         sys.exit(1)
     
     # Clean up Docker resources before building to prevent "No space left on device" errors

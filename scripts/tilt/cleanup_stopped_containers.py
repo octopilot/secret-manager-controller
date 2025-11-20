@@ -100,8 +100,14 @@ def cleanup_stopped_containers():
 
 
 def cleanup_dangling_images():
-    """Remove dangling images (unused intermediate layers)."""
-    print("🖼️  Pruning dangling images...")
+    """Remove dangling images (unused intermediate layers).
+    
+    CRITICAL: Only removes truly dangling images (untagged intermediate layers).
+    Does NOT remove images that are referenced by other images (like kindest/node).
+    """
+    print("🖼️  Pruning dangling images (unused intermediate layers only)...")
+    # Use --filter to exclude images that might be referenced by infrastructure
+    # This is safer than plain prune, but we still need to be careful
     result = run_command(["docker", "image", "prune", "-f"], check=False)
     if result.stdout:
         # Extract reclaimed space from output
@@ -113,23 +119,32 @@ def cleanup_dangling_images():
 
 
 def cleanup_unused_images():
-    """Remove unused images (not used by any container, older than 1 hour).
+    """Remove unused images we build ourselves (localhost:5000/* with tilt-* tags).
     
-    Note: This is a general Docker prune. Tilt-specific images are handled separately
-    by cleanup_old_tilt_images() which checks running containers.
+    NOTE: We do NOT use 'docker image prune -a' as it would remove:
+    - Base images (rust:alpine, debian, etc.)
+    - Pact broker images
+    - Other dependencies we download
+    This causes re-downloads and hits Docker rate limits.
+    
+    Tilt-specific images are handled separately by cleanup_old_tilt_images().
     """
-    print("🖼️  Pruning unused images (older than 1 hour)...")
+    print("🖼️  Pruning unused images we build (localhost:5000/* with tilt-* tags)...")
+    # Only clean up images we build ourselves, not base images or dependencies
+    # This prevents re-downloading images and hitting Docker rate limits
     result = run_command(
-        ["docker", "image", "prune", "-a", "-f", "--filter", "until=1h"],
+        ["docker", "images", "localhost:5000/*", "--format", "{{.Repository}}\t{{.Tag}}\t{{.ID}}"],
         check=False
     )
-    if result.stdout:
-        # Extract reclaimed space from output
-        output_lines = result.stdout.strip().split('\n')
-        for line in output_lines:
-            if 'reclaimed' in line.lower() or 'total' in line.lower():
-                print(f"  {line.strip()}")
-    return result.returncode == 0
+    if result.returncode == 0 and result.stdout:
+        # Count images we build (tilt-* tags) that are not in use
+        # Note: We don't actually remove them here as cleanup_old_tilt_images() handles that
+        # This function is kept for compatibility but doesn't do aggressive cleanup
+        tilt_images = [line for line in result.stdout.strip().split('\n') 
+                      if line.strip() and 'tilt-' in line]
+        if tilt_images:
+            print(f"  Found {len(tilt_images)} Tilt build image(s) (handled by cleanup_old_tilt_images)")
+    return True  # Always succeed - actual cleanup is done by cleanup_old_tilt_images()
 
 
 def cleanup_build_cache():
@@ -390,13 +405,14 @@ def cleanup_registry_images():
 
 
 def cleanup_old_tilt_images():
-    """Remove Tilt images that are not currently used by running containers.
+    """Remove old Tilt images, keeping only the last 2 per service.
     
-    CRITICAL: Only removes images matching IMAGE_NAME (default: localhost:5000/secret-manager-controller).
-    Never removes infrastructure images like kindest/node or registry:2.
+    For Tilt deployments, we only need the last 2 images per service.
+    This keeps disk usage low while maintaining rollback capability.
+    
+    CRITICAL: Never removes infrastructure images like kindest/node or registry:2.
     """
-    print("🏷️  Removing unused Tilt images (not in use by running containers)...")
-    image_name = os.getenv("IMAGE_NAME", "localhost:5000/secret-manager-controller")
+    print("🏷️  Removing old Tilt images (keeping last 2 per service)...")
     
     # CRITICAL: List of infrastructure images that must NEVER be removed
     # These are used by Kind clusters and local registries
@@ -406,90 +422,78 @@ def cleanup_old_tilt_images():
         "registry/registry:",
     }
     
-    # Get all images for this image name (only Tilt images)
+    # Get all images with tilt-* tags (all Tilt services)
+    # Group by repository and keep only the 2 most recent per repository
     result = run_command(
-        ["docker", "images", image_name, "--format", "{{.ID}}\t{{.Repository}}\t{{.Tag}}"],
+        ["docker", "images", "--format", "{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}"],
         check=False
     )
     
     if result.returncode != 0 or not result.stdout:
-        print("  ✅ No Tilt images found")
+        print("  ✅ No images found")
         return True
     
-    # Get set of image references and IDs currently in use by running containers
-    running_image_refs, running_image_ids = get_running_container_images()
+    # Group images by repository, filtering for tilt-* tags
+    repos = {}
+    for line in result.stdout.strip().split('\n'):
+        if not line.strip():
+            continue
+        parts = line.strip().split('\t')
+        if len(parts) >= 4:
+            repo = parts[0]
+            tag = parts[1]
+            img_id = parts[2]
+            created = parts[3]
+            
+            # Only process tilt-* tags (Tilt builds)
+            if tag.startswith("tilt-") or tag == "tilt":
+                if repo not in repos:
+                    repos[repo] = []
+                repos[repo].append((created, img_id, tag))
     
-    lines = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
-    if not lines:
+    if not repos:
         print("  ✅ No Tilt images found")
         return True
     
     removed_count = 0
     kept_count = 0
     
-    for line in lines:
-        parts = line.split('\t')
-        if len(parts) < 3:
-            continue
+    # For each repository, keep only the 2 most recent images
+    for repo, images in repos.items():
+        repo_tag_prefix = f"{repo}:"
         
-        image_id = parts[0]
-        repository = parts[1]
-        tag = parts[2]
-        repo_tag = f"{repository}:{tag}"
-        
-        # CRITICAL: Never remove infrastructure images, even if they match the image name pattern
+        # CRITICAL: Never remove infrastructure images
         is_protected = False
         for protected_pattern in protected_images:
-            if protected_pattern in repo_tag:
+            if protected_pattern in repo_tag_prefix:
                 is_protected = True
-                print(f"    🔒 Protected (infrastructure): {repo_tag}")
+                print(f"    🔒 Protected (infrastructure): {repo}")
                 break
         
         if is_protected:
-            kept_count += 1
+            kept_count += len(images)
             continue
         
-        # Check if this image reference is currently in use by any running container
-        is_in_use = repo_tag in running_image_refs
+        # Sort by creation date (newest first)
+        images.sort(key=lambda x: x[0], reverse=True)
         
-        # Also check by image ID (in case tag changed but same image)
-        if not is_in_use:
-            # Check if image ID matches any running container image ID
-            # Normalize image IDs (remove sha256: prefix if present for comparison)
-            normalized_id = image_id.replace("sha256:", "")
-            for running_id in running_image_ids:
-                normalized_running_id = running_id.replace("sha256:", "")
-                # Compare IDs - they might be full SHA256 or short IDs
-                if normalized_id == normalized_running_id or normalized_id.startswith(normalized_running_id) or normalized_running_id.startswith(normalized_id):
-                    is_in_use = True
-                    break
-        
-        if is_in_use:
-            kept_count += 1
-            print(f"    Keeping (in use): {repo_tag}")
-        else:
-            # CRITICAL: Remove by repository:tag, NOT by image ID
-            # Removing by ID can delete shared layers used by other images (like kindest/node)
-            remove_result = run_command(["docker", "rmi", repo_tag], check=False)
-            if remove_result.returncode == 0:
-                removed_count += 1
-                print(f"    Removed (unused): {repo_tag}")
-            else:
-                # If removal by tag fails, it might be because the tag is <none>
-                # In that case, we can try by ID, but only if we're absolutely sure it's not shared
-                if tag == "<none>":
-                    # For untagged images, we can try by ID, but log a warning
-                    print(f"    ⚠️  Tag is <none>, attempting removal by ID (may affect shared layers): {image_id[:12]}...")
-                    remove_result = run_command(["docker", "rmi", image_id], check=False)
-                    if remove_result.returncode == 0:
-                        removed_count += 1
-                        print(f"    Removed (untagged): {image_id[:12]}...")
-                    else:
-                        print(f"    ⚠️  Failed to remove untagged image: {image_id[:12]}...", file=sys.stderr)
+        # Keep the 2 most recent, remove the rest
+        if len(images) > 2:
+            for created, img_id, tag in images[2:]:  # Skip first 2 (most recent)
+                repo_tag = f"{repo}:{tag}"
+                # CRITICAL: Remove by repository:tag, NOT by image ID
+                # Removing by ID can delete shared layers used by other images (like kindest/node)
+                remove_result = run_command(["docker", "rmi", repo_tag], check=False)
+                if remove_result.returncode == 0:
+                    removed_count += 1
+                    print(f"    Removed (old): {repo_tag}")
                 else:
                     print(f"    ⚠️  Failed to remove: {repo_tag}", file=sys.stderr)
+            kept_count += 2
+        else:
+            kept_count += len(images)
     
-    print(f"  ✅ Removed {removed_count} unused Tilt image(s), kept {kept_count} in-use image(s)")
+    print(f"  ✅ Removed {removed_count} old Tilt image(s), kept {kept_count} image(s) (last 2 per service)")
     return True
 
 

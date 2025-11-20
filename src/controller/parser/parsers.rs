@@ -142,6 +142,7 @@ pub async fn parse_properties(app_files: &ApplicationFiles) -> Result<HashMap<St
     }
 }
 
+#[allow(dead_code)]
 pub(crate) async fn parse_env_file(
     path: &Path,
     sops_private_key: Option<&str>,
@@ -214,6 +215,7 @@ pub(crate) async fn parse_env_file_with_state(
     Ok(parsed)
 }
 
+#[allow(dead_code)]
 pub(crate) async fn parse_yaml_secrets(
     path: &Path,
     sops_private_key: Option<&str>,
@@ -261,6 +263,7 @@ pub(crate) async fn parse_yaml_secrets_with_state(
     Ok(parsed)
 }
 
+#[allow(dead_code)]
 pub(crate) fn flatten_yaml_value(
     value: &serde_yaml::Value,
     prefix: String,

@@ -50,9 +50,9 @@ def main():
         sys.exit(1)
     
     binary_name = sys.argv[1]
-    if binary_name not in ['gcp-mock-server', 'aws-mock-server', 'azure-mock-server']:
+    if binary_name not in ['gcp-mock-server', 'aws-mock-server', 'azure-mock-server', 'webhook']:
         print(f"❌ Error: Invalid binary name: {binary_name}", file=sys.stderr)
-        print("Valid names: gcp-mock-server, aws-mock-server, azure-mock-server", file=sys.stderr)
+        print("Valid names: gcp-mock-server, aws-mock-server, azure-mock-server, webhook", file=sys.stderr)
         sys.exit(1)
     
     mock_server_dir = Path("pact-broker/mock-server")

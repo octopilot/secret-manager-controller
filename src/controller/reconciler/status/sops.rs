@@ -3,7 +3,7 @@
 //! Handles checking and updating SOPS key availability status.
 
 use crate::controller::reconciler::types::Reconciler;
-use crate::crd::{SecretManagerConfig, SecretManagerConfigStatus};
+use crate::crd::SecretManagerConfig;
 use anyhow::{Context, Result};
 use kube::api::PatchParams;
 use kube::Api;

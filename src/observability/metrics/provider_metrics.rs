@@ -89,6 +89,17 @@ static SECRETS_SKIPPED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .expect("Failed to create SECRETS_SKIPPED_TOTAL metric - this should never happen")
 });
 
+static SECRETS_DIFF_DETECTED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    IntCounterVec::new(
+        prometheus::Opts::new(
+            "secret_manager_secrets_diff_detected_total",
+            "Total number of secrets where differences were detected between Git and cloud provider",
+        ),
+        &["provider"],
+    )
+    .expect("Failed to create SECRETS_DIFF_DETECTED_TOTAL metric - this should never happen")
+});
+
 /// Register provider metrics with the registry
 pub(crate) fn register_provider_metrics() -> Result<()> {
     REGISTRY.register(Box::new(GCP_SECRET_MANAGER_OPERATIONS_TOTAL.clone()))?;
@@ -98,6 +109,7 @@ pub(crate) fn register_provider_metrics() -> Result<()> {
     REGISTRY.register(Box::new(PROVIDER_OPERATION_ERRORS_TOTAL.clone()))?;
     REGISTRY.register(Box::new(SECRETS_PUBLISHED_TOTAL.clone()))?;
     REGISTRY.register(Box::new(SECRETS_SKIPPED_TOTAL.clone()))?;
+    REGISTRY.register(Box::new(SECRETS_DIFF_DETECTED_TOTAL.clone()))?;
     Ok(())
 }
 
@@ -141,6 +153,12 @@ pub fn increment_secrets_published_total(provider: &str, count: u64) {
     SECRETS_PUBLISHED_TOTAL
         .with_label_values(&[provider])
         .inc_by(count);
+}
+
+pub fn increment_secrets_diff_detected_total(provider: &str) {
+    SECRETS_DIFF_DETECTED_TOTAL
+        .with_label_values(&[provider])
+        .inc();
 }
 
 pub fn increment_secrets_skipped_total(provider: &str, reason: &str) {

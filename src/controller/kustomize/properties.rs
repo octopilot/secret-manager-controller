@@ -2,10 +2,10 @@
 //!
 //! Extracts properties from Kubernetes ConfigMap resources in kustomize output.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
-use tracing::{debug, error, info};
+use tracing::info;
 
 use super::build::run_kustomize_build;
 use super::parse::parse_properties_from_yaml;

@@ -13,6 +13,7 @@
 //! - `status.rs` - Status types for tracking reconciliation state
 //! - `otel.rs` - OpenTelemetry configuration
 
+mod notifications;
 mod otel;
 mod provider;
 mod source;
@@ -20,6 +21,10 @@ mod spec;
 mod status;
 
 // Re-export all public types
+pub use notifications::{
+    ArgoCDNotificationConfig, FluxCDNotificationConfig, NotificationConfig,
+    NotificationSubscription, ProviderRef,
+};
 pub use otel::OtelConfig;
 pub use provider::{
     AwsAuthConfig, AwsConfig, AzureAuthConfig, AzureConfig, GcpAuthConfig, GcpConfig,

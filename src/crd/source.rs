@@ -81,7 +81,7 @@ pub struct ConfigsConfig {
 }
 
 /// GCP config store type
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ConfigStoreType {
     /// Store configs as individual secrets in Secret Manager (interim solution)

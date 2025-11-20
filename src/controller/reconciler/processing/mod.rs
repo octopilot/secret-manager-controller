@@ -3,6 +3,7 @@
 //! Handles parsing application files and processing Kustomize builds to extract secrets and properties.
 
 mod application_files;
+mod diff_discovery;
 mod kustomize;
 mod properties;
 mod secrets;
