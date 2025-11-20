@@ -142,20 +142,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Extract package name from full image name
-          FULL_NAME="${{ matrix.image.full_name }}"
-          PACKAGE_NAME="${FULL_NAME#ghcr.io/${{ env.REGISTRY_ORG }}/}"
-          
-          echo "📦 Setting package visibility to public: ${PACKAGE_NAME}"
-          
-          # Use GitHub API to set package visibility to public
-          # Note: For organization packages, use /orgs/{org}/packages/container/{package-name}
-          # For user packages, use /user/packages/container/{package-name}
-          gh api \
-            --method PATCH \
-            -H "Accept: application/vnd.github.v3+json" \
-            "/orgs/${{ env.REGISTRY_ORG }}/packages/container/${PACKAGE_NAME}" \
-            -f visibility=public 
+          python3 scripts/set_package_visibility.py \
+            "${{ matrix.image.full_name }}:${{ steps.version.outputs.version }}" \
+            --org "${{ env.REGISTRY_ORG }}" \
+            --gh-token "${{ secrets.GITHUB_TOKEN }}" \
+            --max-attempts 30 \
+            --delay 2 
     
       - name: Build summary
         if: always()
