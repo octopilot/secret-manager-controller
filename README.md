@@ -188,25 +188,25 @@ stateDiagram-v2
     [*] --> Suspended: spec.suspend = true
     
     [*] --> Pending: Resource created
-    Pending --> Pending: GitRepository not found<br/>(Action::await_change)
-    Pending --> Pending: GitRepository reconciling<br/>(Action::await_change)
+    Pending --> Pending: GitRepository not found<br/>(Action await_change)
+    Pending --> Pending: GitRepository reconciling<br/>(Action await_change)
     Pending --> Reconciling: GitRepository ready
     
-    Reconciling --> Ready: Secrets synced successfully<br/>(Action::requeue(interval))
-    Reconciling --> Retrying: Transient error<br/>(Action::requeue(30s))
+    Reconciling --> Ready: Secrets synced successfully<br/>(Action requeue(interval))
+    Reconciling --> Retrying: Transient error<br/>(Action requeue(30s))
     Reconciling --> Failed: Permanent error
     
     Retrying --> Reconciling: Retry after backoff
     Retrying --> Failed: Max retries exceeded
     
-    Ready --> Reconciling: Timer-based trigger<br/>(Action::requeue(interval))
+    Ready --> Reconciling: Timer-based trigger<br/>(Action requeue(interval))
     Ready --> Reconciling: Watch event trigger
     Ready --> Reconciling: Manual trigger<br/>(annotation)
     
     Failed --> Reconciling: Manual trigger<br/>(annotation)
     Failed --> Reconciling: Configuration fixed
     
-    Suspended --> Pending: spec.suspend = false<br/>(Action::await_change)
+    Suspended --> Pending: spec.suspend = false<br/>(Action await_change)
     
     note right of Pending
         Waiting states use Action::await_change()
