@@ -2,12 +2,7 @@
 //!
 //! Main CRD specification types and default values.
 
-use kube::CustomResource;
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-// Import status type for the CustomResource macro
-use crate::crd::SecretManagerConfigStatus;
 
 /// SecretManagerConfig Custom Resource Definition
 ///

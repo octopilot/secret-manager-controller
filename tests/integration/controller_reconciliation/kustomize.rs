@@ -13,7 +13,6 @@ mod tests {
     use controller::crd::{SecretManagerConfig, SecretsConfig};
     use kube::api::{Api, PostParams};
     use std::sync::Arc;
-    use tracing::info;
 
     /// Initialize test environment
     fn init_test() {

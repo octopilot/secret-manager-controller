@@ -2,7 +2,6 @@
 //!
 //! Status types for tracking reconciliation state and conditions.
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Status of the SecretManagerConfig resource

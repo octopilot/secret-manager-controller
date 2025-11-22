@@ -6,7 +6,16 @@
 //! - Health check endpoints
 //! - App state management
 //! - API path definitions (source of truth for GCP API paths)
+//!
+//! ## Quick Start
+//!
+//! ```rust
+//! use pact_mock_server::prelude::*;
+//! ```
+//!
+//! This brings commonly used types and functions into scope.
 
+pub mod prelude;
 pub mod secrets;
 
 use axum::{

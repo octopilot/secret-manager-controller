@@ -34,6 +34,7 @@ pub struct Parameter {
 ///
 /// API Reference: Similar to Secret Manager SecretVersion
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields are part of API contract, may be used in future
 pub struct ParameterVersion {
     /// The resource name of the parameter version
     pub name: String,
@@ -101,6 +102,7 @@ pub struct AccessParameterVersionResponse {
 ///
 /// API Reference: https://docs.cloud.google.com/secret-manager/parameter-manager/docs/reference/rest/v1/projects.locations.parameters.versions/create
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields are part of API contract, may be used in future
 pub struct CreateParameterVersionResponse {
     /// The resource name of the created parameter version
     ///

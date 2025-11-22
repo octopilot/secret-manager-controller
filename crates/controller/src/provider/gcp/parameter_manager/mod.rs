@@ -36,7 +36,7 @@ use responses::{
 };
 
 use crate::provider::gcp::client::common::{determine_operation_type, OperationTracker};
-use paths::{GcpOperation, PathBuilder};
+use paths::prelude::{GcpOperation, PathBuilder};
 
 /// GCP Parameter Manager REST client
 pub struct ParameterManagerREST {

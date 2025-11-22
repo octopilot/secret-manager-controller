@@ -10,7 +10,7 @@ use kube::{
     Client,
 };
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::fs;
 use tokio::time::sleep;
@@ -26,7 +26,7 @@ pub async fn create_flux_git_repository(
     namespace: &str,
     repo_url: &str,
     branch: &str,
-    path: &str,
+    _path: &str,
 ) -> Result<DynamicObject> {
     use kube::api::ApiResource;
     use kube::core::GroupVersionKind;
@@ -290,8 +290,6 @@ pub async fn setup_flux_artifact_path(
     name: &str,
     profile: &str,
 ) -> Result<PathBuf> {
-    use std::path::Path;
-
     // Create artifact path matching FluxCD structure: /tmp/smc/flux-source-{namespace}-{name}/
     let base_path = Path::new("/tmp/smc");
     let artifact_dir = base_path.join(format!("flux-source-{}-{}", namespace, name));
@@ -329,8 +327,6 @@ pub async fn setup_flux_artifact_path(
 /// and copies test files from `deployment-configuration/profiles/{profile}/` to it.
 /// The controller will use the git binary to clone (not libgit2, avoids OpenSSL issues).
 pub async fn setup_argocd_repo_path(namespace: &str, name: &str, profile: &str) -> Result<PathBuf> {
-    use std::path::Path;
-
     // Create repository path matching ArgoCD structure: /tmp/smc/argocd-repo/{namespace}/{name}/{hash}/
     // For tests, we'll use a simple hash based on profile name
     let base_path = Path::new("/tmp/smc");
@@ -373,8 +369,6 @@ pub async fn setup_argocd_repo_path(namespace: &str, name: &str, profile: &str) 
 /// Helper function to copy files from source to destination directory.
 /// Uses a non-recursive approach to avoid async recursion issues.
 async fn copy_directory(source: &PathBuf, dest: &PathBuf) -> Result<()> {
-    use std::path::Path;
-
     // Use a stack-based approach to handle directories recursively
     let mut stack = vec![(source.clone(), dest.clone())];
 
@@ -422,7 +416,7 @@ pub async fn update_git_repository_artifact_path(
     revision: &str,
 ) -> Result<()> {
     use kube::api::ApiResource;
-    use kube::api::{Api, Patch, PatchParams};
+    use kube::api::{Patch, PatchParams};
     use kube::core::GroupVersionKind;
 
     let gvk = GroupVersionKind {

@@ -17,7 +17,6 @@ mod tests {
     use k8s_openapi::api::core::v1::Secret;
     use std::collections::BTreeMap;
     use std::sync::Arc;
-    use tracing::info;
 
     /// Initialize test environment
     fn init_test() {

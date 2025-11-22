@@ -50,7 +50,6 @@ use clap::{Parser, Subcommand, ValueEnum};
 use kube::Client;
 
 // Import from the library
-use controller::crd::SecretManagerConfig;
 
 mod check;
 mod git_pulls;

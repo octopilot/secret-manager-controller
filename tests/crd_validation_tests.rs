@@ -5,9 +5,8 @@
 //! that sample resources match the expected schema.
 
 use controller::crd::{
-    AwsAuthConfig, AwsConfig, AzureAuthConfig, AzureConfig, ConfigStoreType, ConfigsConfig,
-    GcpAuthConfig, GcpConfig, OtelConfig, ProviderConfig, SecretManagerConfig, SecretsConfig,
-    SourceRef,
+    AwsAuthConfig, AzureAuthConfig, ConfigStoreType, GcpAuthConfig, OtelConfig, ProviderConfig,
+    SecretManagerConfig,
 };
 
 /// Test GCP provider configuration with all fields

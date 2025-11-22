@@ -4,7 +4,6 @@
 //!
 //! Allows fine-grained control over logging verbosity for different operations.
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Log level configuration

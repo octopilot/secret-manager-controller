@@ -16,10 +16,6 @@ mod operations;
 mod requests;
 mod responses;
 
-// Re-export types
-pub use requests::*;
-pub use responses::*;
-
 use anyhow::{Context, Result};
 use reqwest::Client;
 use tracing::{debug, info, warn};

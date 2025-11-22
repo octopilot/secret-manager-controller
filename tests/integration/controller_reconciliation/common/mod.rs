@@ -6,7 +6,7 @@
 //! - Setting up test environments
 //! - Verifying reconciliation results
 
-use controller::{GcpConfig, ProviderConfig, SecretManagerConfig};
+use controller::prelude::*;
 use kube::Client;
 use serde_json::json;
 use std::env;
@@ -265,14 +265,14 @@ pub fn create_gcp_reconciliation_config(
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        spec: controller::SecretManagerConfigSpec {
-            source_ref: controller::SourceRef {
+        spec: SecretManagerConfigSpec {
+            source_ref: SourceRef {
                 kind: "GitRepository".to_string(),
                 name: git_repo_name.to_string(),
                 namespace: git_repo_namespace.to_string(),
                 git_credentials: None,
             },
-            secrets: controller::SecretsConfig {
+            secrets: SecretsConfig {
                 environment: "test".to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -308,7 +308,6 @@ pub fn create_aws_reconciliation_config(
     git_repo_name: &str,
     git_repo_namespace: &str,
 ) -> SecretManagerConfig {
-    use controller::AwsConfig;
     // Set up Pact mode
     env::set_var("PACT_MODE", "true");
     env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
@@ -319,14 +318,14 @@ pub fn create_aws_reconciliation_config(
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        spec: controller::SecretManagerConfigSpec {
-            source_ref: controller::SourceRef {
+        spec: SecretManagerConfigSpec {
+            source_ref: SourceRef {
                 kind: "GitRepository".to_string(),
                 name: git_repo_name.to_string(),
                 namespace: git_repo_namespace.to_string(),
                 git_credentials: None,
             },
-            secrets: controller::SecretsConfig {
+            secrets: SecretsConfig {
                 environment: "test".to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -362,7 +361,6 @@ pub fn create_azure_reconciliation_config(
     git_repo_name: &str,
     git_repo_namespace: &str,
 ) -> SecretManagerConfig {
-    use controller::AzureConfig;
     // Set up Pact mode
     env::set_var("PACT_MODE", "true");
     env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
@@ -373,14 +371,14 @@ pub fn create_azure_reconciliation_config(
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        spec: controller::SecretManagerConfigSpec {
-            source_ref: controller::SourceRef {
+        spec: SecretManagerConfigSpec {
+            source_ref: SourceRef {
                 kind: "GitRepository".to_string(),
                 name: git_repo_name.to_string(),
                 namespace: git_repo_namespace.to_string(),
                 git_credentials: None,
             },
-            secrets: controller::SecretsConfig {
+            secrets: SecretsConfig {
                 environment: "test".to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -411,7 +409,6 @@ pub fn create_azure_reconciliation_config(
 /// Uses default values suitable for testing
 pub fn create_test_controller_config(
 ) -> std::sync::Arc<tokio::sync::RwLock<controller::config::ControllerConfig>> {
-    use controller::config::ControllerConfig;
     use std::sync::Arc;
     use tokio::sync::RwLock;
 

@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use kube::Client;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tracing::{info, warn};

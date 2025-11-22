@@ -2,7 +2,6 @@
 //!
 //! Configuration for hot-reloading controller settings from ConfigMap.
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Hot reload configuration

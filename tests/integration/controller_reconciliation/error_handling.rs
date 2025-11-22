@@ -14,8 +14,6 @@ mod tests {
     use controller::crd::SecretManagerConfig;
     use kube::api::{Api, PostParams};
     use std::sync::Arc;
-    use std::time::Duration;
-    use tokio::time::sleep;
     use tracing::info;
 
     /// Initialize test environment

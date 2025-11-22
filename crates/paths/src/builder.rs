@@ -14,13 +14,13 @@ use crate::provider::Provider;
 /// # Example
 ///
 /// ```rust
-/// use paths::{PathBuilder, Provider, Operation, GcpOperation};
+/// use paths::prelude::*;
 ///
 /// let path = PathBuilder::new()
 ///     .gcp_operation(GcpOperation::CreateSecret)
 ///     .project("my-project")
 ///     .build_http_path();
-/// // Returns: "/v1/projects/my-project/secrets"
+/// // Returns: "projects/my-project/secrets"
 /// ```
 #[derive(Debug, Clone)]
 pub struct PathBuilder {

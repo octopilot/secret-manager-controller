@@ -3,6 +3,17 @@
 //! This crate centralizes all API paths to ensure consistency
 //! between the controller and mock server implementations for all providers.
 //!
+//! ## Quick Start
+//!
+//! ```rust
+//! use paths::prelude::*;
+//!
+//! let path = PathBuilder::new()
+//!     .gcp_operation(GcpOperation::CreateSecret)
+//!     .project("my-project")
+//!     .build_http_path();
+//! ```
+//!
 //! ## PathBuilder
 //!
 //! The `PathBuilder` provides a type-safe, builder-pattern API for constructing
@@ -22,11 +33,5 @@ pub mod builder;
 pub mod errors;
 pub mod formats;
 pub mod operations;
+pub mod prelude;
 pub mod provider;
-
-// Re-export core types for convenience
-pub use builder::PathBuilder;
-pub use errors::PathBuilderError;
-pub use formats::PathFormat;
-pub use operations::{AwsOperation, AzureOperation, GcpOperation, Operation};
-pub use provider::Provider;

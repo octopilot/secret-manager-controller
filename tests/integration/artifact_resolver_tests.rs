@@ -13,7 +13,7 @@ use controller::controller::reconciler::artifact::{
     get_argocd_artifact_path, get_flux_artifact_path, get_flux_git_repository,
 };
 use controller::controller::reconciler::types::Reconciler;
-use controller::SourceRef;
+use controller::prelude::*;
 use kube::Client;
 use std::collections::HashMap;
 

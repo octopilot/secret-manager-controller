@@ -7,7 +7,7 @@ use super::client::ClientComponents;
 use super::types::KeyValue;
 use crate::observability::metrics;
 use crate::provider::ConfigStoreProvider;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::time::Instant;
 use tracing::{debug, info, info_span, Instrument};

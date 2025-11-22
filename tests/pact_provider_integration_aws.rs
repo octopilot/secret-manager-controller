@@ -14,9 +14,7 @@
 mod common;
 
 use common::init_rustls;
-use controller::provider::aws::AwsSecretManager;
-use controller::provider::SecretManagerProvider;
-use controller::AwsConfig;
+use controller::prelude::*;
 use pact_consumer::prelude::*;
 use serde_json::json;
 use std::env;

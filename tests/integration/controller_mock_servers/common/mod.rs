@@ -6,7 +6,7 @@
 //! - Setting up test environments
 //! - Verifying secret state in mock servers
 
-use controller::{GcpConfig, ProviderConfig, SecretManagerConfig, SecretsConfig, SourceRef};
+use controller::prelude::*;
 use kube::Client;
 use serde_json::json;
 use std::env;
@@ -210,7 +210,6 @@ async fn wait_for_server(
 /// Uses default values suitable for testing
 pub fn create_test_controller_config(
 ) -> std::sync::Arc<tokio::sync::RwLock<controller::config::ControllerConfig>> {
-    use controller::config::ControllerConfig;
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -231,7 +230,7 @@ pub fn create_gcp_test_config(
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        spec: controller::SecretManagerConfigSpec {
+        spec: SecretManagerConfigSpec {
             source_ref: SourceRef {
                 kind: "GitRepository".to_string(),
                 name: "test-repo".to_string(),
@@ -272,14 +271,13 @@ pub fn create_aws_test_config(
     region: &str,
     _mock_server_endpoint: &str,
 ) -> SecretManagerConfig {
-    use controller::AwsConfig;
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
             name: Some(name.to_string()),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        spec: controller::SecretManagerConfigSpec {
+        spec: SecretManagerConfigSpec {
             source_ref: SourceRef {
                 kind: "GitRepository".to_string(),
                 name: "test-repo".to_string(),
@@ -320,14 +318,13 @@ pub fn create_azure_test_config(
     vault_name: &str,
     _mock_server_endpoint: &str,
 ) -> SecretManagerConfig {
-    use controller::AzureConfig;
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
             name: Some(name.to_string()),
             namespace: Some(namespace.to_string()),
             ..Default::default()
         },
-        spec: controller::SecretManagerConfigSpec {
+        spec: SecretManagerConfigSpec {
             source_ref: SourceRef {
                 kind: "GitRepository".to_string(),
                 name: "test-repo".to_string(),
