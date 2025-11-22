@@ -25,7 +25,7 @@ impl fmt::Display for PathBuilderError {
                 write!(f, "Provider and operation do not match")
             }
             PathBuilderError::MissingRequiredParameter(param) => {
-                write!(f, "Missing required parameter: {}", param)
+                write!(f, "Missing required parameter: {param}")
             }
             PathBuilderError::InvalidOperationForProvider => {
                 write!(f, "Invalid operation for the selected provider")

@@ -126,7 +126,7 @@ async fn decrypt_with_sops_binary(
         .map_err(|e| {
             SopsDecryptionError::new(
                 SopsDecryptionFailureReason::ProviderUnavailable,
-                format!("sops binary not found in PATH: {}. Please install sops: brew install sops (macOS) or see https://github.com/mozilla/sops", e),
+                format!("sops binary not found in PATH: {e}. Please install sops: brew install sops (macOS) or see https://github.com/mozilla/sops"),
             )
         })?;
 

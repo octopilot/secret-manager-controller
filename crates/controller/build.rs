@@ -5,13 +5,17 @@ fn main() {
         ts.parse::<u64>().unwrap_or_else(|_| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .expect("System time is before UNIX epoch - this should never happen")
+                .unwrap_or_else(|_| {
+                    panic!("System time is before UNIX epoch - this should never happen")
+                })
                 .as_secs()
         })
     } else {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time is before UNIX epoch - this should never happen")
+            .unwrap_or_else(|_| {
+                panic!("System time is before UNIX epoch - this should never happen")
+            })
             .as_secs()
     };
 

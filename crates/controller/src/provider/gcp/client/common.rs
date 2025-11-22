@@ -103,7 +103,7 @@ impl OperationTracker {
     /// Get elapsed duration
     ///
     /// Reserved for future use if we need to access elapsed time directly.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "Reserved for future use")]
     pub fn elapsed(&self) -> Duration {
         self.start.elapsed()
     }
@@ -111,7 +111,7 @@ impl OperationTracker {
     /// Get a reference to the span
     ///
     /// Reserved for future use if we need to access the span directly.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "Reserved for future use")]
     pub fn span(&self) -> &Span {
         &self.span
     }

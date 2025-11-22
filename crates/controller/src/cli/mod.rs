@@ -245,7 +245,7 @@ async fn main() -> Result<()> {
     // We use ring as the crypto provider (matches main controller)
     rustls::crypto::ring::default_provider()
         .install_default()
-        .expect("Failed to install rustls crypto provider");
+        .unwrap_or_else(|_| panic!("Failed to install rustls crypto provider"));
 
     // Initialize tracing
     tracing_subscriber::fmt()

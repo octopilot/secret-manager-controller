@@ -64,6 +64,10 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+description = "Integration and contract tests for secret-manager-controller"
+repository = "https://github.com/microscaler/PriceWhisperer"
+keywords = ["kubernetes", "testing", "integration-tests", "pact"]
+categories = ["development-tools", "testing"]
 
 [dev-dependencies]
 # Test dependencies on workspace members

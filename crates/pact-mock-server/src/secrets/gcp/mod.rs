@@ -26,7 +26,7 @@ impl GcpSecretStore {
 
     /// Format GCP secret key
     pub fn format_key(project: &str, secret: &str) -> String {
-        format!("projects/{}/secrets/{}", project, secret)
+        format!("projects/{project}/secrets/{secret}")
     }
 
     /// Add a new version to a secret
@@ -123,7 +123,7 @@ impl GcpSecretStore {
     /// List all secrets for a project
     /// Returns a vector of secret names (without the "projects/{project}/secrets/" prefix)
     pub async fn list_all_secrets(&self, project: &str) -> Vec<String> {
-        let prefix = format!("projects/{}/secrets/", project);
+        let prefix = format!("projects/{project}/secrets/");
         let all_keys = self.store.list_all_keys().await;
 
         all_keys

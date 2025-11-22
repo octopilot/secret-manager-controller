@@ -6,6 +6,9 @@ resolver = "2"
 authors = ["Microscaler <info@microscaler.io>"]
 description = "Unified Pact Mock Server for GCP, AWS, and Azure Secret Manager APIs"
 license = "BSL-1.1"
+repository = "https://github.com/microscaler/PriceWhisperer"
+keywords = ["kubernetes", "pact", "testing", "mock-server", "gcp", "aws", "azure"]
+categories = ["development-tools", "testing"]
 
 [lib]
 name = "pact_mock_server"

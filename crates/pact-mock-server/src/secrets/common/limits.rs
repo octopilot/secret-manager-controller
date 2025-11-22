@@ -26,14 +26,13 @@ pub fn validate_gcp_secret_size(base64_data: &str) -> Result<(), String> {
     // Decode base64 to get actual size
     let decoded = match general_purpose::STANDARD.decode(base64_data) {
         Ok(data) => data,
-        Err(e) => return Err(format!("Invalid base64 data: {}", e)),
+        Err(e) => return Err(format!("Invalid base64 data: {e}")),
     };
 
     if decoded.len() > GCP_SECRET_SIZE_LIMIT {
         return Err(format!(
-            "Secret size {} bytes exceeds GCP limit of {} bytes (64KB)",
-            decoded.len(),
-            GCP_SECRET_SIZE_LIMIT
+            "Secret size {} bytes exceeds GCP limit of {GCP_SECRET_SIZE_LIMIT} bytes (64KB)",
+            decoded.len()
         ));
     }
 
@@ -52,8 +51,7 @@ pub fn validate_aws_secret_size(secret_value: &str) -> Result<(), String> {
 
     if size > AWS_SECRET_SIZE_LIMIT {
         return Err(format!(
-            "Secret size {} bytes exceeds AWS limit of {} bytes (64KB)",
-            size, AWS_SECRET_SIZE_LIMIT
+            "Secret size {size} bytes exceeds AWS limit of {AWS_SECRET_SIZE_LIMIT} bytes (64KB)"
         ));
     }
 
@@ -69,8 +67,7 @@ pub fn validate_azure_secret_size(secret_value: &str) -> Result<(), String> {
 
     if size > AZURE_SECRET_SIZE_LIMIT {
         return Err(format!(
-            "Secret size {} bytes exceeds Azure limit of {} bytes (25KB)",
-            size, AZURE_SECRET_SIZE_LIMIT
+            "Secret size {size} bytes exceeds Azure limit of {AZURE_SECRET_SIZE_LIMIT} bytes (25KB)"
         ));
     }
 

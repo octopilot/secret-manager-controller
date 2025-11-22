@@ -37,7 +37,7 @@ pub fn start_configmap_watch(
         // Create a watcher with field selector to only watch our ConfigMap
         let configmap_name_clone = configmap_name.clone();
         let watcher_config =
-            watcher::Config::default().fields(&format!("metadata.name={}", configmap_name_clone));
+            watcher::Config::default().fields(&format!("metadata.name={configmap_name_clone}"));
 
         let stream = watcher(configmaps, watcher_config);
         pin_mut!(stream);

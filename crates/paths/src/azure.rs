@@ -21,43 +21,43 @@ pub mod key_vault {
     /// Get secret (with trailing slash)
     /// GET /secrets/{name}/
     pub fn get_secret(name: &str) -> String {
-        format!("/secrets/{}/", name)
+        format!("/secrets/{name}/")
     }
 
     /// Get specific secret version
     /// GET /secrets/{name}/{version}
     pub fn get_secret_version(name: &str, version: &str) -> String {
-        format!("/secrets/{}/{}", name, version)
+        format!("/secrets/{name}/{version}")
     }
 
     /// List secret versions
     /// GET /secrets/{name}/versions
     pub fn list_secret_versions(name: &str) -> String {
-        format!("/secrets/{}/versions", name)
+        format!("/secrets/{name}/versions")
     }
 
     /// Set secret (without trailing slash)
     /// PUT /secrets/{name}
     pub fn set_secret(name: &str) -> String {
-        format!("/secrets/{}", name)
+        format!("/secrets/{name}")
     }
 
     /// Delete secret (all versions)
     /// DELETE /secrets/{name}
     pub fn delete_secret(name: &str) -> String {
-        format!("/secrets/{}", name)
+        format!("/secrets/{name}")
     }
 
     /// Update secret attributes (enabled/disabled)
     /// PATCH /secrets/{name}
     pub fn update_secret(name: &str) -> String {
-        format!("/secrets/{}", name)
+        format!("/secrets/{name}")
     }
 
     /// Backup secret
     /// POST /secrets/{name}/backup
     pub fn backup_secret(name: &str) -> String {
-        format!("/secrets/{}/backup", name)
+        format!("/secrets/{name}/backup")
     }
 
     /// Restore secret from backup
@@ -67,7 +67,7 @@ pub mod key_vault {
     /// Get deleted secret
     /// GET /deletedsecrets/{name}
     pub fn get_deleted_secret(name: &str) -> String {
-        format!("/deletedsecrets/{}", name)
+        format!("/deletedsecrets/{name}")
     }
 
     /// List deleted secrets
@@ -77,13 +77,13 @@ pub mod key_vault {
     /// Recover deleted secret
     /// POST /deletedsecrets/{name}/recover
     pub fn recover_deleted_secret(name: &str) -> String {
-        format!("/deletedsecrets/{}/recover", name)
+        format!("/deletedsecrets/{name}/recover")
     }
 
     /// Purge deleted secret
     /// DELETE /deletedsecrets/{name}
     pub fn purge_deleted_secret(name: &str) -> String {
-        format!("/deletedsecrets/{}", name)
+        format!("/deletedsecrets/{name}")
     }
 }
 
@@ -95,19 +95,19 @@ pub mod app_configuration {
     /// Get key-value
     /// GET /kv/{key}
     pub fn get_key_value(key: &str) -> String {
-        format!("/kv/{}", key)
+        format!("/kv/{key}")
     }
 
     /// Set key-value
     /// PUT /kv/{key}
     pub fn set_key_value(key: &str) -> String {
-        format!("/kv/{}", key)
+        format!("/kv/{key}")
     }
 
     /// Delete key-value
     /// DELETE /kv/{key}
     pub fn delete_key_value(key: &str) -> String {
-        format!("/kv/{}", key)
+        format!("/kv/{key}")
     }
 
     /// List key-values

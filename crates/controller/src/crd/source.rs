@@ -134,6 +134,7 @@ impl JsonSchema for ConfigStoreType {
             "enum": ["secretManager", "ParameterManager"],
             "description": "GCP config store type. SecretManager: Store configs as individual secrets in Secret Manager (interim solution). ParameterManager: Store configs in Parameter Manager (future, after ESO contribution)."
         });
-        Schema::try_from(schema_value).expect("Failed to create Schema for ConfigStoreType")
+        Schema::try_from(schema_value)
+            .unwrap_or_else(|_| panic!("Failed to create Schema for ConfigStoreType"))
     }
 }

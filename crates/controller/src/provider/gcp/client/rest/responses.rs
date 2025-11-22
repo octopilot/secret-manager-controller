@@ -100,7 +100,7 @@ pub struct AccessSecretVersionResponse {
     ///
     /// Required for deserialization but not used in the implementation.
     /// We only need the payload data.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "Required for deserialization but not used")]
     pub name: String,
     /// The secret payload containing the base64-encoded secret value
     ///

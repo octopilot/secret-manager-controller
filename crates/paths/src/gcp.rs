@@ -17,121 +17,109 @@ pub mod secret_manager {
     /// Create a new secret
     /// POST /v1/projects/{project}/secrets
     pub fn create_secret(project: &str) -> String {
-        format!("/v1/projects/{}/secrets", project)
+        format!("/v1/projects/{project}/secrets")
     }
 
     /// List secrets in a project
     /// GET /v1/projects/{project}/secrets
     pub fn list_secrets(project: &str) -> String {
-        format!("/v1/projects/{}/secrets", project)
+        format!("/v1/projects/{project}/secrets")
     }
 
     /// Get secret metadata
     /// GET /v1/projects/{project}/secrets/{secret}
     pub fn get_secret_metadata(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}")
     }
 
     /// Update secret metadata
     /// PATCH /v1/projects/{project}/secrets/{secret}
     pub fn update_secret_metadata(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}")
     }
 
     /// Delete a secret
     /// DELETE /v1/projects/{project}/secrets/{secret}
     pub fn delete_secret(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}")
     }
 
     /// Add a new version to a secret
     /// POST /v1/projects/{project}/secrets/{secret}:addVersion
     pub fn add_version(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}:addVersion", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}:addVersion")
     }
 
     /// Enable a secret
     /// POST /v1/projects/{project}/secrets/{secret}:enable
     pub fn enable_secret(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}:enable", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}:enable")
     }
 
     /// Disable a secret
     /// POST /v1/projects/{project}/secrets/{secret}:disable
     pub fn disable_secret(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}:disable", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}:disable")
     }
 
     /// List versions of a secret
     /// GET /v1/projects/{project}/secrets/{secret}/versions
     pub fn list_versions(project: &str, secret: &str) -> String {
-        format!("/v1/projects/{}/secrets/{}/versions", project, secret)
+        format!("/v1/projects/{project}/secrets/{secret}/versions")
     }
 
     /// Get a specific version of a secret
     /// GET /v1/projects/{project}/secrets/{secret}/versions/{version}
     pub fn get_version(project: &str, secret: &str, version: &str) -> String {
-        format!(
-            "/v1/projects/{}/secrets/{}/versions/{}",
-            project, secret, version
-        )
+        format!("/v1/projects/{project}/secrets/{secret}/versions/{version}")
     }
 
     /// Access latest version (get secret value)
     /// GET /v1/projects/{project}/secrets/{secret}/versions/latest:access
     pub fn access_latest_version(project: &str, secret: &str) -> String {
-        format!(
-            "/v1/projects/{}/secrets/{}/versions/latest:access",
-            project, secret
-        )
+        format!("/v1/projects/{project}/secrets/{secret}/versions/latest:access")
     }
 
     /// Access specific version (get secret value)
     /// GET /v1/projects/{project}/secrets/{secret}/versions/{version}:access
     pub fn access_version(project: &str, secret: &str, version: &str) -> String {
-        format!(
-            "/v1/projects/{}/secrets/{}/versions/{}:access",
-            project, secret, version
-        )
+        format!("/v1/projects/{project}/secrets/{secret}/versions/{version}:access")
     }
 
     /// Path template for controller use (without /v1 prefix, as controller adds it)
     /// Returns: projects/{project}/secrets/{secret}
     pub fn secret_path(project: &str, secret: &str) -> String {
-        format!("projects/{}/secrets/{}", project, secret)
+        format!("projects/{project}/secrets/{secret}")
     }
 
     /// Path template for controller use (without /v1 prefix)
     /// Returns: projects/{project}/secrets
     pub fn secrets_base(project: &str) -> String {
-        format!("projects/{}/secrets", project)
+        format!("projects/{project}/secrets")
     }
 
     /// Path template for controller use (without /v1 prefix)
     /// Returns: projects/{project}/secrets/{secret}:addVersion
     pub fn add_version_path(project: &str, secret: &str) -> String {
-        format!("projects/{}/secrets/{}:addVersion", project, secret)
+        format!("projects/{project}/secrets/{secret}:addVersion")
     }
 
     /// Path template for controller use (without /v1 prefix)
     /// Returns: projects/{project}/secrets/{secret}/versions/latest:access
     pub fn access_latest_version_path(project: &str, secret: &str) -> String {
-        format!(
-            "projects/{}/secrets/{}/versions/latest:access",
-            project, secret
-        )
+        format!("projects/{project}/secrets/{secret}/versions/latest:access")
     }
 
     /// Path template for controller use (without /v1 prefix)
     /// Returns: projects/{project}/secrets/{secret}:enable
     pub fn enable_secret_path(project: &str, secret: &str) -> String {
-        format!("projects/{}/secrets/{}:enable", project, secret)
+        format!("projects/{project}/secrets/{secret}:enable")
     }
 
     /// Path template for controller use (without /v1 prefix)
     /// Returns: projects/{project}/secrets/{secret}:disable
     pub fn disable_secret_path(project: &str, secret: &str) -> String {
-        format!("projects/{}/secrets/{}:disable", project, secret)
+        format!("projects/{project}/secrets/{secret}:disable")
     }
 }
 
@@ -140,66 +128,50 @@ pub mod parameter_manager {
     /// Create a new parameter
     /// POST /v1/projects/{project}/locations/{location}/parameters
     pub fn create_parameter(project: &str, location: &str) -> String {
-        format!("/v1/projects/{}/locations/{}/parameters", project, location)
+        format!("/v1/projects/{project}/locations/{location}/parameters")
     }
 
     /// List parameters
     /// GET /v1/projects/{project}/locations/{location}/parameters
     pub fn list_parameters(project: &str, location: &str) -> String {
-        format!("/v1/projects/{}/locations/{}/parameters", project, location)
+        format!("/v1/projects/{project}/locations/{location}/parameters")
     }
 
     /// Get parameter
     /// GET /v1/projects/{project}/locations/{location}/parameters/{parameter}
     pub fn get_parameter(project: &str, location: &str, parameter: &str) -> String {
-        format!(
-            "/v1/projects/{}/locations/{}/parameters/{}",
-            project, location, parameter
-        )
+        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}")
     }
 
     /// Update parameter
     /// PATCH /v1/projects/{project}/locations/{location}/parameters/{parameter}
     pub fn update_parameter(project: &str, location: &str, parameter: &str) -> String {
-        format!(
-            "/v1/projects/{}/locations/{}/parameters/{}",
-            project, location, parameter
-        )
+        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}")
     }
 
     /// Delete parameter
     /// DELETE /v1/projects/{project}/locations/{location}/parameters/{parameter}
     pub fn delete_parameter(project: &str, location: &str, parameter: &str) -> String {
-        format!(
-            "/v1/projects/{}/locations/{}/parameters/{}",
-            project, location, parameter
-        )
+        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}")
     }
 
     /// Create parameter version
     /// POST /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions
     pub fn create_version(project: &str, location: &str, parameter: &str) -> String {
-        format!(
-            "/v1/projects/{}/locations/{}/parameters/{}/versions",
-            project, location, parameter
-        )
+        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions")
     }
 
     /// List parameter versions
     /// GET /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions
     pub fn list_versions(project: &str, location: &str, parameter: &str) -> String {
-        format!(
-            "/v1/projects/{}/locations/{}/parameters/{}/versions",
-            project, location, parameter
-        )
+        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions")
     }
 
     /// Get parameter version
     /// GET /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}
     pub fn get_version(project: &str, location: &str, parameter: &str, version: &str) -> String {
         format!(
-            "/v1/projects/{}/locations/{}/parameters/{}/versions/{}",
-            project, location, parameter, version
+            "/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}"
         )
     }
 
@@ -207,8 +179,7 @@ pub mod parameter_manager {
     /// PATCH /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}
     pub fn update_version(project: &str, location: &str, parameter: &str, version: &str) -> String {
         format!(
-            "/v1/projects/{}/locations/{}/parameters/{}/versions/{}",
-            project, location, parameter, version
+            "/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}"
         )
     }
 
@@ -216,30 +187,26 @@ pub mod parameter_manager {
     /// DELETE /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}
     pub fn delete_version(project: &str, location: &str, parameter: &str, version: &str) -> String {
         format!(
-            "/v1/projects/{}/locations/{}/parameters/{}/versions/{}",
-            project, location, parameter, version
+            "/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}"
         )
     }
 
     /// Render parameter version
     /// GET /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render
     pub fn render_version(project: &str, location: &str, parameter: &str, version: &str) -> String {
-        format!(
-            "/v1/projects/{}/locations/{}/parameters/{}/versions/{}:render",
-            project, location, parameter, version
-        )
+        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render")
     }
 
     /// Get location
     /// GET /v1/projects/{project}/locations/{location}
     pub fn get_location(project: &str, location: &str) -> String {
-        format!("/v1/projects/{}/locations/{}", project, location)
+        format!("/v1/projects/{project}/locations/{location}")
     }
 
     /// List locations
     /// GET /v1/projects/{project}/locations
     pub fn list_locations(project: &str) -> String {
-        format!("/v1/projects/{}/locations", project)
+        format!("/v1/projects/{project}/locations")
     }
 }
 

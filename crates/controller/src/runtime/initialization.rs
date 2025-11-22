@@ -66,7 +66,7 @@ pub async fn initialize() -> Result<InitializationResult> {
     // We use ring as the crypto provider
     rustls::crypto::ring::default_provider()
         .install_default()
-        .expect("Failed to install rustls crypto provider");
+        .unwrap_or_else(|_| panic!("Failed to install rustls crypto provider"));
 
     // Initialize OpenTelemetry first (if configured)
     // This will set up tracing with Otel support

@@ -20,7 +20,7 @@
 //! This brings into scope:
 //! - `AppState` - Application state for mock servers
 //! - Middleware functions (logging, rate limiting, auth, etc.)
-//! - Secret store types (AwsSecretStore, GcpSecretStore, AzureSecretStore, etc.)
+//! - Secret store types (`AwsSecretStore`, `GcpSecretStore`, `AzureSecretStore`, etc.)
 //! - Common utilities (error responses, validation functions)
 
 // Application state
