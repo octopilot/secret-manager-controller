@@ -190,8 +190,14 @@ jobs:
 
       - name: Install Flux CLI
         run: |
-          # Install Flux CLI (required by install_fluxcd.py)
-          curl -s https://fluxcd.io/install.sh | sudo bash
+          # Download and install Flux CLI binary (required by install_fluxcd.py)
+          # We only need the CLI tool, not the full Flux installation
+          FLUX_VERSION=$(curl -s https://api.github.com/repos/fluxcd/flux2/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/v//')
+          curl -LO "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz"
+          tar -xzf flux_${FLUX_VERSION}_linux_amd64.tar.gz
+          sudo mv flux /usr/local/bin/flux
+          chmod +x /usr/local/bin/flux
+          rm flux_${FLUX_VERSION}_linux_amd64.tar.gz
           flux version
 
       - name: Install FluxCD (source-controller and notification-controller)
