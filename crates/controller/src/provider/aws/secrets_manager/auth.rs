@@ -30,8 +30,15 @@ pub async fn create_irsa_config(
     // CRITICAL: Override API endpoint BEFORE creating SDK config
     // The AWS SDK reads environment variables during builder.load().await
     let endpoint_override = {
-        let pact_config = crate::config::PactModeConfig::get();
-        if pact_config.enabled {
+        // Check if PACT_MODE is enabled (drop guard immediately)
+        let enabled = {
+            let pact_config = crate::config::PactModeConfig::get();
+            let enabled = pact_config.enabled;
+            drop(pact_config); // Drop guard before calling override_api_endpoint
+            enabled
+        };
+
+        if enabled {
             use crate::config::PactModeAPIOverride;
             use crate::provider::aws::secrets_manager::pact_api_override::AwsSecretsManagerAPIOverride;
 
@@ -40,7 +47,7 @@ pub async fn create_irsa_config(
                 .override_api_endpoint()
                 .context("Failed to override AWS Secrets Manager API endpoint for PACT_MODE")?;
 
-            // Get endpoint before dropping the guard
+            // Get endpoint (this will get the config again, but guard is dropped)
             api_override.get_endpoint()
         } else {
             None
@@ -68,8 +75,15 @@ pub async fn create_default_config(region: &str) -> Result<SdkConfig> {
     // CRITICAL: Override API endpoint BEFORE creating SDK config
     // The AWS SDK reads environment variables during builder.load().await
     let endpoint_override = {
-        let pact_config = crate::config::PactModeConfig::get();
-        if pact_config.enabled {
+        // Check if PACT_MODE is enabled (drop guard immediately)
+        let enabled = {
+            let pact_config = crate::config::PactModeConfig::get();
+            let enabled = pact_config.enabled;
+            drop(pact_config); // Drop guard before calling override_api_endpoint
+            enabled
+        };
+
+        if enabled {
             use crate::config::PactModeAPIOverride;
             use crate::provider::aws::secrets_manager::pact_api_override::AwsSecretsManagerAPIOverride;
 
@@ -78,7 +92,7 @@ pub async fn create_default_config(region: &str) -> Result<SdkConfig> {
                 .override_api_endpoint()
                 .context("Failed to override AWS Secrets Manager API endpoint for PACT_MODE")?;
 
-            // Get endpoint before dropping the guard
+            // Get endpoint (this will get the config again, but guard is dropped)
             api_override.get_endpoint()
         } else {
             None

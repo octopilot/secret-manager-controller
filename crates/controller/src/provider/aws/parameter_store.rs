@@ -114,8 +114,15 @@ impl AwsParameterStore {
         // CRITICAL: Override API endpoint BEFORE creating SDK config
         // The AWS SDK reads environment variables during builder.load().await
         let endpoint_override = {
-            let pact_config = crate::config::PactModeConfig::get();
-            if pact_config.enabled {
+            // Check if PACT_MODE is enabled (drop guard immediately)
+            let enabled = {
+                let pact_config = crate::config::PactModeConfig::get();
+                let enabled = pact_config.enabled;
+                drop(pact_config); // Drop guard before calling override_api_endpoint
+                enabled
+            };
+
+            if enabled {
                 use crate::config::PactModeAPIOverride;
                 use crate::provider::aws::parameter_store_pact_api_override::AwsParameterStoreAPIOverride;
 
@@ -124,7 +131,7 @@ impl AwsParameterStore {
                     .override_api_endpoint()
                     .context("Failed to override AWS Parameter Store API endpoint for PACT_MODE")?;
 
-                // Get endpoint before dropping the guard
+                // Get endpoint (this will get the config again, but guard is dropped)
                 api_override.get_endpoint()
             } else {
                 None
@@ -152,8 +159,15 @@ impl AwsParameterStore {
         // CRITICAL: Override API endpoint BEFORE creating SDK config
         // The AWS SDK reads environment variables during builder.load().await
         let endpoint_override = {
-            let pact_config = crate::config::PactModeConfig::get();
-            if pact_config.enabled {
+            // Check if PACT_MODE is enabled (drop guard immediately)
+            let enabled = {
+                let pact_config = crate::config::PactModeConfig::get();
+                let enabled = pact_config.enabled;
+                drop(pact_config); // Drop guard before calling override_api_endpoint
+                enabled
+            };
+
+            if enabled {
                 use crate::config::PactModeAPIOverride;
                 use crate::provider::aws::parameter_store_pact_api_override::AwsParameterStoreAPIOverride;
 
@@ -162,7 +176,7 @@ impl AwsParameterStore {
                     .override_api_endpoint()
                     .context("Failed to override AWS Parameter Store API endpoint for PACT_MODE")?;
 
-                // Get endpoint before dropping the guard
+                // Get endpoint (this will get the config again, but guard is dropped)
                 api_override.get_endpoint()
             } else {
                 None

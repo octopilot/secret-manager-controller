@@ -312,19 +312,21 @@ impl PactModeConfig {
 
         // Allow re-initialization for tests (replace existing config)
         // In production, this should only be called once at startup
-        if let Some(existing) = PACT_MODE_CONFIG.get() {
-            // For tests, allow re-initialization by replacing the config
-            #[cfg(test)]
-            {
-                let mut existing_guard = existing.lock().expect("PactModeConfig mutex poisoned");
+        // Note: We check for test mode at runtime using an environment variable check
+        // This allows tests to re-initialize the config with new endpoints
+        // CRITICAL: When re-initializing, we must read fresh env vars, not use cached values
+        if let Some(_existing) = PACT_MODE_CONFIG.get() {
+            // Check if we're in a test environment (tests set this)
+            // This allows re-initialization during tests
+            if std::env::var("__PACT_MODE_TEST__").is_ok() || cfg!(test) {
+                // IMPORTANT: We've already read fresh env vars above, so just replace the config
+                // The config was built with current env vars, so this is correct
+                let mut existing_guard = _existing.lock().expect("PactModeConfig mutex poisoned");
                 *existing_guard = config;
                 return Ok(());
             }
             // In production, return error if already initialized
-            #[cfg(not(test))]
-            {
-                return Err(anyhow::anyhow!("PactModeConfig already initialized"));
-            }
+            return Err(anyhow::anyhow!("PactModeConfig already initialized"));
         }
 
         PACT_MODE_CONFIG
