@@ -742,6 +742,23 @@ async fn main() {
     info!("Broker URL: {}", broker_url);
     info!("Provider: {}, Consumer: {}", provider, consumer);
 
+    // Wait for manager to be ready and our provider's pact to be published
+    // The manager tracks which pacts have been successfully published
+    let manager_url =
+        env::var("MANAGER_URL").unwrap_or_else(|_| "http://localhost:8081".to_string());
+    info!("Manager URL: {}", manager_url);
+
+    if let Err(e) = wait_for_manager_ready(
+        &manager_url,
+        &provider,
+        90, // 90 seconds max wait - should be enough with manager sidecar
+    )
+    .await
+    {
+        eprintln!("❌ Failed to wait for manager and pact: {}", e);
+        eprintln!("⚠️  Starting server anyway with default mock responses");
+    }
+
     // Load contracts from broker
     let contracts =
         load_contracts_from_broker(&broker_url, &username, &password, &provider, &consumer).await;

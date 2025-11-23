@@ -1,0 +1,26 @@
+---
+# ArgoCD CRDs Kustomization
+# 
+# This directory contains ArgoCD CRDs exported from a Kind cluster.
+# These CRDs are the minimal installation needed for the secret-manager-controller
+# to work with ArgoCD Application resources.
+#
+# The controller clones repos itself, so we only need the CRDs, not the full
+# ArgoCD installation (server, controllers, etc.).
+#
+# To apply these CRDs:
+#   kubectl apply -k pact-broker/argocd/
+#
+# Or apply individually:
+#   kubectl apply -f pact-broker/argocd/applications.argoproj.io.yaml
+#   kubectl apply -f pact-broker/argocd/applicationsets.argoproj.io.yaml
+#   kubectl apply -f pact-broker/argocd/appprojects.argoproj.io.yaml
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - applications.argoproj.io.yaml
+  - applicationsets.argoproj.io.yaml
+  - appprojects.argoproj.io.yaml
+

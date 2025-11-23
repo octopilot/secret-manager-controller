@@ -359,8 +359,11 @@ pub fn create_azure_test_config(
 }
 
 /// Set up environment variables for Pact mode with mock server endpoint
+/// Also initializes PactModeConfig singleton
 pub fn setup_pact_mode(provider: &str, endpoint: &str) {
     env::set_var("PACT_MODE", "true");
+    env::set_var("__PACT_MODE_TEST__", "true"); // Allow re-initialization in tests
+
     match provider {
         "gcp" => {
             env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
@@ -373,11 +376,23 @@ pub fn setup_pact_mode(provider: &str, endpoint: &str) {
         }
         _ => panic!("Unknown provider: {}", provider),
     }
+
+    // Initialize PactModeConfig singleton
+    // This is critical - the controller code requires PactModeConfig to be initialized
+    if let Err(e) = controller::config::PactModeConfig::init() {
+        // If already initialized, that's okay - we're in test mode so it can be re-initialized
+        tracing::warn!(
+            "PactModeConfig initialization warning (may be expected in tests): {}",
+            e
+        );
+    }
 }
 
-/// Clean up environment variables
+/// Clean up environment variables and reset PactModeConfig
 pub fn cleanup_pact_mode(provider: &str) {
     env::remove_var("PACT_MODE");
+    env::remove_var("__PACT_MODE_TEST__");
+
     match provider {
         "gcp" => {
             env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
@@ -390,6 +405,14 @@ pub fn cleanup_pact_mode(provider: &str) {
         }
         _ => {}
     }
+
+    // Reset PactModeConfig state (clear providers map)
+    // Note: We can't fully reset OnceLock, but we can clear the config
+    let _ = std::panic::catch_unwind(|| {
+        let mut config = controller::config::PactModeConfig::get();
+        config.enabled = false;
+        config.providers.clear();
+    });
 }
 
 /// Create a test Kubernetes client

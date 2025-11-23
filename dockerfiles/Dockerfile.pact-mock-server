@@ -23,6 +23,7 @@ COPY ./build_artifacts/mock-server/gcp-mock-server \
      ./build_artifacts/mock-server/aws-mock-server \
      ./build_artifacts/mock-server/azure-mock-server \
      ./build_artifacts/mock-server/webhook \
+     ./build_artifacts/mock-server/manager \
      /app/
 
 # Verify files exist, set permissions and ownership (fail fast if files are missing)
@@ -30,7 +31,8 @@ RUN test -f /app/gcp-mock-server && \
     test -f /app/aws-mock-server && \
     test -f /app/azure-mock-server && \
     test -f /app/webhook && \
-    chmod +x /app/gcp-mock-server /app/aws-mock-server /app/azure-mock-server /app/webhook && \
+    test -f /app/manager && \
+    chmod +x /app/gcp-mock-server /app/aws-mock-server /app/azure-mock-server /app/webhook /app/manager && \
     chown -R pact:pact /app
 
 # Switch back to non-root user

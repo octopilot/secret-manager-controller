@@ -1,26 +1,39 @@
 #!/usr/bin/env python3
 """
-Install FluxCD in Kubernetes cluster.
+Install FluxCD source-controller and notification-controller in Kubernetes cluster.
 
-This script ensures FluxCD components (source-controller, GitRepository CRD) are installed
-before deploying the secret-manager-controller, which depends on them.
+This script installs a minimal FluxCD setup:
+- All Flux CRDs
+- source-controller deployment and all services, RBAC, etc.
+- notification-controller deployment and all services, RBAC, etc.
+
+We exclude:
+- helm-controller
+- kustomize-controller
+
+This provides "enough flux" for GitRepository and notification support.
 """
 
 import subprocess
 import sys
-import time
+import tempfile
+import yaml
+from pathlib import Path
 
 
-def run_command(cmd, check=True, capture_output=True):
+def run_command(cmd, check=True, capture_output=True, shell=False):
     """Run a shell command and return the result."""
+    if isinstance(cmd, str) and not shell:
+        cmd = cmd.split()
+    
     result = subprocess.run(
         cmd,
-        shell=True,
+        shell=shell,
         capture_output=capture_output,
         text=True
     )
     if check and result.returncode != 0:
-        print(f"Error: Command failed: {cmd}", file=sys.stderr)
+        print(f"Error: Command failed: {' '.join(cmd) if isinstance(cmd, list) else cmd}", file=sys.stderr)
         if result.stderr:
             print(result.stderr, file=sys.stderr)
         sys.exit(1)
@@ -42,293 +55,358 @@ def log_error(msg):
     print(f"[ERROR] {msg}", file=sys.stderr)
 
 
-def clear_namespace_finalizers(namespace):
-    """Clear finalizers from a namespace to allow deletion to proceed."""
-    log_info(f"🔧 Attempting to clear finalizers for namespace '{namespace}'...")
-    
-    # Patch the namespace to remove all finalizers
-    patch_cmd = f"kubectl patch namespace {namespace} -p '{{\"metadata\":{{\"finalizers\":[]}}}}' --type=merge"
-    result = run_command(patch_cmd, check=False, capture_output=True)
-    
-    if result.returncode == 0:
-        log_info(f"✅ Successfully cleared finalizers for namespace '{namespace}'")
-        return True
-    else:
-        log_warn(f"⚠️  Failed to clear finalizers: {result.stderr}")
-        return False
-
-
 def check_flux_cli():
-    """Check if flux CLI is installed (optional - only needed for flux check)."""
+    """Check if flux CLI is installed."""
     result = run_command("which flux", check=False, capture_output=True)
     if result.returncode != 0:
-        log_warn("flux CLI not found (optional - only needed for 'flux check')")
-        log_warn("  Installation will use kubectl apply -k instead")
+        log_error("flux CLI not found - required for installation")
+        log_error("  Install with: brew install fluxcd/tap/flux")
         return False
     return True
 
 
 def check_fluxcd_installed():
-    """Check if FluxCD is already installed in the cluster."""
-    # First check if namespace is terminating - if so, FluxCD is not properly installed
-    ns_result = run_command(
-        "kubectl get namespace flux-system -o jsonpath='{.status.phase}'",
-        check=False,
-        capture_output=True
-    )
-    
-    if ns_result.returncode == 0 and "Terminating" in ns_result.stdout:
-        log_warn("⚠️  flux-system namespace is terminating")
-        log_warn("   FluxCD is not properly installed - namespace is being deleted")
-        return False
-    
-    # Try flux check if available (optional)
-    flux_check_result = run_command(
-        "flux check",
-        check=False,
-        capture_output=True
-    )
-    
-    # If flux check succeeded and shows controllers, verify source-controller is running
-    if flux_check_result.returncode == 0 and "controllers" in flux_check_result.stdout.lower():
-        pod_result = run_command(
-            "kubectl get pods -n flux-system -l app.kubernetes.io/name=source-controller --field-selector=status.phase=Running -o name",
-            check=False,
-            capture_output=True
-        )
-        if pod_result.returncode == 0 and "source-controller" in pod_result.stdout:
-            log_info("✅ FluxCD is already installed (source-controller running)")
-            return True
-    
-    # Fallback: Check namespace and pods directly (works without flux CLI)
+    """Check if FluxCD source-controller and notification-controller are already installed."""
+    # Check namespace
     ns_check = run_command(
         "kubectl get namespace flux-system",
         check=False,
         capture_output=True
     )
-    if ns_check.returncode == 0:
-        # Check if FluxCD components are running
-        pod_check = run_command(
-            "kubectl get pods -n flux-system -l app.kubernetes.io/name=source-controller --field-selector=status.phase=Running",
-            check=False,
-            capture_output=True
-        )
-        if pod_check.returncode == 0 and "source-controller" in pod_check.stdout:
-            log_info("✅ FluxCD is already installed (source-controller running)")
-            return True
+    if ns_check.returncode != 0:
+        return False
+    
+    # Check if source-controller is running
+    source_check = run_command(
+        "kubectl get pods -n flux-system -l app=source-controller --field-selector=status.phase=Running",
+        check=False,
+        capture_output=True
+    )
+    source_running = source_check.returncode == 0 and "source-controller" in source_check.stdout
+    
+    # Check if notification-controller is running
+    notification_check = run_command(
+        "kubectl get pods -n flux-system -l app=notification-controller --field-selector=status.phase=Running",
+        check=False,
+        capture_output=True
+    )
+    notification_running = notification_check.returncode == 0 and "notification-controller" in notification_check.stdout
+    
+    if source_running and notification_running:
+        log_info("✅ FluxCD source-controller and notification-controller are already installed (running)")
+        return True
     
     return False
 
 
+def filter_flux_manifests(manifests_text):
+    """Filter Flux manifests to keep only source-controller and notification-controller.
+    
+    Removes:
+    - helm-controller deployment and related resources
+    - kustomize-controller deployment and related resources
+    
+    Keeps:
+    - All CRDs
+    - source-controller deployment, service, RBAC, etc.
+    - notification-controller deployment, service, RBAC, etc.
+    - Shared resources (NetworkPolicy, ResourceQuota, etc.)
+    - ClusterRoles/ClusterRoleBindings that reference source or notification controllers
+    """
+    # Split YAML documents
+    documents = []
+    current_doc = []
+    
+    for line in manifests_text.split('\n'):
+        if line.strip() == '---':
+            if current_doc:
+                documents.append('\n'.join(current_doc))
+                current_doc = []
+        else:
+            current_doc.append(line)
+    
+    if current_doc:
+        documents.append('\n'.join(current_doc))
+    
+    # Filter documents
+    filtered_docs = []
+    
+    for doc in documents:
+        if not doc.strip():
+            continue
+        
+        try:
+            # Parse YAML to check resource type and name
+            data = yaml.safe_load(doc)
+            if not data:
+                continue
+            
+            kind = data.get('kind', '')
+            metadata = data.get('metadata', {})
+            name = metadata.get('name', '')
+            labels = metadata.get('labels', {})
+            app_label = labels.get('app', '')
+            
+            # Keep all CRDs
+            if kind == 'CustomResourceDefinition':
+                filtered_docs.append(doc)
+                continue
+            
+            # Keep namespace
+            if kind == 'Namespace' and name == 'flux-system':
+                filtered_docs.append(doc)
+                continue
+            
+            # Keep shared resources (NetworkPolicy, ResourceQuota, etc.)
+            if kind in ['NetworkPolicy', 'ResourceQuota', 'LimitRange']:
+                filtered_docs.append(doc)
+                continue
+            
+            # Skip helm-controller specific resources
+            if app_label == 'helm-controller' or name == 'helm-controller':
+                continue
+            
+            # Skip kustomize-controller specific resources
+            if app_label == 'kustomize-controller' or name == 'kustomize-controller':
+                continue
+            
+            # Handle ClusterRoleBinding - filter out helm and kustomize controller subjects
+            if kind == 'ClusterRoleBinding':
+                subjects = data.get('subjects', [])
+                
+                # Filter out helm and kustomize controller subjects
+                filtered_subjects = [
+                    sub for sub in subjects
+                    if sub.get('name') not in ['helm-controller', 'kustomize-controller']
+                    and 'helm-controller' not in str(sub.get('name', ''))
+                    and 'kustomize-controller' not in str(sub.get('name', ''))
+                ]
+                
+                # If no subjects remain after filtering, skip this binding entirely
+                if not filtered_subjects:
+                    continue
+                
+                # If subjects were filtered, update the document
+                if len(filtered_subjects) < len(subjects):
+                    data['subjects'] = filtered_subjects
+                    # Re-serialize the document
+                    import io
+                    output = io.StringIO()
+                    yaml.dump(data, output, default_flow_style=False, sort_keys=False, allow_unicode=True)
+                    doc = output.getvalue()
+                
+                filtered_docs.append(doc)
+                continue
+            
+            # Handle ClusterRole - check if it's helm or kustomize specific
+            if kind == 'ClusterRole':
+                # Skip if name contains helm or kustomize (but not if it's a shared role)
+                if 'helm-controller' in name.lower() and name != 'flux-edit-flux-system' and name != 'flux-view-flux-system':
+                    continue
+                if 'kustomize-controller' in name.lower() and name != 'flux-edit-flux-system' and name != 'flux-view-flux-system':
+                    continue
+                # Keep shared roles and source/notification specific roles
+                filtered_docs.append(doc)
+                continue
+            
+            # Keep source-controller resources
+            if app_label == 'source-controller' or name.startswith('source-controller'):
+                filtered_docs.append(doc)
+                continue
+            
+            # Keep notification-controller resources
+            if app_label == 'notification-controller' or name.startswith('notification-controller'):
+                filtered_docs.append(doc)
+                continue
+            
+            # Keep ServiceAccount, Role, RoleBinding if they're for source or notification
+            if kind in ['ServiceAccount', 'Role', 'RoleBinding']:
+                # Check if name or labels indicate source or notification controller
+                if 'source-controller' in name or 'notification-controller' in name:
+                    filtered_docs.append(doc)
+                    continue
+                # Skip if it's for helm or kustomize
+                if 'helm-controller' in name or 'kustomize-controller' in name:
+                    continue
+                # Keep others (might be shared)
+                filtered_docs.append(doc)
+                continue
+            
+            # Keep Deployment, Service, etc. if they're for source or notification
+            if kind in ['Deployment', 'Service', 'ServiceMonitor']:
+                if app_label in ['source-controller', 'notification-controller']:
+                    filtered_docs.append(doc)
+                    continue
+                # Skip helm and kustomize
+                if app_label in ['helm-controller', 'kustomize-controller']:
+                    continue
+            
+            # Keep other resources by default (ConfigMap, Secret, etc.) unless they're clearly helm/kustomize
+            if 'helm-controller' not in name.lower() and 'kustomize-controller' not in name.lower():
+                filtered_docs.append(doc)
+                continue
+            
+        except yaml.YAMLError as e:
+            log_warn(f"⚠️  Failed to parse YAML document: {e}")
+            # Skip unparseable documents
+            continue
+    
+    return '\n---\n'.join(filtered_docs)
+
+
 def install_fluxcd():
-    """Install FluxCD using Kustomize with patches."""
-    import os
+    """Install FluxCD source-controller and notification-controller (minimal installation).
     
-    log_info("Installing FluxCD using Kustomize...")
+    Uses `flux install --export` to get all manifests, then filters to keep only:
+    - All CRDs
+    - source-controller and notification-controller deployments and related resources
+    """
+    log_info("Installing FluxCD (minimal: source-controller + notification-controller)...")
+    log_info("Note: helm-controller and kustomize-controller are excluded")
     
-    # Get the install directory path
-    # __file__ is scripts/tilt/install_fluxcd.py
-    # We need to go up 2 levels to get to project root
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(script_dir))
-    install_dir = os.path.join(project_root, "gitops", "cluster", "fluxcd", "install")
-    
-    if not os.path.exists(install_dir):
-        log_error(f"FluxCD install directory not found: {install_dir}")
-        log_error("Expected directory: gitops/cluster/fluxcd/install/")
+    # Check if flux CLI is available
+    if not check_flux_cli():
         return False
     
-    kustomization_file = os.path.join(install_dir, "kustomization.yaml")
-    if not os.path.exists(kustomization_file):
-        log_error(f"Kustomization file not found: {kustomization_file}")
-        return False
-    
-    log_info(f"Applying FluxCD installation from: {install_dir}")
-    log_info("This includes FluxCD components + network policy patches")
-    
-    # Apply FluxCD installation with patches via Kustomize
+    # Get all Flux manifests
+    log_info("Exporting Flux manifests...")
     result = run_command(
-        f"kubectl apply -k {install_dir}",
+        ["flux", "install", "--export"],
         check=False,
         capture_output=True
     )
     
     if result.returncode != 0:
-        log_error(f"Failed to apply FluxCD installation: {result.stderr}")
-        if result.stdout:
-            log_error(f"Output: {result.stdout}")
+        log_error(f"Failed to export Flux manifests: {result.stderr}")
         return False
     
-    log_info("✅ FluxCD installation manifests applied")
-    log_info("Note: Namespace label is defined in config/namespace.yaml (DRY principle)")
-    log_info("      The namespace will be created when the controller is installed")
+    # Filter manifests to keep only source-controller and notification-controller
+    log_info("Filtering manifests (removing helm-controller and kustomize-controller)...")
+    filtered_manifests = filter_flux_manifests(result.stdout)
     
-    log_info("Waiting for FluxCD components to be ready...")
+    # Write filtered manifests to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_file:
+        tmp_file.write(filtered_manifests)
+        tmp_path = tmp_file.name
     
-    # Wait for source-controller to be ready
-    max_attempts = 30
-    for i in range(max_attempts):
-        result = run_command(
-            "kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=10s",
+    try:
+        # Apply filtered manifests
+        log_info("Applying filtered Flux manifests...")
+        apply_result = run_command(
+            ["kubectl", "apply", "-f", tmp_path],
             check=False,
             capture_output=True
         )
         
-        if result.returncode == 0:
-            log_info("✅ FluxCD source-controller is ready!")
-            break
+        if apply_result.returncode != 0:
+            log_error(f"Failed to apply Flux manifests: {apply_result.stderr}")
+            if apply_result.stdout:
+                log_error(f"Output: {apply_result.stdout}")
+            return False
         
-        if i < max_attempts - 1:
-            log_info(f"Waiting for source-controller... ({i+1}/{max_attempts})")
-            time.sleep(2)
+        log_info("✅ FluxCD manifests applied")
+        
+        # Wait for source-controller to be ready
+        log_info("Waiting for source-controller to be ready...")
+        wait_result = run_command(
+            "kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=120s",
+            check=False,
+            capture_output=True
+        )
+        
+        if wait_result.returncode == 0:
+            log_info("✅ source-controller is ready!")
         else:
-            log_warn("Source-controller not ready after 60 seconds, but installation may have succeeded")
-    
-    # Configure source-controller to watch all namespaces
-    # This allows GitRepositories in tilt, dev, stage, prod namespaces to be processed
-    log_info("Configuring source-controller to watch all namespaces...")
-    
-    # Check if --watch-all-namespaces flag already exists
-    result = run_command(
-        "kubectl get deployment source-controller -n flux-system -o jsonpath='{.spec.template.spec.containers[0].args}'",
-        check=False,
-        capture_output=True
-    )
-    
-    if result.returncode == 0 and "--watch-all-namespaces=true" not in result.stdout:
-        # Patch the deployment to add --watch-all-namespaces flag
-        patch_result = run_command(
-            "kubectl patch deployment source-controller -n flux-system --type='json' -p='[{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--watch-all-namespaces=true\"}]'",
+            log_warn("⚠️  source-controller not ready after 120 seconds, but installation may have succeeded")
+        
+        # Wait for notification-controller to be ready
+        log_info("Waiting for notification-controller to be ready...")
+        wait_result = run_command(
+            "kubectl wait --for=condition=ready pod -l app=notification-controller -n flux-system --timeout=120s",
             check=False,
             capture_output=True
         )
         
-        if patch_result.returncode == 0:
-            log_info("✅ Configured source-controller to watch all namespaces")
-            log_info("Waiting for source-controller to restart with new configuration...")
-            time.sleep(5)
+        if wait_result.returncode == 0:
+            log_info("✅ notification-controller is ready!")
+        else:
+            log_warn("⚠️  notification-controller not ready after 120 seconds, but installation may have succeeded")
+        
+        # Configure source-controller to watch all namespaces
+        log_info("Configuring source-controller to watch all namespaces...")
+        result = run_command(
+            "kubectl get deployment source-controller -n flux-system -o jsonpath='{.spec.template.spec.containers[0].args}'",
+            check=False,
+            capture_output=True
+        )
+        
+        if result.returncode == 0 and "--watch-all-namespaces=true" not in result.stdout:
+            patch_result = run_command(
+                "kubectl patch deployment source-controller -n flux-system --type='json' -p='[{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--watch-all-namespaces=true\"}]'",
+                check=False,
+                capture_output=True
+            )
             
-            # Wait for the new pod to be ready
-            for i in range(30):
-                result = run_command(
-                    "kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=10s",
-                    check=False,
-                    capture_output=True
-                )
-                if result.returncode == 0:
-                    log_info("✅ source-controller restarted and ready with multi-namespace support")
-                    break
-                time.sleep(2)
+            if patch_result.returncode == 0:
+                log_info("✅ Configured source-controller to watch all namespaces")
+                log_info("Waiting for source-controller to restart...")
+                import time
+                time.sleep(5)
+                
+                # Wait for the new pod to be ready
+                for i in range(30):
+                    result = run_command(
+                        "kubectl wait --for=condition=ready pod -l app=source-controller -n flux-system --timeout=10s",
+                        check=False,
+                        capture_output=True
+                    )
+                    if result.returncode == 0:
+                        log_info("✅ source-controller restarted and ready with multi-namespace support")
+                        break
+                    time.sleep(2)
+            else:
+                log_warn(f"⚠️  Failed to configure source-controller: {patch_result.stderr}")
         else:
-            log_warn(f"⚠️  Failed to configure source-controller for multi-namespace: {patch_result.stderr}")
-            log_warn("GitRepositories in non-flux-system namespaces may not be processed")
-            log_warn("See gitops/cluster/fluxcd/FLUXCD_MULTI_NAMESPACE.md for manual configuration")
-    else:
-        if result.returncode == 0 and "--watch-all-namespaces=true" in result.stdout:
-            log_info("✅ source-controller already configured to watch all namespaces")
-        else:
-            log_warn("⚠️  Could not verify source-controller configuration")
-    
-    # Network policy patches are now included in the kustomization
-    # The kustomization.yaml applies the NetworkPolicy patch automatically
-    log_info("✅ Network policy patches are included in the installation")
-    log_info("   The NetworkPolicy has been patched to allow ingress from microscaler-system namespace")
-    
-    # Check other components
-    components = [
-        ("kustomize-controller", "app=kustomize-controller"),
-        ("helm-controller", "app=helm-controller"),
-        ("notification-controller", "app=notification-controller"),
-    ]
-    
-    for component_name, label_selector in components:
-        result = run_command(
-            f"kubectl get pods -n flux-system -l {label_selector}",
-            check=False,
-            capture_output=True
-        )
-        if result.returncode == 0 and component_name in result.stdout:
-            log_info(f"✅ {component_name} is running")
-        else:
-            log_warn(f"⚠️  {component_name} not found (optional component)")
-    
-    # Verify GitRepository CRD exists
-    result = run_command(
-        "kubectl get crd gitrepositories.source.toolkit.fluxcd.io",
-        check=False,
-        capture_output=True
-    )
-    
-    if result.returncode == 0:
-        log_info("✅ GitRepository CRD is installed")
-    else:
-        log_warn("⚠️  GitRepository CRD not found - this may cause issues")
-    
-    return True
+            if result.returncode == 0 and "--watch-all-namespaces=true" in result.stdout:
+                log_info("✅ source-controller already configured to watch all namespaces")
+        
+        # Verify CRDs exist
+        crds_to_check = [
+            "gitrepositories.source.toolkit.fluxcd.io",
+            "alerts.notification.toolkit.fluxcd.io",
+            "providers.notification.toolkit.fluxcd.io",
+        ]
+        
+        for crd in crds_to_check:
+            result = run_command(
+                f"kubectl get crd {crd}",
+                check=False,
+                capture_output=True
+            )
+            if result.returncode == 0:
+                log_info(f"✅ CRD {crd} is installed")
+            else:
+                log_warn(f"⚠️  CRD {crd} not found")
+        
+        return True
+        
+    finally:
+        # Clean up temporary file
+        try:
+            Path(tmp_path).unlink()
+        except Exception:
+            pass
 
 
 def main():
     """Main function."""
     log_info("FluxCD Installation Script")
     log_info("=" * 50)
-    
-    # Check prerequisites (flux CLI is optional - only needed for flux check)
-    # Installation uses kubectl apply -k, so flux CLI is not required
-    flux_cli_available = check_flux_cli()
-    if not flux_cli_available:
-        log_info("Note: Installation will proceed using kubectl (flux CLI not required)")
+    log_info("Installing minimal FluxCD: source-controller + notification-controller")
+    log_info("")
     
     # Check if already installed
     is_installed = check_fluxcd_installed()
-    
-    # If namespace is terminating, wait for cleanup before proceeding
-    # Note: The script is NOT deleting the namespace - it's detecting that something else
-    # (previous deletion, failed installation, etc.) has already triggered deletion
-    ns_result = run_command(
-        "kubectl get namespace flux-system -o jsonpath='{.status.phase}'",
-        check=False,
-        capture_output=True
-    )
-    
-    if ns_result.returncode == 0 and "Terminating" in ns_result.stdout:
-        log_warn("⚠️  flux-system namespace is currently terminating")
-        log_warn("   This was likely triggered by a previous deletion or failed installation")
-        log_warn("   The script is NOT deleting it - waiting for existing deletion to complete...")
-        log_info("   This may take a few minutes. Please wait...")
-        
-        # Wait for namespace to be fully deleted (longer timeout for namespace deletion)
-        max_wait = 300  # Wait up to 5 minutes
-        finalizer_clear_attempted = False
-        
-        for i in range(max_wait):
-            check_result = run_command(
-                "kubectl get namespace flux-system",
-                check=False,
-                capture_output=True
-            )
-            if check_result.returncode != 0:
-                log_info("✅ Namespace cleanup complete")
-                is_installed = False  # Reset since namespace was deleted
-                break
-            
-            # If namespace is still terminating after 60 seconds, try clearing finalizers
-            if i == 60 and not finalizer_clear_attempted:
-                log_warn("⚠️  Namespace still terminating after 60 seconds")
-                log_info("   Attempting to clear finalizers to allow deletion...")
-                if clear_namespace_finalizers("flux-system"):
-                    finalizer_clear_attempted = True
-                    log_info("   Waiting for namespace deletion to complete after clearing finalizers...")
-            
-            if i % 30 == 0 and i > 0:
-                log_info(f"   Still waiting... ({i}/{max_wait}s)")
-            time.sleep(1)
-        else:
-            log_error("Timeout waiting for namespace cleanup (5 minutes)")
-            log_error("The namespace deletion is stuck even after clearing finalizers.")
-            log_error("You can try force-deleting it:")
-            log_error("  kubectl delete namespace flux-system --force --grace-period=0")
-            log_error("Then re-run this script.")
-            sys.exit(1)
     
     if is_installed:
         log_info("FluxCD is already installed. Verifying configuration...")
@@ -362,10 +440,13 @@ def main():
     
     log_info("")
     log_info("✅ FluxCD installation complete!")
-    log_info("📋 Next steps:")
-    log_info("  1. Create GitRepository resources in your environment namespaces")
-    log_info("  2. Create SecretManagerConfig resources that reference them")
-    log_info("  3. Verify GitRepositories are processed: kubectl get gitrepository -A")
+    log_info("📋 Installed components:")
+    log_info("  - All Flux CRDs")
+    log_info("  - source-controller (deployment, service, RBAC)")
+    log_info("  - notification-controller (deployment, service, RBAC)")
+    log_info("📋 Excluded components:")
+    log_info("  - helm-controller")
+    log_info("  - kustomize-controller")
 
 
 if __name__ == "__main__":

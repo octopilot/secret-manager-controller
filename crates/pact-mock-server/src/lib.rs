@@ -27,7 +27,9 @@ use axum::{
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 /// Application state shared across all mock servers
@@ -231,6 +233,217 @@ pub async fn auth_failure_middleware(request: Request, next: Next) -> Response {
     }
 
     next.run(request).await
+}
+
+/// Wait for Pact broker to be ready and pacts to be published
+/// This ensures the broker is accessible and contracts are available before starting the mock server
+pub async fn wait_for_broker_and_pacts(
+    broker_url: &str,
+    username: &str,
+    password: &str,
+    provider: &str,
+    consumer: &str,
+    max_wait_seconds: u64,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let start_time = std::time::Instant::now();
+    let mut attempt = 0;
+    let max_attempts = max_wait_seconds / 2; // Check every 2 seconds
+
+    info!("Waiting for Pact broker to be ready and pacts to be published...");
+    info!(
+        "Broker: {}, Provider: {}, Consumer: {}",
+        broker_url, provider, consumer
+    );
+
+    loop {
+        attempt += 1;
+
+        // Check if we've exceeded max wait time
+        if start_time.elapsed().as_secs() >= max_wait_seconds {
+            return Err(format!(
+                "Timeout waiting for broker and pacts after {} seconds",
+                max_wait_seconds
+            ));
+        }
+
+        // First, check if broker is accessible
+        let heartbeat_url = format!("{}/diagnostic/status/heartbeat", broker_url);
+        match client.get(&heartbeat_url).send().await {
+            Ok(response) if response.status().is_success() => {
+                // Broker is ready, now check for pacts
+                let pact_url = format!(
+                    "{}/pacts/provider/{}/consumer/{}/latest",
+                    broker_url, provider, consumer
+                );
+
+                match client
+                    .get(&pact_url)
+                    .basic_auth(username, Some(password))
+                    .send()
+                    .await
+                {
+                    Ok(response) if response.status().is_success() => {
+                        info!("✅ Broker is ready and pacts are published!");
+                        return Ok(());
+                    }
+                    Ok(response) if response.status() == 404 => {
+                        if attempt % 5 == 0 {
+                            info!("Broker is ready, waiting for pacts to be published... (attempt {}/{})", attempt, max_attempts);
+                        }
+                    }
+                    Ok(response) => {
+                        warn!(
+                            "Unexpected status when checking for pacts: {}",
+                            response.status()
+                        );
+                    }
+                    Err(e) => {
+                        if attempt % 5 == 0 {
+                            warn!("Error checking for pacts: {} (will retry)", e);
+                        }
+                    }
+                }
+            }
+            Ok(response) => {
+                if attempt % 5 == 0 {
+                    warn!("Broker returned status {} (will retry)", response.status());
+                }
+            }
+            Err(e) => {
+                if attempt % 5 == 0 {
+                    warn!("Broker not yet accessible: {} (will retry)", e);
+                }
+            }
+        }
+
+        // Wait before next attempt
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// Wait for manager to be ready and for a specific provider's pact to be published
+///
+/// Polls the manager's `/ready` endpoint and checks if the provider's pact is in the
+/// `published_providers` list. This is more reliable than checking the broker directly
+/// because the manager tracks which pacts have been successfully published.
+pub async fn wait_for_manager_ready(
+    manager_url: &str,
+    provider: &str,
+    max_wait_seconds: u64,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let start_time = std::time::Instant::now();
+    let mut attempt = 0;
+    let max_attempts = max_wait_seconds / 2; // Check every 2 seconds
+
+    info!("Waiting for manager to be ready and pact to be published...");
+    info!("Manager: {}, Provider: {}", manager_url, provider);
+
+    loop {
+        attempt += 1;
+
+        // Check if we've exceeded max wait time
+        if start_time.elapsed().as_secs() >= max_wait_seconds {
+            return Err(format!(
+                "Timeout waiting for manager and pact after {} seconds",
+                max_wait_seconds
+            ));
+        }
+
+        // Check manager's /ready endpoint
+        let ready_url = format!("{}/ready", manager_url);
+        match client
+            .get(&ready_url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                // Parse the JSON response
+                match response.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        let status = json
+                            .get("status")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("unknown");
+                        let broker_healthy = json
+                            .get("broker_healthy")
+                            .and_then(|b| b.as_bool())
+                            .unwrap_or(false);
+                        let pacts_published = json
+                            .get("pacts_published")
+                            .and_then(|p| p.as_bool())
+                            .unwrap_or(false);
+                        let published_providers = json
+                            .get("published_providers")
+                            .and_then(|p| p.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect::<Vec<String>>()
+                            })
+                            .unwrap_or_default();
+
+                        // Check if manager is ready
+                        if status == "ready" && broker_healthy && pacts_published {
+                            // Check if our provider is in the published list
+                            // Provider names are stored exactly as they appear in the ConfigMap
+                            // (e.g., "AWS-Secrets-Manager", "GCP-Secret-Manager", "Azure-Key-Vault")
+                            let provider_found = published_providers
+                                .iter()
+                                .any(|p| p.eq_ignore_ascii_case(provider));
+
+                            if provider_found {
+                                info!(
+                                    "✅ Manager is ready and pact for provider '{}' is published!",
+                                    provider
+                                );
+                                info!("   Published providers: {:?}", published_providers);
+                                return Ok(());
+                            } else {
+                                if attempt % 5 == 0 {
+                                    info!(
+                                        "Manager is ready, but provider '{}' not yet published... (attempt {}/{})",
+                                        provider, attempt, max_attempts
+                                    );
+                                    info!(
+                                        "   Published providers so far: {:?}",
+                                        published_providers
+                                    );
+                                }
+                            }
+                        } else {
+                            if attempt % 5 == 0 {
+                                info!(
+                                    "Manager not yet ready: status={}, broker_healthy={}, pacts_published={} (attempt {}/{})",
+                                    status, broker_healthy, pacts_published, attempt, max_attempts
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if attempt % 5 == 0 {
+                            warn!("Error parsing manager response: {} (will retry)", e);
+                        }
+                    }
+                }
+            }
+            Ok(response) => {
+                if attempt % 5 == 0 {
+                    warn!("Manager returned status {} (will retry)", response.status());
+                }
+            }
+            Err(e) => {
+                if attempt % 5 == 0 {
+                    warn!("Manager not yet accessible: {} (will retry)", e);
+                }
+            }
+        }
+
+        // Wait before next attempt
+        sleep(Duration::from_secs(2)).await;
+    }
 }
 
 /// Load contracts from Pact broker

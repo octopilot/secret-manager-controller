@@ -135,6 +135,7 @@ def main():
         "aws-mock-server",
         "azure-mock-server",
         "webhook",
+        "manager",
     ]
     
     print("🔍 Verifying binaries were built...")

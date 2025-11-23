@@ -22,6 +22,7 @@ def main():
         "aws-mock-server": "aws-mock-server",
         "azure-mock-server": "azure-mock-server",
         "webhook": "webhook",
+        "manager": "manager",
     }
     
     print("📋 Copying mock server binaries to build_artifacts...")

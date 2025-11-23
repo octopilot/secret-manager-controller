@@ -394,9 +394,12 @@ jobs:
           # This uses the controller's isolated Pact Broker with SQLite
           kubectl apply -k pact-broker/k8s/
 
-      - name: Wait for Pact Broker to be ready
+      - name: Wait for Pact Infrastructure to be ready
         run: |
-          kubectl wait --for=condition=ready pod -l app=pact-broker -n secret-manager-controller-pact-broker --timeout=300s
+          # Wait for the combined pact-infrastructure deployment
+          kubectl wait --for=condition=available deployment/pact-infrastructure -n secret-manager-controller-pact-broker --timeout=300s
+          # Wait for all containers in the pod to be ready
+          kubectl wait --for=condition=ready pod -l app=pact-infrastructure -n secret-manager-controller-pact-broker --timeout=300s
 
       - name: Port forward Pact Broker
         run: |

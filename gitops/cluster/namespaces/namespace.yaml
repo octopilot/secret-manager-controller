@@ -1,14 +1,8 @@
 ---
 # Consolidated Namespace Definitions
 # All namespaces for ArgoCD and FluxCD environments
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: microscaler-system
-  labels:
-    name: microscaler-system
-    environment: system
-    managed-by: gitops
+# Note: microscaler-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
+# and is not managed by GitOps to ensure it's always available
 ---
 apiVersion: v1
 kind: Namespace

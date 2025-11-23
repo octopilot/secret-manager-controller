@@ -232,6 +232,70 @@ def configure_containerd_registry():
         log_info(f"✅ Configured registry mirror on {node} (endpoint: {registry_endpoint})")
 
 
+def create_microscaler_system_namespace():
+    """Create microscaler-system namespace with proper labels.
+    
+    Creates the namespace at cluster startup so it's not managed by Tilt or GitOps.
+    This ensures the namespace is always available and has the correct labels for
+    FluxCD NetworkPolicy namespaceSelector matching.
+    """
+    log_info("Creating microscaler-system namespace...")
+    
+    # Check if namespace already exists
+    result = run_command(
+        ["kubectl", "get", "namespace", "microscaler-system"],
+        check=False,
+        capture_output=True
+    )
+    if result.returncode == 0:
+        log_info("microscaler-system namespace already exists")
+        # Update labels if needed (idempotent)
+        namespace_yaml = """apiVersion: v1
+kind: Namespace
+metadata:
+  name: microscaler-system
+  labels:
+    name: microscaler-system
+    app: secret-manager-controller
+    environment: system
+    managed-by: kind-setup
+"""
+        run_command(
+            "kubectl apply -f -",
+            input=namespace_yaml,
+            check=False
+        )
+        return
+    
+    # Create namespace with labels
+    namespace_yaml = """apiVersion: v1
+kind: Namespace
+metadata:
+  name: microscaler-system
+  labels:
+    name: microscaler-system
+    app: secret-manager-controller
+    environment: system
+    managed-by: kind-setup
+"""
+    result = run_command(
+        "kubectl apply -f -",
+        input=namespace_yaml,
+        check=False,
+        capture_output=True
+    )
+    
+    if result.returncode == 0:
+        log_info("✅ microscaler-system namespace created successfully")
+    else:
+        log_warn(f"Failed to create namespace: {result.stderr}")
+        # Try simple create as fallback
+        run_command(
+            ["kubectl", "create", "namespace", "microscaler-system"],
+            check=False,
+        )
+
+
 def create_pvc():
     """Create PVC for controller cache.
     
@@ -244,19 +308,6 @@ def create_pvc():
     if not pvc_yaml_path.exists():
         log_warn(f"PVC YAML not found at {pvc_yaml_path}, skipping PVC creation")
         return
-    
-    # Ensure namespace exists first
-    result = run_command(
-        ["kubectl", "get", "namespace", "microscaler-system"],
-        check=False,
-        capture_output=True
-    )
-    if result.returncode != 0:
-        log_info("Creating microscaler-system namespace...")
-        run_command(
-            ["kubectl", "create", "namespace", "microscaler-system"],
-            check=False,
-        )
     
     # Apply PVC (idempotent - won't fail if it already exists)
     result = run_command(
@@ -306,6 +357,56 @@ def ensure_registry_connected():
         return False
 
 
+def install_gitops_components():
+    """Install FluxCD and ArgoCD components in the cluster.
+    
+    These are infrastructure dependencies that should be available as soon as the cluster is up.
+    Installing them here (outside of Tilt) ensures they're always available and don't need to be
+    reinstalled every time Tilt starts.
+    """
+    log_info("Installing GitOps components (FluxCD and ArgoCD)...")
+    
+    # Get script directory
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent
+    
+    # Install FluxCD
+    fluxcd_script = script_dir / "tilt" / "install_fluxcd.py"
+    if fluxcd_script.exists():
+        log_info("Installing FluxCD source-controller and notification-controller...")
+        result = run_command(
+            [sys.executable, str(fluxcd_script)],
+            check=False,
+            capture_output=True
+        )
+        if result.returncode == 0:
+            log_info("✅ FluxCD installed successfully")
+        else:
+            log_warn(f"FluxCD installation had issues: {result.stderr}")
+            # Don't fail - cluster setup should continue even if GitOps components have issues
+    else:
+        log_warn(f"FluxCD install script not found at {fluxcd_script}")
+    
+    # Install ArgoCD CRDs
+    argocd_script = script_dir / "tilt" / "install_argocd.py"
+    if argocd_script.exists():
+        log_info("Installing ArgoCD CRDs...")
+        result = run_command(
+            [sys.executable, str(argocd_script)],
+            check=False,
+            capture_output=True
+        )
+        if result.returncode == 0:
+            log_info("✅ ArgoCD CRDs installed successfully")
+        else:
+            log_warn(f"ArgoCD installation had issues: {result.stderr}")
+            # Don't fail - cluster setup should continue even if GitOps components have issues
+    else:
+        log_warn(f"ArgoCD install script not found at {argocd_script}")
+    
+    log_info("✅ GitOps components installation complete")
+
+
 def setup_kind_cluster():
     """Setup Kind cluster."""
     result = run_command("kind get clusters", check=False)
@@ -351,6 +452,10 @@ def setup_kind_cluster():
     log_info("Configuring containerd on nodes to use local registry...")
     configure_containerd_registry()
     
+    # Create microscaler-system namespace (created at cluster startup, not managed by Tilt/GitOps)
+    # This ensures the namespace is always available with proper labels
+    create_microscaler_system_namespace()
+    
     # Create PVC for controller cache (created at cluster startup, not managed by Tilt)
     # This prevents Tilt from deleting/recreating PVCs which can lock up the system
     create_pvc()
@@ -372,6 +477,10 @@ data:
         input=configmap_yaml,
         check=True
     )
+    
+    # Install FluxCD and ArgoCD components
+    # These are infrastructure dependencies that should be available as soon as the cluster is up
+    install_gitops_components()
     
     log_info(f"✅ Kind cluster '{CLUSTER_NAME}' created successfully!")
     log_info(f"📦 Local registry: {REGISTRY_NAME} (localhost:{REGISTRY_PORT})")

@@ -130,40 +130,14 @@ custom_build(
 # ====================
 # Container Cleanup
 # ====================
-# Clean up stopped Docker containers after controller builds complete
-# This prevents Docker from being overwhelmed by stopped containers from Tilt builds
-# Runs as a one-shot cleanup after each controller build
-
-local_resource(
-    'container-cleanup',
-    cmd='python3 scripts/tilt/cleanup_stopped_containers.py',
-    deps=[
-        './scripts/tilt/cleanup_stopped_containers.py',
-    ],
-    labels=['controllers'],
-    allow_parallel=True,
-    # Run after controller deployment completes to clean up stopped containers
-    # This prevents accumulation of stopped containers from Docker builds
-    # Depend on the Kubernetes deployment resource which uses the image
-    resource_deps=[CONTROLLER_NAME],
-)
+# Note: container-cleanup resource removed from Tilt - problematic container causing disk space issues has been found
+# The Python script (scripts/tilt/cleanup_stopped_containers.py) is kept for manual use if needed
 
 # ====================
 # FluxCD Installation
 # ====================
-# Install FluxCD in the cluster before deploying the controller
-# This ensures GitRepository CRDs and source-controller are available
-# Idempotent - can be run multiple times safely
-
-local_resource(
-    'fluxcd-install',
-    cmd='python3 scripts/tilt/install_fluxcd.py',
-    deps=[
-        './scripts/tilt/install_fluxcd.py',
-    ],
-    labels=['infrastructure'],
-    allow_parallel=False,
-)
+# Note: FluxCD is installed by Kind cluster setup (scripts/setup_kind.py)
+# and is not managed by Tilt to ensure it's always available
 
 # ====================
 # Contour Ingress Installation
@@ -187,20 +161,8 @@ local_resource(
 # ====================
 # ArgoCD Installation
 # ====================
-# Install ArgoCD in the cluster before deploying Applications
-# This ensures Application CRDs and controllers are available
-# Idempotent - can be run multiple times safely
-
-local_resource(
-    'argocd-install',
-    cmd='python3 scripts/tilt/install_argocd.py',
-    deps=[
-        './scripts/tilt/install_argocd.py',
-    ],
-    labels=['infrastructure'],
-    resource_deps=['fluxcd-install'],
-    allow_parallel=False,
-)
+# Note: ArgoCD CRDs are installed by Kind cluster setup (scripts/setup_kind.py)
+# and are not managed by Tilt to ensure they're always available
 
 # ArgoCD Ingress
 # Access ArgoCD UI via ingress at http://argocd.localhost
@@ -260,7 +222,6 @@ local_resource(
         '.env',  # Watch for .env file changes
     ],
     labels=['infrastructure'],
-    resource_deps=['fluxcd-install'],
     allow_parallel=False,
 )
 
@@ -280,31 +241,44 @@ local_resource(
         '.sops.yaml',  # Watch for .sops.yaml changes
     ],
     labels=['infrastructure'],
-    resource_deps=['fluxcd-install'],
     allow_parallel=False,
 )
 
 # ====================
 # Deploy to Kubernetes
 # ====================
-# Ensure namespace exists before applying kustomize
-# Kustomize may try to apply namespace-scoped resources before namespace is created
-local_resource(
-    'ensure-microscaler-system-namespace',
-    cmd='kubectl apply -f config/namespace.yaml',
-    deps=[
-        'config/namespace.yaml',
-    ],
-    labels=['infrastructure'],
-    allow_parallel=False,
-)
+# Note: microscaler-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
+# and is not managed by Tilt to ensure it's always available
 
 # CRITICAL: Apply CRD separately to prevent Tilt garbage collection from deleting it
 # The CRD is a cluster-scoped resource that must persist across Tilt restarts
 # If included in k8s_yaml, Tilt's garbage collection will delete it when resources change
 local_resource(
     'apply-crd',
-    cmd='kubectl apply -f config/crd/secretmanagerconfig.yaml',
+    cmd='''
+        # Wait for cluster to be accessible (with timeout)
+        echo "Checking cluster connectivity..."
+        timeout=30
+        elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+            if kubectl cluster-info >/dev/null 2>&1; then
+                echo "✅ Cluster is accessible"
+                break
+            fi
+            echo "  Waiting for cluster... (${elapsed}s/${timeout}s)"
+            sleep 2
+            elapsed=$((elapsed + 2))
+        done
+        
+        # Apply CRD with validation disabled if cluster is not accessible
+        # This allows CRD to be applied even if cluster validation fails
+        if kubectl cluster-info >/dev/null 2>&1; then
+            kubectl apply -f config/crd/secretmanagerconfig.yaml
+        else
+            echo "⚠️  Cluster not accessible, applying CRD without validation..."
+            kubectl apply -f config/crd/secretmanagerconfig.yaml --validate=false
+        fi
+    ''',
     deps=[
         'config/crd/secretmanagerconfig.yaml',
     ],
@@ -315,8 +289,8 @@ local_resource(
 
 # Deploy using kustomize
 # Note: CRD is NOT included in kustomize - it's applied separately above to prevent deletion
-# Note: FluxCD should be installed first (fluxcd-install resource)
-# Note: Namespace is created by ensure-microscaler-system-namespace resource above
+# Note: FluxCD is installed by Kind cluster setup (scripts/setup_kind.py)
+# Note: Namespace is created by Kind cluster setup (scripts/setup_kind.py)
 # k8s_yaml doesn't support resource_deps, but the namespace resource runs first
 # and kubectl apply is idempotent, so namespace.yaml in kustomize won't cause issues
 k8s_yaml(kustomize('%s/config' % CONTROLLER_DIR))
@@ -330,7 +304,7 @@ k8s_yaml(kustomize('%s/config' % CONTROLLER_DIR))
 k8s_resource(
     CONTROLLER_NAME,
     labels=['controllers'],
-    resource_deps=['build-all-binaries', 'secret-manager-controller-crd-gen', 'apply-crd', 'fluxcd-install', 'sops-key-setup', 'ensure-microscaler-system-namespace'],
+    resource_deps=['build-all-binaries', 'secret-manager-controller-crd-gen', 'apply-crd', 'sops-key-setup'],
 )
 
 # ====================
@@ -421,66 +395,46 @@ custom_build(
     skips_local_docker=False,
 )
 
+# Apply Pact infrastructure Kubernetes resources
+# Order matters: ConfigMap is created first, then deployment
+# ConfigMap is populated automatically by init containers in the deployment
 k8s_yaml(kustomize('pact-broker/k8s'))
 
+# Combined Pact Infrastructure Deployment
+# All Pact components (broker, mock servers, webhook) are now in a single deployment
+# This significantly reduces startup time and simplifies orchestration
+# 
+# Setup order:
+# 1. ConfigMap is created by k8s_yaml
+# 2. Deployment starts with init containers that populate ConfigMap and publish contracts
+# 3. All services are ready
 k8s_resource(
-    'pact-broker',
+    'pact-infrastructure',
     labels=['pact'],
-    port_forwards=['9292:9292'],
-    # No resource_deps - completely independent from controllers
-)
-
-k8s_resource(
-    'gcp-mock-server',
-    labels=['pact'],
-    # Tilt automatically substitutes image from custom_build('pact-mock-server')
-    # The image name 'pact-mock-server' in the YAML matches the custom_build name
-    # Dependencies are handled by custom_build resource_deps
-)
-
-k8s_resource(
-    'aws-mock-server',
-    labels=['pact'],
-    # Tilt automatically substitutes image from custom_build('pact-mock-server')
-    # The image name 'pact-mock-server' in the YAML matches the custom_build name
-    # Dependencies are handled by custom_build resource_deps
-)
-
-k8s_resource(
-    'azure-mock-server',
-    labels=['pact'],
-    # Tilt automatically substitutes image from custom_build('pact-mock-server')
-    # The image name 'pact-mock-server' in the YAML matches the custom_build name
-    # Dependencies are handled by custom_build resource_deps
-)
-
-k8s_resource(
-    'mock-webhook',
-    labels=['pact'],
-    port_forwards=['8080:8080'],
-    # Tilt automatically substitutes image from custom_build('mock-webhook')
-    # The image name 'mock-webhook' in the YAML matches the custom_build name
-    # Warning about 'localhost:5000/mock-webhook' can be ignored - Tilt will substitute correctly
-    # Dependencies are handled by custom_build resource_deps
+    port_forwards=['9292:9292', '8080:8080'],  # Forward broker and webhook ports
+    # Tilt automatically detects image dependencies from k8s_yaml
+    # The deployment references 'pact-mock-server' and 'mock-webhook' images
+    # which are built by custom_build resources above
+    # All services (pact-broker, aws-mock-server, gcp-mock-server, azure-mock-server, mock-webhook)
+    # are part of this single deployment, accessed via their respective services
+    # Contract publishing is handled by init containers in the deployment
 )
 
 # ====================
-# Pact Contract Publishing
-# ====================
-# Run Pact tests and publish contracts to broker
+# Run Pact tests
 # 
 # INDEPENDENT: Only depends on pact-broker, not on controller resources.
 # Can run independently: 'tilt up pact' or filter by 'pact' label.
 
 local_resource(
-    'pact-tests-and-publish',
+    'pact-tests',
     cmd='python3 scripts/pact_publish.py',
     deps=[
         '%s/tests' % CONTROLLER_DIR,
         '%s/Cargo.toml' % CONTROLLER_DIR,
         'scripts/pact_publish.py',
     ],
-    resource_deps=['pact-broker'],  # Only depends on pact-broker, not controllers
+    resource_deps=['pact-infrastructure'],  # Wait for infrastructure
     labels=['pact'],
     allow_parallel=False,
 )
@@ -515,7 +469,7 @@ local_resource(
         'gitops/cluster/fluxcd/env/tilt/kustomization.yaml',
     ],
     labels=['infrastructure', ],
-    resource_deps=['git-credentials-setup', 'fluxcd-install'],
+    resource_deps=['git-credentials-setup'],
     allow_parallel=False,
 )
 
@@ -529,14 +483,15 @@ local_resource(
         'gitops/cluster/argocd/env/tilt/kustomization.yaml',
     ],
     labels=['infrastructure', ],
-    resource_deps=['git-credentials-setup', 'argocd-install'],
+    resource_deps=['git-credentials-setup'],
     allow_parallel=False,
 )
 
 # Also load via k8s_yaml for Tilt to track the resources
 # Using top-level kustomization.yaml as entrypoint
 # This includes namespaces and all environment configurations
-# Note: allow_duplicates=True because microscaler-system namespace is also defined in config/namespace.yaml
+# Note: allow_duplicates=True is safe - Kubernetes handles idempotent applies gracefully
+# Note: microscaler-system namespace is created by Kind cluster setup, not by GitOps
 # Kubernetes handles idempotent applies gracefully, so duplicates are safe
 k8s_yaml(kustomize('gitops/cluster'), allow_duplicates=True)
 

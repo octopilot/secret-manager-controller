@@ -42,8 +42,8 @@ def run_command(cmd: List[str], check: bool = True, capture_output: bool = False
 
 
 def wait_for_pact_broker(timeout: int = 120) -> bool:
-    """Wait for Pact broker deployment to be ready."""
-    print("Waiting for Pact broker to be ready...")
+    """Wait for Pact infrastructure deployment to be ready."""
+    print("Waiting for Pact infrastructure to be ready...")
     namespace = "secret-manager-controller-pact-broker"
     
     # Wait for deployment to be available (at least one replica ready)
@@ -52,20 +52,20 @@ def wait_for_pact_broker(timeout: int = 120) -> bool:
     deployment_cmd = [
         "kubectl", "wait",
         "--for=condition=available",
-        "deployment/pact-broker",
+        "deployment/pact-infrastructure",
         "-n", namespace,
         f"--timeout={timeout}s"
     ]
     try:
         run_command(deployment_cmd, capture_output=True)
-        print("✅ Pact broker deployment is available")
+        print("✅ Pact infrastructure deployment is available")
         
         # Verify at least one pod is actually ready (deployment condition can be true before pod is ready)
         print("Verifying pod readiness...")
         # Use a simpler approach: get all pods and check their status
         check_cmd = [
             "kubectl", "get", "pods",
-            "-l", "app=pact-broker",
+            "-l", "app=pact-infrastructure",
             "-n", namespace,
             "-o", "json"
         ]
@@ -116,7 +116,7 @@ def wait_for_pact_broker(timeout: int = 120) -> bool:
             print("⚠️  Failed to check pod status, assuming deployment is ready")
             return True  # If we can't check pods, trust the deployment condition
     except subprocess.CalledProcessError as e:
-        print(f"❌ Pact broker deployment failed to become available: {e}")
+        print(f"❌ Pact infrastructure deployment failed to become available: {e}")
         return False
 
 
@@ -161,6 +161,111 @@ def check_port_forward(url: str, username: str, password: str) -> bool:
         return False
     except Exception as e:
         print(f"❌ Port forward check failed: {e}")
+        return False
+
+
+def check_manager_health(manager_url: str, timeout: int = 30) -> Tuple[bool, dict]:
+    """Check the manager's /health endpoint.
+    
+    Returns (is_ready, health_data) where is_ready is True if broker is healthy and pacts are published.
+    """
+    print(f"Checking manager health at {manager_url}/health...")
+    
+    max_attempts = timeout // 2  # Check every 2 seconds
+    attempt = 0
+    
+    while attempt < max_attempts:
+        try:
+            req = urllib.request.Request(f"{manager_url}/health")
+            with urllib.request.urlopen(req, timeout=5) as response:
+                if response.status == 200:
+                    health_data = json.loads(response.read().decode())
+                    broker_healthy = health_data.get("broker_healthy", False)
+                    pacts_published = health_data.get("pacts_published", False)
+                    status = health_data.get("status", "unknown")
+                    
+                    print(f"  Manager status: {status}")
+                    print(f"  Broker healthy: {broker_healthy}")
+                    print(f"  Pacts published: {pacts_published}")
+                    
+                    # Ready if both broker is healthy and pacts are published
+                    is_ready = broker_healthy and pacts_published
+                    
+                    if is_ready:
+                        print("✅ Manager indicates all components are ready and pacts are published")
+                        return (True, health_data)
+                    else:
+                        if attempt % 5 == 0:  # Log every 5 attempts
+                            print(f"  ⏳ Waiting for manager to be ready... (attempt {attempt + 1}/{max_attempts})")
+                else:
+                    if attempt % 5 == 0:
+                        print(f"  ⚠️  Manager health check returned status {response.status}")
+        except urllib.error.URLError as e:
+            if attempt % 5 == 0:
+                print(f"  ⏳ Manager not yet accessible: {e} (attempt {attempt + 1}/{max_attempts})")
+        except Exception as e:
+            if attempt % 5 == 0:
+                print(f"  ⚠️  Error checking manager health: {e} (attempt {attempt + 1}/{max_attempts})")
+        
+        attempt += 1
+        if attempt < max_attempts:
+            time.sleep(2)
+    
+    print(f"❌ Manager health check timed out after {timeout} seconds")
+    return (False, {})
+
+
+def check_pacts_published(broker_url: str, username: str, password: str) -> bool:
+    """Check if pacts are published in the broker.
+    
+    Returns True if at least one pact is found, False otherwise.
+    """
+    print("Checking if pacts are published in the broker...")
+    
+    # List of providers we expect to have pacts
+    providers = [
+        "GCP-Secret-Manager",
+        "AWS-Secrets-Manager",
+        "AWS-Parameter-Store",
+        "Azure-Key-Vault",
+        "Azure-App-Configuration",
+        "GCP-Parameter-Manager",
+    ]
+    consumer = "Secret-Manager-Controller"
+    
+    found_pacts = 0
+    
+    for provider in providers:
+        # Check for latest pact between consumer and provider
+        # URL format: /pacts/provider/{provider}/consumer/{consumer}/latest
+        url = f"{broker_url}/pacts/provider/{provider}/consumer/{consumer}/latest"
+        
+        try:
+            # Create basic auth header
+            credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+            req = urllib.request.Request(url)
+            req.add_header("Authorization", f"Basic {credentials}")
+            
+            # Try to fetch the pact
+            with urllib.request.urlopen(req, timeout=10) as response:
+                if response.status == 200:
+                    found_pacts += 1
+                    print(f"  ✅ Found pact for {provider}")
+                else:
+                    print(f"  ⏭️  No pact found for {provider} (status: {response.status})")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print(f"  ⏭️  No pact found for {provider}")
+            else:
+                print(f"  ⚠️  Error checking {provider}: {e.code}")
+        except Exception as e:
+            print(f"  ⚠️  Error checking {provider}: {e}")
+    
+    if found_pacts > 0:
+        print(f"✅ Found {found_pacts} published pact(s) in the broker")
+        return True
+    else:
+        print("❌ No pacts found in the broker")
         return False
 
 
@@ -370,6 +475,18 @@ def main() -> int:
         action="store_true",
         help="Allow publishing even if tests fail (useful when fixing tests)"
     )
+    parser.add_argument(
+        "--manager-port",
+        type=int,
+        default=8081,
+        help="Manager health port (default: 8081)"
+    )
+    parser.add_argument(
+        "--manager-timeout",
+        type=int,
+        default=120,
+        help="Timeout in seconds for waiting for manager to be ready (default: 120)"
+    )
     
     args = parser.parse_args()
     
@@ -381,9 +498,11 @@ def main() -> int:
             if not wait_for_pact_broker():
                 return 1
         
-        # Set up port forwarding
+        # Set up port forwarding for broker and manager
+        manager_port_forward = None
         if not args.skip_port_forward:
-            port_forward_process = setup_port_forward(
+            # Port forward for Pact broker
+            broker_port_forward = setup_port_forward(
                 "secret-manager-controller-pact-broker",
                 "pact-broker",
                 9292,
@@ -391,9 +510,74 @@ def main() -> int:
             )
             
             if not check_port_forward(args.broker_url, args.username, args.password):
-                if port_forward_process:
-                    port_forward_process.terminate()
+                if broker_port_forward:
+                    broker_port_forward.terminate()
                 return 1
+            
+            # Port forward for manager health endpoint
+            # Manager is in the same pod, so we can port-forward to the pod directly
+            print("Setting up port forwarding for manager health endpoint...")
+            namespace = "secret-manager-controller-pact-broker"
+            
+            # Get the pod name for the manager
+            get_pod_cmd = [
+                "kubectl", "get", "pods",
+                "-l", "app=pact-infrastructure",
+                "-n", namespace,
+                "-o", "jsonpath={.items[0].metadata.name}"
+            ]
+            pod_result = subprocess.run(get_pod_cmd, capture_output=True, text=True, check=False)
+            if pod_result.returncode == 0 and pod_result.stdout.strip():
+                pod_name = pod_result.stdout.strip()
+                manager_port_forward = setup_port_forward(
+                    namespace,
+                    pod_name,  # Port-forward to pod directly
+                    args.manager_port,
+                    8081  # Manager's health port
+                )
+                port_forward_process = broker_port_forward  # Keep broker port forward for cleanup
+            else:
+                print("⚠️  Could not find pact-infrastructure pod for manager port-forward")
+                print("   Will try to connect to manager via service if available")
+                manager_port_forward = None
+                port_forward_process = broker_port_forward
+        
+        # Check manager health (this checks broker health and pacts published)
+        print("\n" + "=" * 60)
+        print("Checking manager health status...")
+        print("=" * 60)
+        
+        manager_url = f"http://localhost:{args.manager_port}"
+        manager_ready, health_data = check_manager_health(manager_url, timeout=args.manager_timeout)
+        
+        if not manager_ready:
+            print("\n" + "=" * 60)
+            print("❌ Manager indicates components are not ready")
+            print("=" * 60)
+            broker_healthy = health_data.get("broker_healthy", False)
+            pacts_published = health_data.get("pacts_published", False)
+            
+            if not broker_healthy:
+                print("\n⚠️  Broker is not healthy yet.")
+                print("   The pact-infrastructure deployment may still be initializing.")
+            if not pacts_published:
+                print("\n⚠️  Pacts are not yet published.")
+                print("   The manager may still be publishing contracts.")
+            
+            print("\nWait for the manager to indicate readiness, then run this script again.")
+            print("\nTo check manager status:")
+            print("  kubectl get deployment pact-infrastructure -n secret-manager-controller-pact-broker")
+            print("  kubectl logs deployment/pact-infrastructure -c manager -n secret-manager-controller-pact-broker")
+            print(f"  curl http://localhost:{args.manager_port}/health")
+            if port_forward_process:
+                port_forward_process.terminate()
+            if manager_port_forward:
+                manager_port_forward.terminate()
+            return 1
+        
+        print("\n" + "=" * 60)
+        print("✅ Manager indicates all components are ready and pacts are published")
+        print("=" * 60 + "\n")
         
         # Run Pact tests
         test_exit_code = run_pact_tests()
@@ -425,14 +609,20 @@ def main() -> int:
             return test_exit_code
         
     finally:
-        # Clean up port forward
+        # Clean up port forwards
         if port_forward_process:
-            print("Cleaning up port forward...")
+            print("Cleaning up port forwards...")
             port_forward_process.terminate()
             try:
                 port_forward_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 port_forward_process.kill()
+        if 'manager_port_forward' in locals() and manager_port_forward:
+            manager_port_forward.terminate()
+            try:
+                manager_port_forward.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                manager_port_forward.kill()
 
 
 if __name__ == "__main__":

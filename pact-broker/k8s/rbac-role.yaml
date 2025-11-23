@@ -1,0 +1,21 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pact-manager
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: pact-infrastructure
+    app.kubernetes.io/component: pact-infrastructure
+    app.kubernetes.io/part-of: secret-manager-controller
+rules:
+# Allow list without resourceNames (required for watcher to list ConfigMaps)
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["list"]
+# Allow get and watch on specific ConfigMap only
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "watch"]
+  resourceNames: ["pact-contracts"]  # Restrict to only the pact-contracts ConfigMap
+

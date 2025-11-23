@@ -6,9 +6,10 @@ namespace: secret-manager-controller-pact-broker
 
 resources:
   - namespace.yaml
-  - broker.yaml
-  - mock-server-gcp.yaml
-  - mock-server-aws.yaml
-  - mock-server-azure.yaml
-  - mock-webhook.yaml
+  - pact-contracts-configmap.yaml  # Created first, populated automatically
+  - rbac-serviceaccount.yaml  # ServiceAccount for manager sidecar
+  - rbac-role.yaml  # Role granting ConfigMap read permissions
+  - rbac-rolebinding.yaml  # RoleBinding for manager ServiceAccount
+  - pact-deployment.yaml
+  # Note: pact-publish-job.yaml removed - publishing is handled by init containers in deployment
 

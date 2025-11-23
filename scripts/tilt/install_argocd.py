@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Install ArgoCD in Kubernetes cluster.
+Install ArgoCD CRDs in Kubernetes cluster.
 
-This script ensures ArgoCD components (application-controller, Application CRD) are installed
-before deploying the secret-manager-controller, which can use ArgoCD Applications as sources.
+This script installs only the ArgoCD CRDs (minimal installation) from the local
+pact-broker/argocd directory. The CRDs are used by the secret-manager-controller
+to read Application resources. We don't need the full ArgoCD installation since
+the controller clones repos itself.
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -42,220 +45,181 @@ def log_error(msg):
     print(f"[ERROR] {msg}", file=sys.stderr)
 
 
-def clear_namespace_finalizers(namespace):
-    """Clear finalizers from a namespace to allow deletion to proceed."""
-    log_info(f"🔧 Attempting to clear finalizers for namespace '{namespace}'...")
-    
-    # Patch the namespace to remove all finalizers
-    patch_cmd = f"kubectl patch namespace {namespace} -p '{{\"metadata\":{{\"finalizers\":[]}}}}' --type=merge"
-    result = run_command(patch_cmd, check=False, capture_output=True)
-    
-    if result.returncode == 0:
-        log_info(f"✅ Successfully cleared finalizers for namespace '{namespace}'")
-        return True
-    else:
-        log_warn(f"⚠️  Failed to clear finalizers: {result.stderr}")
-        return False
-
-
 def check_argocd_installed():
-    """Check if ArgoCD is already installed in the cluster."""
-    # Check if argocd namespace exists
-    ns_result = run_command(
-        "kubectl get namespace argocd",
-        check=False,
-        capture_output=True
-    )
+    """Check if ArgoCD CRDs are already installed in the cluster."""
+    # Check if all required CRDs exist
+    required_crds = [
+        "applications.argoproj.io",
+        "applicationsets.argoproj.io",
+        "appprojects.argoproj.io"
+    ]
     
-    if ns_result.returncode != 0:
-        return False
+    all_installed = True
+    for crd in required_crds:
+        crd_result = run_command(
+            f"kubectl get crd {crd}",
+            check=False,
+            capture_output=True
+        )
+        
+        if crd_result.returncode != 0:
+            all_installed = False
+            break
     
-    # Check if namespace is terminating
-    phase_result = run_command(
-        "kubectl get namespace argocd -o jsonpath='{.status.phase}'",
-        check=False,
-        capture_output=True
-    )
-    
-    if phase_result.returncode == 0 and "Terminating" in phase_result.stdout:
-        log_warn("⚠️  argocd namespace is terminating")
-        return False
-    
-    # Check if application-controller pod is running
-    pod_result = run_command(
-        "kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-application-controller --field-selector=status.phase=Running -o name",
-        check=False,
-        capture_output=True
-    )
-    
-    if pod_result.returncode == 0 and "argocd-application-controller" in pod_result.stdout:
-        log_info("✅ ArgoCD is already installed (application-controller running)")
-        return True
-    
-    # Check if Application CRD exists
-    crd_result = run_command(
-        "kubectl get crd applications.argoproj.io",
-        check=False,
-        capture_output=True
-    )
-    
-    if crd_result.returncode == 0:
-        log_info("✅ ArgoCD CRDs are installed")
+    if all_installed:
+        log_info("✅ ArgoCD CRDs are already installed")
         return True
     
     return False
 
 
 def install_argocd():
-    """Install ArgoCD using kubectl apply."""
-    log_info("Installing ArgoCD...")
+    """Install ArgoCD CRDs from local pact-broker/argocd directory.
     
-    # Install ArgoCD using the official installation manifest
-    # This installs ArgoCD in the argocd namespace
-    log_info("Applying ArgoCD installation manifest...")
+    We only need the CRDs since the controller clones repos itself.
+    We don't need the full ArgoCD installation (server, controllers, etc.).
+    This is much faster than downloading from remote URLs.
+    """
+    log_info("Installing ArgoCD CRDs (minimal installation)...")
+    log_info("Note: Only CRDs are installed, not full ArgoCD")
+    log_info("      This is sufficient since the controller clones repos itself")
     
-    # Use the official ArgoCD installation manifest
-    # Version 2.10+ supports installation via kubectl apply
-    install_cmd = (
-        "kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - && "
-        "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
-    )
+    # Get the script directory to find the CRD directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(script_dir))
+    crd_dir = os.path.join(project_root, "pact-broker", "argocd")
     
-    result = run_command(
-        install_cmd,
-        check=False,
-        capture_output=True
-    )
+    if not os.path.exists(crd_dir):
+        log_error(f"CRD directory not found: {crd_dir}")
+        log_error("Please ensure pact-broker/argocd directory exists with CRD files")
+        return False
     
-    if result.returncode != 0:
-        # Check if it failed because resources already exist
-        if "already exists" in result.stderr.lower() or "AlreadyExists" in result.stderr:
-            log_info("ArgoCD resources already exist")
-        else:
-            log_error(f"Failed to install ArgoCD: {result.stderr}")
-            return False
+    if not os.path.exists(os.path.join(crd_dir, "kustomization.yaml")):
+        log_error(f"kustomization.yaml not found in {crd_dir}")
+        return False
     
-    log_info("ArgoCD installation manifest applied")
-    log_info("Waiting for ArgoCD components to be ready...")
+    log_info(f"📦 Applying CRDs from: {crd_dir}")
     
-    # Wait for application-controller to be ready
-    max_attempts = 60  # Wait up to 2 minutes
-    for i in range(max_attempts):
+    # Apply CRDs individually (more reliable than kustomize for large CRDs)
+    crd_files = [
+        "applications.argoproj.io.yaml",
+        "applicationsets.argoproj.io.yaml",
+        "appprojects.argoproj.io.yaml"
+    ]
+    
+    all_applied = True
+    for crd_file in crd_files:
+        crd_path = os.path.join(crd_dir, crd_file)
+        if not os.path.exists(crd_path):
+            log_error(f"CRD file not found: {crd_path}")
+            all_applied = False
+            continue
+        
+        log_info(f"Applying {crd_file}...")
+        
+        # First try apply (for new CRDs)
         result = run_command(
-            "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-application-controller -n argocd --timeout=10s",
+            f"kubectl apply -f {crd_path}",
+            check=False,
+            capture_output=True
+        )
+        
+        if result.returncode != 0:
+            # If it failed because CRD already exists or needs update, use replace --force
+            if "already exists" in result.stderr.lower() or "AlreadyExists" in result.stderr or "must be specified for an update" in result.stderr:
+                log_info(f"  {crd_file} already exists, replacing...")
+                # Use replace --force to update existing CRD without resourceVersion
+                result = run_command(
+                    f"kubectl replace --force -f {crd_path}",
+                    check=False,
+                    capture_output=True
+                )
+                
+                if result.returncode != 0:
+                    log_error(f"Failed to replace {crd_file}: {result.stderr}")
+                    all_applied = False
+                else:
+                    log_info(f"  ✅ {crd_file} replaced successfully")
+            else:
+                log_error(f"Failed to install {crd_file}: {result.stderr}")
+                all_applied = False
+        else:
+            log_info(f"  ✅ {crd_file} applied successfully")
+    
+    if not all_applied:
+        return False
+    
+    log_info("✅ ArgoCD CRD manifests applied")
+    log_info("Waiting for CRDs to be established...")
+    
+    # Wait for all CRDs to be established
+    required_crds = [
+        "applications.argoproj.io",
+        "applicationsets.argoproj.io",
+        "appprojects.argoproj.io"
+    ]
+    
+    max_attempts = 30  # Wait up to 1 minute
+    for i in range(max_attempts):
+        all_established = True
+        for crd in required_crds:
+            result = run_command(
+                f"kubectl wait --for=condition=established crd {crd} --timeout=10s",
+                check=False,
+                capture_output=True
+            )
+            
+            if result.returncode != 0:
+                all_established = False
+                break
+        
+        if all_established:
+            log_info("✅ All ArgoCD CRDs are established!")
+            break
+        
+        if i < max_attempts - 1:
+            log_info(f"Waiting for CRDs to be established... ({i+1}/{max_attempts})")
+            time.sleep(2)
+        else:
+            log_warn("Some CRDs not established after 60 seconds, but installation may have succeeded")
+    
+    # Verify all CRDs exist
+    all_ready = True
+    for crd in required_crds:
+        result = run_command(
+            f"kubectl get crd {crd}",
             check=False,
             capture_output=True
         )
         
         if result.returncode == 0:
-            log_info("✅ ArgoCD application-controller is ready!")
-            break
-        
-        if i < max_attempts - 1:
-            log_info(f"Waiting for application-controller... ({i+1}/{max_attempts})")
-            time.sleep(2)
+            log_info(f"✅ {crd} is installed and ready")
         else:
-            log_warn("Application-controller not ready after 2 minutes, but installation may have succeeded")
+            log_warn(f"⚠️  {crd} not found - this may cause issues")
+            all_ready = False
     
-    # Check other components
-    components = [
-        ("argocd-server", "app.kubernetes.io/name=argocd-server"),
-        ("argocd-repo-server", "app.kubernetes.io/name=argocd-repo-server"),
-        ("argocd-redis", "app.kubernetes.io/name=argocd-redis"),
-    ]
-    
-    for component_name, label_selector in components:
-        result = run_command(
-            f"kubectl get pods -n argocd -l {label_selector} --field-selector=status.phase=Running",
-            check=False,
-            capture_output=True
-        )
-        if result.returncode == 0 and component_name in result.stdout:
-            log_info(f"✅ {component_name} is running")
-        else:
-            log_warn(f"⚠️  {component_name} not ready yet (may still be starting)")
-    
-    # Verify Application CRD exists
-    result = run_command(
-        "kubectl get crd applications.argoproj.io",
-        check=False,
-        capture_output=True
-    )
-    
-    if result.returncode == 0:
-        log_info("✅ Application CRD is installed")
-    else:
-        log_warn("⚠️  Application CRD not found - this may cause issues")
-    
-    return True
+    return all_ready
 
 
 def main():
     """Main function."""
-    log_info("ArgoCD Installation Script")
+    log_info("ArgoCD CRD Installation Script")
     log_info("=" * 50)
     
     # Check if already installed
     is_installed = check_argocd_installed()
     
-    # If namespace is terminating, wait for cleanup before proceeding
-    ns_result = run_command(
-        "kubectl get namespace argocd -o jsonpath='{.status.phase}'",
-        check=False,
-        capture_output=True
-    )
-    
-    if ns_result.returncode == 0 and "Terminating" in ns_result.stdout:
-        log_warn("⚠️  argocd namespace is currently terminating")
-        log_warn("   This was likely triggered by a previous deletion or failed installation")
-        log_warn("   The script is NOT deleting it - waiting for existing deletion to complete...")
-        log_info("   This may take a few minutes. Please wait...")
-        
-        # Wait for namespace to be fully deleted
-        max_wait = 300  # Wait up to 5 minutes
-        finalizer_clear_attempted = False
-        
-        for i in range(max_wait):
-            check_result = run_command(
-                "kubectl get namespace argocd",
-                check=False,
-                capture_output=True
-            )
-            if check_result.returncode != 0:
-                log_info("✅ Namespace cleanup complete")
-                is_installed = False  # Reset since namespace was deleted
-                break
-            
-            # If namespace is still terminating after 60 seconds, try clearing finalizers
-            if i == 60 and not finalizer_clear_attempted:
-                log_warn("⚠️  Namespace still terminating after 60 seconds")
-                log_info("   Attempting to clear finalizers to allow deletion...")
-                if clear_namespace_finalizers("argocd"):
-                    finalizer_clear_attempted = True
-                    log_info("   Waiting for namespace deletion to complete after clearing finalizers...")
-            
-            if i % 30 == 0 and i > 0:
-                log_info(f"   Still waiting... ({i}/{max_wait}s)")
-            time.sleep(1)
-        else:
-            log_error("Timeout waiting for namespace cleanup (5 minutes)")
-            log_error("The namespace deletion is stuck even after clearing finalizers.")
-            log_error("You can try force-deleting it:")
-            log_error("  kubectl delete namespace argocd --force --grace-period=0")
-            log_error("Then re-run this script.")
-            sys.exit(1)
-    
     if is_installed:
         log_info("")
-        log_info("✅ ArgoCD installation check complete!")
+        log_info("✅ ArgoCD CRD installation check complete!")
         return
     
-    # Install ArgoCD
+    # Install ArgoCD CRDs
     if not install_argocd():
         sys.exit(1)
     
     log_info("")
-    log_info("✅ ArgoCD installation complete!")
+    log_info("✅ ArgoCD CRD installation complete!")
     log_info("📋 Next steps:")
     log_info("  1. Create Application resources in your environment namespaces")
     log_info("  2. Create SecretManagerConfig resources that reference them")

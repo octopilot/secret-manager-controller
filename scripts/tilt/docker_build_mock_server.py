@@ -47,6 +47,7 @@ def main():
         Path("build_artifacts/mock-server/aws-mock-server"),
         Path("build_artifacts/mock-server/azure-mock-server"),
         Path("build_artifacts/mock-server/webhook"),
+        Path("build_artifacts/mock-server/manager"),
     ]
     
     for binary_path in binary_paths:

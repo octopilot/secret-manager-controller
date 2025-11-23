@@ -1,0 +1,20 @@
+---
+# ConfigMap containing Pact contract JSON files
+# This ConfigMap is populated by scripts/tilt/create_pact_configmap.py
+# The pact-publish-job uses this ConfigMap to publish contracts to the broker
+#
+# Note: This ConfigMap starts empty and is populated automatically by init containers
+# local_resource when Pact files are available. The job will wait for the ConfigMap
+# to be populated before publishing.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pact-contracts
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: pact-infrastructure
+    app.kubernetes.io/component: pact-infrastructure
+    app.kubernetes.io/part-of: secret-manager-controller
+data:
+  # This ConfigMap is populated by scripts/tilt/create_pact_configmap.py
+  # It will be updated when Pact files are generated in target/pacts/

@@ -4073,10 +4073,15 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 name = "pact-mock-server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "axum-test",
  "base64 0.22.1",
  "chrono",
+ "futures",
+ "k8s-openapi",
+ "kube",
+ "kube-runtime",
  "paths",
  "reqwest",
  "rustls 0.23.35",
