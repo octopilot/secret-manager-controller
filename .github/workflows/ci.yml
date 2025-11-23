@@ -175,20 +175,30 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Setup Kind cluster (includes registry, FluxCD, ArgoCD CRDs, and microscaler-system namespace)
+      - name: Setup Kind cluster (includes registry and microscaler-system namespace)
         env:
           NON_INTERACTIVE: "1"
         run: |
-          # Use our setup_kind.py script which handles everything:
+          # Use our setup_kind.py script which handles:
           # - Creates Kind cluster (using kind-config.yaml)
           # - Sets up local Docker registry
           # - Connects registry to cluster network
           # - Configures containerd to use local registry
-          # - Installs FluxCD source-controller
-          # - Installs ArgoCD CRDs
           # - Creates microscaler-system namespace
           # NON_INTERACTIVE=1 ensures it uses existing cluster if present (no prompts)
           python3 scripts/setup_kind.py
+
+      - name: Install FluxCD (source-controller and notification-controller)
+        run: |
+          # Install FluxCD components using the same script as local dev
+          # This installs source-controller and notification-controller (minimal FluxCD)
+          python3 scripts/tilt/install_fluxcd.py
+
+      - name: Install ArgoCD CRDs
+        run: |
+          # Install ArgoCD CRDs using the same script as local dev
+          # This installs only the CRDs (minimal ArgoCD) from pact-broker/argocd
+          python3 scripts/tilt/install_argocd.py
 
       # Note: Tilt CI will build the controller image locally and push to local registry
       # No need for external test image
