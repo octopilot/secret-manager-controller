@@ -22,15 +22,42 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
-/// Initialize test environment - set up Pact mode and rustls
+/// Initialize test environment - set up rustls only
+/// Note: PACT_MODE is set per-test to ensure proper isolation
 fn init_test() {
     INIT.call_once(|| {
         // Initialize rustls crypto provider FIRST (before any async operations)
         init_rustls();
-
-        // Enable Pact mode
-        env::set_var("PACT_MODE", "true");
     });
+}
+
+/// Set up Pact mode environment variables and ensure they're visible
+/// This helper ensures env vars are set before any async operations
+///
+/// Note: We use multiple yields and a small delay to ensure env vars are visible
+/// when running with cargo llvm-cov, which may have different async timing
+async fn setup_pact_environment(endpoint: &str) {
+    env::set_var("PACT_MODE", "true");
+    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
+
+    // Multiple yields and a small delay to ensure environment variables are visible
+    // This is especially important when running with cargo llvm-cov which may have
+    // different async execution timing
+    tokio::task::yield_now().await;
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    tokio::task::yield_now().await;
+
+    // Verify the environment variables are set correctly
+    // We verify exact matches to ensure the correct Pact mock server endpoint is being used
+    let pact_mode = env::var("PACT_MODE").expect("PACT_MODE should be set");
+    let endpoint_var = env::var("AWS_SECRETS_MANAGER_ENDPOINT")
+        .expect("AWS_SECRETS_MANAGER_ENDPOINT should be set");
+    assert_eq!(pact_mode, "true", "PACT_MODE should be 'true'");
+    assert_eq!(
+        endpoint_var, endpoint,
+        "AWS_SECRETS_MANAGER_ENDPOINT should match the Pact mock server URL. Expected: {}, Got: {}",
+        endpoint, endpoint_var
+    );
 }
 
 /// Create a test Kubernetes client for Pact tests
@@ -120,8 +147,9 @@ async fn test_aws_provider_create_secret_with_pact() {
         base_url.pop();
     }
 
-    // Set endpoint environment variable
-    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", &base_url);
+    // Set up Pact environment variables BEFORE any async operations
+    // This ensures the AWS SDK reads them correctly during config creation
+    setup_pact_environment(&base_url).await;
 
     // Create AWS provider instance
     let config = AwsConfig {
@@ -157,6 +185,7 @@ async fn test_aws_provider_create_secret_with_pact() {
 
     // Clean up
     env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+    env::remove_var("PACT_MODE");
 }
 
 #[tokio::test]
@@ -241,7 +270,8 @@ async fn test_aws_provider_update_secret_with_pact() {
         base_url.pop();
     }
 
-    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", &base_url);
+    // Set up Pact environment variables BEFORE any async operations
+    setup_pact_environment(&base_url).await;
 
     let config = AwsConfig {
         region: "us-east-1".to_string(),
@@ -274,6 +304,7 @@ async fn test_aws_provider_update_secret_with_pact() {
     assert!(result.unwrap()); // Should return true (secret was updated)
 
     env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+    env::remove_var("PACT_MODE");
 }
 
 #[tokio::test]
@@ -333,7 +364,8 @@ async fn test_aws_provider_no_change_with_pact() {
         base_url.pop();
     }
 
-    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", &base_url);
+    // Set up Pact environment variables BEFORE any async operations
+    setup_pact_environment(&base_url).await;
 
     let config = AwsConfig {
         region: "us-east-1".to_string(),
@@ -366,4 +398,5 @@ async fn test_aws_provider_no_change_with_pact() {
     assert!(!result.unwrap()); // Should return false (no change needed)
 
     env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+    env::remove_var("PACT_MODE");
 }

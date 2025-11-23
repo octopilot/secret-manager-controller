@@ -192,8 +192,19 @@ mod tests {
         record_secret_operation("gcp", "create", 0.3);
         let after_ops = GCP_SECRET_MANAGER_OPERATIONS_TOTAL.get();
         let after_provider = PROVIDER_OPERATIONS_TOTAL.with_label_values(&["gcp"]).get();
-        assert_eq!(after_ops, before_ops + 1.0);
-        assert_eq!(after_provider, before_provider + 1u64);
+        // Check that the counter increased by exactly 1.0 (accounting for any previous test state)
+        let ops_delta = after_ops - before_ops;
+        let provider_delta = after_provider - before_provider;
+        assert_eq!(
+            ops_delta, 1.0,
+            "GCP_SECRET_MANAGER_OPERATIONS_TOTAL should increment by 1.0, but delta was {}",
+            ops_delta
+        );
+        assert_eq!(
+            provider_delta, 1u64,
+            "PROVIDER_OPERATIONS_TOTAL should increment by 1, but delta was {}",
+            provider_delta
+        );
     }
 
     #[test]

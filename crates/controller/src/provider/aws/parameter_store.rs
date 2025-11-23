@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_ssm::Client as SsmClient;
 use std::time::Instant;
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 /// AWS Parameter Store provider implementation
 pub struct AwsParameterStore {
@@ -106,20 +106,108 @@ impl AwsParameterStore {
 
         info!("IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}", role_arn);
 
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.to_string()))
-            .load()
-            .await;
+        let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.to_string()));
+
+        // Support Pact mock server integration via environment variable
+        // When PACT_MODE=true, route requests to Pact mock server instead of real AWS
+        if std::env::var("PACT_MODE").is_ok() {
+            let endpoint = std::env::var("AWS_SSM_ENDPOINT")
+                .or_else(|_| std::env::var("AWS_ENDPOINT_URL_SSM"))
+                .context("PACT_MODE is enabled but AWS_SSM_ENDPOINT or AWS_ENDPOINT_URL_SSM is not set. This is required for Pact testing.")?;
+
+            // Validate endpoint URL is safe (not pointing to production AWS)
+            // Allow localhost, Kubernetes service names, Docker hostnames, and other mock server hostnames
+            let is_production_aws =
+                endpoint.contains("ssm.amazonaws.com") || endpoint.contains("amazonaws.com/ssm");
+
+            if is_production_aws {
+                return Err(anyhow::anyhow!(
+                    "PACT_MODE is enabled but endpoint '{}' points to production AWS. \
+                    This is not allowed in Pact mode. Use a mock server endpoint instead.",
+                    endpoint
+                ));
+            }
+
+            // Warn if endpoint doesn't look like a typical mock server (localhost, service name, etc.)
+            let looks_like_mock = endpoint.starts_with("http://localhost")
+                || endpoint.starts_with("http://127.0.0.1")
+                || endpoint.starts_with("http://[::1]")
+                || endpoint.contains("host.docker.internal")
+                || endpoint.contains(".svc.cluster.local")
+                || endpoint.contains("pact")
+                || endpoint.contains("mock");
+
+            if !looks_like_mock {
+                warn!(
+                    "PACT_MODE is enabled but endpoint '{}' does not appear to be a mock server. \
+                    Verify this is correct and not pointing to production AWS.",
+                    endpoint
+                );
+            }
+
+            info!(
+                "Pact mode enabled: routing AWS SSM (Parameter Store) requests to {}",
+                endpoint
+            );
+            builder = builder.endpoint_url(&endpoint);
+        }
+
+        let sdk_config = builder.load().await;
 
         Ok(sdk_config)
     }
 
     /// Create AWS SDK config using default credential chain
     async fn create_default_config(region: &str) -> Result<SdkConfig> {
-        let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_config::Region::new(region.to_string()))
-            .load()
-            .await;
+        let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.to_string()));
+
+        // Support Pact mock server integration via environment variable
+        // When PACT_MODE=true, route requests to Pact mock server instead of real AWS
+        if std::env::var("PACT_MODE").is_ok() {
+            let endpoint = std::env::var("AWS_SSM_ENDPOINT")
+                .or_else(|_| std::env::var("AWS_ENDPOINT_URL_SSM"))
+                .context("PACT_MODE is enabled but AWS_SSM_ENDPOINT or AWS_ENDPOINT_URL_SSM is not set. This is required for Pact testing.")?;
+
+            // Validate endpoint URL is safe (not pointing to production AWS)
+            // Allow localhost, Kubernetes service names, Docker hostnames, and other mock server hostnames
+            let is_production_aws =
+                endpoint.contains("ssm.amazonaws.com") || endpoint.contains("amazonaws.com/ssm");
+
+            if is_production_aws {
+                return Err(anyhow::anyhow!(
+                    "PACT_MODE is enabled but endpoint '{}' points to production AWS. \
+                    This is not allowed in Pact mode. Use a mock server endpoint instead.",
+                    endpoint
+                ));
+            }
+
+            // Warn if endpoint doesn't look like a typical mock server (localhost, service name, etc.)
+            let looks_like_mock = endpoint.starts_with("http://localhost")
+                || endpoint.starts_with("http://127.0.0.1")
+                || endpoint.starts_with("http://[::1]")
+                || endpoint.contains("host.docker.internal")
+                || endpoint.contains(".svc.cluster.local")
+                || endpoint.contains("pact")
+                || endpoint.contains("mock");
+
+            if !looks_like_mock {
+                warn!(
+                    "PACT_MODE is enabled but endpoint '{}' does not appear to be a mock server. \
+                    Verify this is correct and not pointing to production AWS.",
+                    endpoint
+                );
+            }
+
+            info!(
+                "Pact mode enabled: routing AWS SSM (Parameter Store) requests to {}",
+                endpoint
+            );
+            builder = builder.endpoint_url(&endpoint);
+        }
+
+        let sdk_config = builder.load().await;
 
         Ok(sdk_config)
     }

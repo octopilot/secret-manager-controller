@@ -113,11 +113,12 @@ jobs:
 
       - name: Run unit tests
         run: |
-          cargo test --lib --all-features --no-fail-fast
+          # Run library tests for workspace members only (excludes test-only packages)
+          cargo test --lib --all-features --no-fail-fast --workspace
 
       - name: Generate CRD
         run: |
-          cargo run --bin crdgen 1> config/crd/secretmanagerconfig.yaml || echo "CRD generation completed"
+          cargo run --bin crdgen > config/crd/secretmanagerconfig.yaml || echo "CRD generation completed"
 
       - name: Verify CRD is valid YAML
         run: |
