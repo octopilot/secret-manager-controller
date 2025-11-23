@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal } from 'solid-js';
+import { Component, createEffect, createSignal, onCleanup } from 'solid-js';
 import { marked } from 'marked';
 import mermaid from 'mermaid';
 
@@ -9,12 +9,24 @@ interface MarkdownRendererProps {
 const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
   const [html, setHtml] = createSignal<string>('');
   let containerRef: HTMLDivElement | undefined;
+  let headingTimeout: ReturnType<typeof setTimeout> | null = null;
+  let mermaidTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Watch for content changes and re-render
   createEffect(() => {
     if (!props.content) {
       setHtml('');
       return;
+    }
+
+    // Clear any pending timeouts
+    if (headingTimeout) {
+      clearTimeout(headingTimeout);
+      headingTimeout = null;
+    }
+    if (mermaidTimeout) {
+      clearTimeout(mermaidTimeout);
+      mermaidTimeout = null;
     }
 
     // Configure marked
@@ -26,24 +38,118 @@ const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
     // Render markdown to HTML
     const rendered = marked.parse(props.content);
     setHtml(rendered as string);
+    
+    // Add IDs to headings after DOM is updated
+    headingTimeout = setTimeout(() => {
+      const container = containerRef;
+      if (container) {
+        const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        headings.forEach((heading) => {
+          if (!heading.id) {
+            const text = heading.textContent || '';
+            const id = text
+              .toLowerCase()
+              .replace(/[^\w\s-]/g, '')
+              .replace(/\s+/g, '-')
+              .replace(/-+/g, '-')
+              .trim();
+            heading.id = id;
+          }
+        });
+      }
+      headingTimeout = null;
+    }, 50);
 
     // Initialize Mermaid diagrams after a short delay to ensure DOM is ready
-    setTimeout(() => {
-      if (containerRef) {
+    mermaidTimeout = setTimeout(() => {
+      const container = containerRef;
+      if (container) {
         mermaid.initialize({ 
           startOnLoad: false, 
           theme: 'default',
           securityLevel: 'loose',
         });
-        const mermaidElements = containerRef.querySelectorAll('.language-mermaid');
+        const mermaidElements = container.querySelectorAll('.language-mermaid');
         mermaidElements.forEach((el) => {
           const code = el.textContent || '';
           const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
           mermaid.render(id, code).then((result) => {
-            el.outerHTML = result.svg;
+            // Wrap the SVG in a div with mermaid class (matching GitHub's approach)
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mermaid';
+            wrapper.innerHTML = result.svg;
+            
+            // Remove black background layer if present (only target the background rect)
+            const svg = wrapper.querySelector('svg');
+            if (svg) {
+              const rootGroup = svg.querySelector('g:first-child');
+              if (rootGroup) {
+                const firstRect = rootGroup.querySelector('rect:first-child');
+                if (firstRect) {
+                  const fill = firstRect.getAttribute('fill');
+                  const width = parseFloat(firstRect.getAttribute('width') || '0');
+                  const height = parseFloat(firstRect.getAttribute('height') || '0');
+                  const x = parseFloat(firstRect.getAttribute('x') || '0');
+                  const y = parseFloat(firstRect.getAttribute('y') || '0');
+                  
+                  // Only modify if it's clearly a background layer (large, at origin, dark)
+                  if (x === 0 && y === 0 && width > 500 && height > 300 && 
+                      (fill === '#1f2328' || fill === '#0d1117' || fill === '#161b22' || 
+                       fill === '#21262d' || fill === '#000000')) {
+                    firstRect.setAttribute('fill', '#ffffff');
+                    firstRect.setAttribute('stroke', 'none');
+                  }
+                }
+              }
+            }
+            
+            el.replaceWith(wrapper);
           }).catch((err) => {
             console.error('Mermaid rendering error:', err);
           });
+        });
+
+        // Add copy buttons to code blocks
+        const codeBlocks = container.querySelectorAll('pre code');
+        codeBlocks.forEach((codeEl) => {
+          const pre = codeEl.parentElement as HTMLElement;
+          // Skip if already has copy button
+          if (pre.querySelector('.copy-code-button')) return;
+          
+          // Skip mermaid blocks (they're replaced with diagrams)
+          if (codeEl.classList.contains('language-mermaid')) return;
+
+          const code = codeEl.textContent || '';
+          const copyButton = document.createElement('button');
+          copyButton.className = 'copy-code-button absolute top-2 right-2 px-3 py-1.5 text-xs font-medium bg-[#5a6c5d] text-white rounded hover:bg-[#4a5a4c] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100';
+          copyButton.setAttribute('aria-label', 'Copy code to clipboard');
+          copyButton.textContent = 'Copy';
+          
+          copyButton.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(code);
+              const originalText = copyButton.textContent;
+              copyButton.textContent = 'Copied!';
+              copyButton.classList.add('bg-[#2d4a2f]');
+              const resetTimeout = setTimeout(() => {
+                copyButton.textContent = originalText;
+                copyButton.classList.remove('bg-[#2d4a2f]');
+              }, 2000);
+              // Store timeout ID on button for cleanup if needed
+              (copyButton as any)._resetTimeout = resetTimeout;
+            } catch (err) {
+              console.error('Failed to copy:', err);
+              copyButton.textContent = 'Failed';
+              const resetTimeout = setTimeout(() => {
+                copyButton.textContent = 'Copy';
+              }, 2000);
+              (copyButton as any)._resetTimeout = resetTimeout;
+            }
+          });
+
+          // Make pre relative and add group class for hover
+          pre.classList.add('relative', 'group');
+          pre.appendChild(copyButton);
         });
       }
     }, 100);

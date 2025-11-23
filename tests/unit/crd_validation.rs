@@ -14,7 +14,7 @@ use controller::crd::{
 #[test]
 fn test_gcp_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -95,7 +95,7 @@ spec:
 #[test]
 fn test_gcp_provider_without_type_field() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -127,7 +127,7 @@ spec:
 #[test]
 fn test_gcp_provider_without_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -161,7 +161,7 @@ spec:
 #[test]
 fn test_aws_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -203,7 +203,7 @@ spec:
 #[test]
 fn test_aws_provider_with_configs() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -235,7 +235,7 @@ spec:
 #[test]
 fn test_azure_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -277,7 +277,7 @@ spec:
 #[test]
 fn test_azure_provider_with_configs() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -312,7 +312,7 @@ spec:
 #[test]
 fn test_argocd_application_source() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd
@@ -341,7 +341,7 @@ spec:
 #[test]
 fn test_minimal_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-minimal
@@ -391,7 +391,7 @@ spec:
 #[test]
 fn test_otel_otlp_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-otel-otlp
@@ -437,7 +437,7 @@ spec:
 #[test]
 fn test_otel_datadog_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-otel-datadog
@@ -486,7 +486,7 @@ spec:
 #[test]
 fn test_gcp_parameter_manager_store() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp-param-manager
@@ -517,7 +517,7 @@ spec:
 #[test]
 fn test_secrets_config_all_fields() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-secrets-all
@@ -554,7 +554,7 @@ spec:
 #[test]
 fn test_suspended_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-suspended
@@ -584,7 +584,7 @@ spec:
 fn test_all_providers_with_type_field() {
     // GCP
     let gcp_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -607,7 +607,7 @@ spec:
 
     // AWS
     let aws_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -630,7 +630,7 @@ spec:
 
     // Azure
     let azure_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -656,7 +656,7 @@ spec:
 #[test]
 fn test_configs_disabled() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-configs-disabled
@@ -685,7 +685,7 @@ spec:
 #[test]
 fn test_interval_formats() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-intervals
@@ -714,7 +714,7 @@ spec:
 #[test]
 fn test_fluxcd_notifications() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-fluxcd-notifications
@@ -755,7 +755,7 @@ spec:
 #[test]
 fn test_fluxcd_notifications_without_namespace() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-fluxcd-notifications
@@ -790,7 +790,7 @@ spec:
 #[test]
 fn test_argocd_notifications() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd-notifications
@@ -837,7 +837,7 @@ spec:
 #[test]
 fn test_both_notifications_configured() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-both-notifications
@@ -884,7 +884,7 @@ spec:
 #[test]
 fn test_notifications_optional() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-no-notifications
@@ -911,7 +911,7 @@ spec:
 #[test]
 fn test_fluxcd_notifications_with_gitrepository() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-fluxcd-gitrepo
@@ -944,7 +944,7 @@ spec:
 #[test]
 fn test_argocd_notifications_with_application() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd-app

@@ -166,7 +166,7 @@ spec:
 **SecretManagerConfig:**
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
@@ -521,7 +521,7 @@ spec:
 
 **SecretManagerConfig:**
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets

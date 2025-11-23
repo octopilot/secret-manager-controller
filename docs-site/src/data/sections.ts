@@ -62,6 +62,17 @@ export const userSections: DocSection[] = [
       { id: 'troubleshooting', title: 'Troubleshooting', file: 'tutorials/troubleshooting.md' },
     ],
   },
+  {
+    id: 'monitoring',
+    title: 'Monitoring & Observability',
+    pages: [
+      { id: 'observability-guide', title: 'Observability Guide', file: 'monitoring/observability-guide.md' },
+      { id: 'metrics', title: 'Prometheus Metrics', file: 'monitoring/metrics.md' },
+      { id: 'tracing', title: 'Logging & Tracing', file: 'monitoring/tracing.md' },
+      { id: 'opentelemetry', title: 'OpenTelemetry', file: 'monitoring/opentelemetry.md' },
+      { id: 'datadog', title: 'Datadog APM', file: 'monitoring/datadog.md' },
+    ],
+  },
 ];
 
 export const contributorSections: DocSection[] = [
@@ -80,6 +91,7 @@ export const contributorSections: DocSection[] = [
     pages: [
       { id: 'testing-guide', title: 'Testing Guide', file: 'testing/testing-guide.md' },
       { id: 'pact-overview', title: 'Pact Testing Overview', file: 'testing/pact-testing/overview.md' },
+      { id: 'pact-architecture', title: 'Pact Testing Architecture', file: 'testing/pact-testing/architecture.md' },
       { id: 'pact-setup', title: 'Pact Testing Setup', file: 'testing/pact-testing/setup.md' },
       { id: 'pact-writing-tests', title: 'Writing Pact Tests', file: 'testing/pact-testing/writing-tests.md' },
       { id: 'integration-testing', title: 'Integration Testing', file: 'testing/integration-testing.md' },

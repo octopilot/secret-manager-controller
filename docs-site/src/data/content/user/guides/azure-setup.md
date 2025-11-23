@@ -45,7 +45,7 @@ stringData:
 ## Configuration Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: azure-secrets

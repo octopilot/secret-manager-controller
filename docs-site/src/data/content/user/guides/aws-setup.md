@@ -65,7 +65,7 @@ stringData:
 Reference in your SecretManagerConfig:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: aws-secrets
@@ -84,7 +84,7 @@ spec:
 ## Configuration Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: production-secrets

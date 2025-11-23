@@ -4,11 +4,38 @@ Guide for setting up a local development environment for the Secret Manager Cont
 
 ## Prerequisites
 
+### Required Tools
+
 - **Rust**: 1.70+ (install via [rustup](https://rustup.rs/))
-- **Docker**: For building container images
+- **Docker**: For building container images and running Kind clusters
 - **kubectl**: For Kubernetes cluster access
-- **Kind**: For local Kubernetes cluster (optional, for integration tests)
+- **Kind**: For local Kubernetes cluster (required for integration tests)
 - **Tilt**: For local development (recommended)
+- **Python 3**: 3.8+ (for automation scripts)
+- **Git**: For version control and ArgoCD repository cloning
+- **Just**: Command runner for development tasks (optional but recommended)
+
+### Optional but Recommended
+
+- **cargo-zigbuild**: For cross-compilation to Linux musl (recommended over manual OpenSSL setup)
+- **kustomize**: For local kustomize testing (v5.0+)
+- **SOPS**: For encrypting/decrypting secrets (if working with SOPS-encrypted files)
+- **GPG or AGE**: For SOPS key management (GPG for GPG keys, AGE for AGE keys)
+- **Node.js and npm**: For documentation site development (Node.js 18+, npm)
+
+### Quick Dependency Check
+
+The project includes a dependency checker script:
+
+```bash
+# Check and install missing dependencies
+python3 scripts/check_deps.py
+
+# Or using Just
+just check-deps
+```
+
+This script checks for Docker, Tilt, and Just, and can install missing tools automatically.
 
 ## Quick Start
 
@@ -21,6 +48,8 @@ cd secret-manager-controller
 
 ### 2. Install Dependencies
 
+#### Core Development Tools
+
 ```bash
 # Install Rust toolchain
 rustup install stable
@@ -28,13 +57,75 @@ rustup install stable
 # Install required Rust targets
 rustup target add x86_64-unknown-linux-musl
 
-# Install musl tools (for cross-compilation)
+# Install cross-compilation tool (recommended)
+cargo install cargo-zigbuild
+
+# Alternative: Install musl tools (for cross-compilation)
 # macOS
 brew install musl-cross
 
 # Linux
 sudo apt-get install musl-tools
 ```
+
+#### Python Dependencies
+
+Python 3.8+ is required for automation scripts. Most scripts use only the standard library, but some may require:
+
+```bash
+# Install Python dependencies (if needed)
+pip install requests  # Only for specific scripts like delete_workflow_runs.py
+```
+
+#### Documentation Site (Optional)
+
+If you plan to work on the documentation site:
+
+```bash
+cd docs-site
+npm install
+```
+
+**Node.js Version:** 18+ required
+
+#### SOPS (Optional)
+
+If you plan to work with SOPS-encrypted files:
+
+```bash
+# macOS
+brew install sops
+
+# Linux
+# Download from https://github.com/getsops/sops/releases
+# Or use package manager: sudo apt-get install sops
+
+# Install GPG (for GPG keys)
+# macOS: brew install gnupg
+# Linux: sudo apt-get install gnupg
+
+# OR install AGE (for AGE keys)
+# macOS: brew install age
+# Linux: Download from https://github.com/FiloSottile/age/releases
+```
+
+#### Just (Optional but Recommended)
+
+Just is a command runner that simplifies common development tasks:
+
+```bash
+# Install Just
+# macOS
+brew install just
+
+# Linux
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin
+
+# Verify installation
+just --version
+```
+
+See the `justfile` for available commands: `just` or `just --list`
 
 ### 2.5. Install Git Hooks
 
@@ -306,9 +397,72 @@ cargo run -p controller --bin crdgen
 
 **Note:** Don't edit the CRD YAML directly - modify the Rust types instead.
 
+## Dependency Summary
+
+### Minimum Requirements
+
+For basic development (unit tests, building):
+
+- Rust 1.70+
+- Git
+- Python 3.8+
+
+### Full Development Environment
+
+For complete development including integration tests and documentation:
+
+- **Rust 1.70+** with `x86_64-unknown-linux-musl` target
+- **Docker** (for Kind and container builds)
+- **kubectl** (for Kubernetes access)
+- **Kind** (for local cluster)
+- **Tilt** (for live development)
+- **Python 3.8+** (for automation scripts)
+- **Git** (for version control)
+- **cargo-zigbuild** (recommended for cross-compilation)
+- **Node.js 18+ and npm** (for documentation site)
+
+### Optional Tools
+
+- **Just** (command runner - simplifies common tasks)
+- **kustomize** (for local kustomize testing)
+- **SOPS** (for working with encrypted secrets)
+- **GPG or AGE** (for SOPS key management)
+
+### Verification
+
+Verify all dependencies are installed:
+
+```bash
+# Check dependencies
+python3 scripts/check_deps.py
+
+# Or using Just
+just check-deps
+
+# Verify Rust
+rustup show
+
+# Verify Docker
+docker --version
+
+# Verify kubectl
+kubectl version --client
+
+# Verify Kind
+kind version
+
+# Verify Tilt
+tilt version
+
+# Verify Node.js (for docs site)
+node --version
+npm --version
+```
+
 ## Next Steps
 
 - [Tilt Integration](./tilt-integration.md) - Tilt development workflow
 - [Kind Cluster Setup](./kind-cluster-setup.md) - Local cluster setup
 - [Testing Guide](../testing/testing-guide.md) - Testing strategies
+- [Documentation Site](./docs-site.md) - Working with the documentation site
 

@@ -8,7 +8,7 @@ You can use multiple providers in the same cluster:
 
 ```yaml
 # AWS secrets
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: aws-secrets
@@ -18,7 +18,7 @@ spec:
   secrets: [...]
 ---
 # Azure secrets
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: azure-secrets
@@ -33,7 +33,7 @@ spec:
 Create separate configurations per namespace:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: prod-secrets
@@ -43,7 +43,7 @@ spec:
   region: us-east-1
   secrets: [...]
 ---
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: dev-secrets
@@ -63,7 +63,7 @@ Store encrypted secrets in Git:
 3. Configure controller to decrypt:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: gitops-secrets

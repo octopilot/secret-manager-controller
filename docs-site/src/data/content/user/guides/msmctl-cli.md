@@ -144,7 +144,7 @@ msmctl list smc
 **Output:**
 ```
 NAME                           NAMESPACE            SUSPEND      READY           SECRETS SYNCED 
---------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------
 test-sops-config               default              No           False           -              
 test-sops-config-prod          default              No           False           -              
 test-sops-config-stage         default              No           False           -              
