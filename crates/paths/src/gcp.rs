@@ -272,7 +272,6 @@ pub mod routes {
 mod route_validation {
     use super::routes;
     use crate::builder::PathBuilder;
-    use crate::formats::PathFormat;
     use crate::operations::GcpOperation;
 
     #[test]

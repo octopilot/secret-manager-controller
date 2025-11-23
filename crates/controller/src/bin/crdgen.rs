@@ -9,10 +9,10 @@
 //!
 //! ```bash
 //! # Generate CRD YAML
-//! cargo run --bin crdgen > config/crd/secretmanagerconfig.yaml
+//! cargo run -p controller --bin crdgen > config/crd/secretmanagerconfig.yaml
 //!
 //! # Generate and apply directly
-//! cargo run --bin crdgen | kubectl apply -f -
+//! cargo run -p controller --bin crdgen | kubectl apply -f -
 //! ```
 //!
 //! The generated CRD includes:

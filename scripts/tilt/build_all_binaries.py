@@ -186,7 +186,7 @@ def main():
         if os_name != "Linux" or arch != "x86_64":
             print("⚠️  crdgen not found, building native version...")
             build_result = run_command(
-                "cargo build --bin crdgen",
+                "cargo build -p controller --bin crdgen",
                 check=False
             )
             if build_result.returncode == 0:

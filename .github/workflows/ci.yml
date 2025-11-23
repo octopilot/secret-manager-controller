@@ -118,7 +118,7 @@ jobs:
 
       - name: Generate CRD
         run: |
-          cargo run --bin crdgen > config/crd/secretmanagerconfig.yaml || echo "CRD generation completed"
+          cargo run -p controller --bin crdgen > config/crd/secretmanagerconfig.yaml || echo "CRD generation completed"
 
       - name: Verify CRD is valid YAML
         run: |
@@ -187,6 +187,12 @@ jobs:
           # - Creates microscaler-system namespace
           # NON_INTERACTIVE=1 ensures it uses existing cluster if present (no prompts)
           python3 scripts/setup_kind.py
+
+      - name: Install Flux CLI
+        run: |
+          # Install Flux CLI (required by install_fluxcd.py)
+          curl -s https://fluxcd.io/install.sh | sudo bash
+          flux version
 
       - name: Install FluxCD (source-controller and notification-controller)
         run: |

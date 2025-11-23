@@ -38,7 +38,6 @@ pub use secrets::extract_secrets_from_kustomize;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use k8s_openapi::api::core::v1::Secret;
     use std::collections::BTreeMap;
 
