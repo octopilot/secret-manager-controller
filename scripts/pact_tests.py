@@ -120,22 +120,54 @@ def wait_for_pact_broker(timeout: int = 120) -> bool:
         return False
 
 
-def setup_port_forward(namespace: str, service: str, local_port: int, remote_port: int) -> Optional[subprocess.Popen]:
-    """Set up port forwarding in the background."""
+def setup_port_forward(namespace: str, target: str, local_port: int, remote_port: int, is_pod: bool = False) -> Optional[subprocess.Popen]:
+    """Set up port forwarding in the background.
+    
+    Args:
+        namespace: Kubernetes namespace
+        target: Service name or pod name
+        local_port: Local port to forward to
+        remote_port: Remote port to forward from
+        is_pod: If True, target is a pod name; if False, target is a service name
+    """
     print(f"Setting up port forwarding {local_port}:{remote_port}...")
-    log_file = open("/tmp/pact-port-forward.log", "w")
-    process = subprocess.Popen(
-        [
-            "kubectl", "port-forward",
-            "-n", namespace,
-            f"service/{service}",
-            f"{local_port}:{remote_port}"
-        ],
-        stdout=log_file,
-        stderr=subprocess.STDOUT
-    )
+    log_file_path = f"/tmp/pact-port-forward-{local_port}.log"
+    
+    # Build kubectl port-forward command
+    # For pods: kubectl port-forward -n namespace pod/pod-name local:remote
+    # For services: kubectl port-forward -n namespace service/service-name local:remote
+    resource_type = "pod" if is_pod else "service"
+    cmd = [
+        "kubectl", "port-forward",
+        "-n", namespace,
+        f"{resource_type}/{target}",
+        f"{local_port}:{remote_port}"
+    ]
+    
+    print(f"  Command: {' '.join(cmd)}")
+    with open(log_file_path, "w") as log_file:
+        process = subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT
+        )
+    
     # Give port forward time to establish
-    time.sleep(3)
+    print(f"  Waiting for port forward to establish...")
+    time.sleep(5)  # Increased wait time
+    
+    # Verify port forward is working by checking if process is still alive
+    if process.poll() is not None:
+        # Process has terminated, read the log to see what went wrong
+        try:
+            with open(log_file_path, "r") as log_file:
+                log_content = log_file.read()
+            print(f"  ❌ Port forward process terminated. Log: {log_content}", file=sys.stderr)
+        except Exception as e:
+            print(f"  ❌ Port forward process terminated. Could not read log: {e}", file=sys.stderr)
+        return None
+    
+    print(f"  ✅ Port forward process is running (PID: {process.pid})")
     return process
 
 
@@ -165,18 +197,18 @@ def check_port_forward(url: str, username: str, password: str) -> bool:
 
 
 def check_manager_health(manager_url: str, timeout: int = 30) -> Tuple[bool, dict]:
-    """Check the manager's /health endpoint.
+    """Check the manager's /ready endpoint.
     
     Returns (is_ready, health_data) where is_ready is True if broker is healthy and pacts are published.
     """
-    print(f"Checking manager health at {manager_url}/health...")
+    print(f"Checking manager readiness at {manager_url}/ready...")
     
     max_attempts = timeout // 2  # Check every 2 seconds
     attempt = 0
     
     while attempt < max_attempts:
         try:
-            req = urllib.request.Request(f"{manager_url}/health")
+            req = urllib.request.Request(f"{manager_url}/ready")
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status == 200:
                     health_data = json.loads(response.read().decode())
@@ -439,7 +471,7 @@ def publish_pact_files(
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Run Pact tests and publish contracts")
+    parser = argparse.ArgumentParser(description="Run Pact contract tests")
     parser.add_argument(
         "--broker-url",
         default="http://localhost:9292",
@@ -490,7 +522,8 @@ def main() -> int:
     
     args = parser.parse_args()
     
-    port_forward_process = None
+    broker_port_forward = None
+    manager_port_forward = None
     
     try:
         # Wait for broker to be ready
@@ -501,12 +534,13 @@ def main() -> int:
         # Set up port forwarding for broker and manager
         manager_port_forward = None
         if not args.skip_port_forward:
-            # Port forward for Pact broker
+            # Port forward for Pact broker (service)
             broker_port_forward = setup_port_forward(
                 "secret-manager-controller-pact-broker",
                 "pact-broker",
                 9292,
-                9292
+                9292,
+                is_pod=False
             )
             
             if not check_port_forward(args.broker_url, args.username, args.password):
@@ -533,14 +567,13 @@ def main() -> int:
                     namespace,
                     pod_name,  # Port-forward to pod directly
                     args.manager_port,
-                    1238  # Manager's health port
+                    1238,  # Manager's health port
+                    is_pod=True  # This is a pod, not a service
                 )
-                port_forward_process = broker_port_forward  # Keep broker port forward for cleanup
             else:
                 print("⚠️  Could not find pact-infrastructure pod for manager port-forward")
                 print("   Will try to connect to manager via service if available")
                 manager_port_forward = None
-                port_forward_process = broker_port_forward
         
         # Check manager health (this checks broker health and pacts published)
         print("\n" + "=" * 60)
@@ -569,10 +602,6 @@ def main() -> int:
             print("  kubectl get deployment pact-infrastructure -n secret-manager-controller-pact-broker")
             print("  kubectl logs deployment/pact-infrastructure -c manager -n secret-manager-controller-pact-broker")
             print(f"  curl http://localhost:{args.manager_port}/health")
-            if port_forward_process:
-                port_forward_process.terminate()
-            if manager_port_forward:
-                manager_port_forward.terminate()
             return 1
         
         print("\n" + "=" * 60)
@@ -580,44 +609,29 @@ def main() -> int:
         print("=" * 60 + "\n")
         
         # Run Pact tests
+        # Note: Publishing is now handled by the manager sidecar, not this script
         test_exit_code = run_pact_tests()
-        
-        # Publish Pact files if they exist
-        pact_dir = Path(args.pact_dir)
-        publish_success = True
-        if pact_dir.exists() and any(pact_dir.glob("*.json")):
-            branch, commit = get_git_info()
-            publish_success = publish_pact_files(
-                pact_dir,
-                args.broker_url,
-                args.username,
-                args.password,
-                commit,
-                branch
-            )
-            if not publish_success:
-                return 1
-        else:
-            print("⏭️  No Pact files found to publish")
         
         # Return test exit code, unless --allow-test-failures is set
         if args.allow_test_failures:
             if test_exit_code != 0:
                 print(f"⚠️  Tests failed (exit code {test_exit_code}) but --allow-test-failures is set, continuing...")
-            return 0 if publish_success else 1
+            return 0
         else:
             return test_exit_code
         
     finally:
         # Clean up port forwards
-        if port_forward_process:
-            print("Cleaning up port forwards...")
-            port_forward_process.terminate()
+        if broker_port_forward:
+            print("Cleaning up broker port forward...")
+            broker_port_forward.terminate()
             try:
-                port_forward_process.wait(timeout=5)
+                broker_port_forward.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                port_forward_process.kill()
-        if 'manager_port_forward' in locals() and manager_port_forward:
+                broker_port_forward.kill()
+        
+        if manager_port_forward:
+            print("Cleaning up manager port forward...")
             manager_port_forward.terminate()
             try:
                 manager_port_forward.wait(timeout=5)

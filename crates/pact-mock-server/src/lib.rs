@@ -385,7 +385,8 @@ pub async fn wait_for_manager_ready(
                             })
                             .unwrap_or_default();
 
-                        // Check if manager is ready
+                        // Check if manager is ready (broker healthy AND pacts published)
+                        // /ready endpoint requires both broker healthy and pacts published
                         if status == "ready" && broker_healthy && pacts_published {
                             // Check if our provider is in the published list
                             // Provider names are stored exactly as they appear in the ConfigMap

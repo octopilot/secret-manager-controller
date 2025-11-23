@@ -744,6 +744,8 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/healthz", get(health_handler))
+        .route("/liveness", get(liveness_handler))
+        .route("/readiness", get(readiness_handler))
         .route("/ready", get(ready_handler))
         .with_state(health_state);
 
@@ -799,7 +801,36 @@ async fn health_handler(State(state): State<HealthState>) -> (StatusCode, Json<V
     (StatusCode::OK, Json(response))
 }
 
-/// Readiness check handler - returns 200 if manager is ready to serve
+/// Liveness probe handler - returns 200 if manager process is alive
+/// Used by Kubernetes liveness probes
+async fn liveness_handler(State(_state): State<HealthState>) -> (StatusCode, Json<Value>) {
+    let response = json!({
+        "status": "alive",
+    });
+    (StatusCode::OK, Json(response))
+}
+
+/// Readiness probe handler - returns 200 if manager is ready (broker healthy)
+/// Used by Kubernetes readiness probes
+/// Manager is ready if broker is healthy, even if pacts aren't published yet
+async fn readiness_handler(State(state): State<HealthState>) -> (StatusCode, Json<Value>) {
+    let broker_healthy = state.broker_healthy.load(Ordering::Relaxed);
+    let response = json!({
+        "status": if broker_healthy { "ready" } else { "not_ready" },
+        "broker_healthy": broker_healthy,
+    });
+
+    // Manager is ready for Kubernetes if broker is healthy
+    // This allows the manager to pass readiness probes even before pacts are available
+    if broker_healthy {
+        (StatusCode::OK, Json(response))
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, Json(response))
+    }
+}
+
+/// Ready handler - returns 200 if manager is ready AND pacts are published
+/// Used by mock servers to check if their specific pacts are available
 async fn ready_handler(State(state): State<HealthState>) -> (StatusCode, Json<Value>) {
     let broker_healthy = state.broker_healthy.load(Ordering::Relaxed);
     let pacts_published = state.pacts_published.load(Ordering::Relaxed);
@@ -813,7 +844,8 @@ async fn ready_handler(State(state): State<HealthState>) -> (StatusCode, Json<Va
         "published_providers": providers_list,
     });
 
-    // Ready if broker is healthy and pacts are published
+    // Ready if broker is healthy AND pacts are published
+    // This is what mock servers check to know if they can start
     if broker_healthy && pacts_published {
         (StatusCode::OK, Json(response))
     } else {

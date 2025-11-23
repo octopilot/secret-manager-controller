@@ -154,6 +154,109 @@ def main():
         sys.exit(1)
     
     print("✅ All binaries built successfully!")
+    
+    # Generate and apply CRD
+    print("📋 Generating SecretManagerConfig CRD...")
+    crd_output_path = Path("config/crd/secretmanagerconfig.yaml")
+    crd_output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Determine which crdgen binary to use based on platform
+    # On Linux x86_64 (CI), use the cross-compiled binary we just built
+    # On macOS/other platforms, prefer native build but fallback to cross-compiled
+    os_name = platform.system()
+    arch = platform.machine()
+    
+    if os_name == "Linux" and arch == "x86_64":
+        # CI/Linux: Use the cross-compiled binary we just built
+        crdgen_path = target_dir / "crdgen"
+        print(f"  Using cross-compiled crdgen for Linux x86_64: {crdgen_path}")
+    else:
+        # macOS/other: Try native first, then fallback to cross-compiled
+        native_crdgen = Path("target/debug/crdgen")
+        if native_crdgen.exists():
+            crdgen_path = native_crdgen
+            print(f"  Using native crdgen: {crdgen_path}")
+        else:
+            # Fallback to cross-compiled
+            crdgen_path = target_dir / "crdgen"
+            print(f"  Using cross-compiled crdgen: {crdgen_path}")
+    
+    if not crdgen_path.exists():
+        # If cross-compiled doesn't exist and we're not on Linux, try building native
+        if os_name != "Linux" or arch != "x86_64":
+            print("⚠️  crdgen not found, building native version...")
+            build_result = run_command(
+                "cargo build --bin crdgen",
+                check=False
+            )
+            if build_result.returncode == 0:
+                native_crdgen = Path("target/debug/crdgen")
+                if native_crdgen.exists():
+                    crdgen_path = native_crdgen
+                    print(f"  Using newly built native crdgen: {crdgen_path}")
+                else:
+                    print("❌ crdgen binary not found after build", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print("❌ Failed to build native crdgen", file=sys.stderr)
+                sys.exit(1)
+        else:
+            print(f"❌ crdgen binary not found at {crdgen_path}", file=sys.stderr)
+            sys.exit(1)
+    
+    print(f"  Running crdgen: {crdgen_path}")
+    result = run_command(
+        f"{crdgen_path} > {crd_output_path}",
+        check=False
+    )
+    
+    if result.returncode != 0:
+        print("❌ Failed to generate CRD", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"✅ CRD generated: {crd_output_path}")
+    
+    # Apply CRD to cluster
+    print("📤 Applying CRD to cluster...")
+    
+    # Check if cluster is accessible
+    cluster_check = run_command(
+        "kubectl cluster-info --request-timeout=5s",
+        check=False,
+        capture_output=True
+    )
+    
+    if cluster_check.returncode != 0:
+        print("⚠️  Cluster not accessible - skipping CRD apply", file=sys.stderr)
+        print("   CRD file generated but not applied. Apply manually when cluster is ready:", file=sys.stderr)
+        print(f"   kubectl apply -f {crd_output_path}", file=sys.stderr)
+        return
+    
+    # Apply CRD with validation first, fallback to --validate=false if needed
+    apply_result = run_command(
+        f"kubectl apply -f {crd_output_path}",
+        check=False,
+        capture_output=True
+    )
+    
+    if apply_result.returncode != 0:
+        # Try with --validate=false as fallback (for cases where cluster is starting up)
+        print("  ⚠️  Standard apply failed, trying with --validate=false...")
+        apply_result = run_command(
+            f"kubectl apply -f {crd_output_path} --validate=false",
+            check=False,
+            capture_output=True
+        )
+        
+        if apply_result.returncode != 0:
+            print("❌ Failed to apply CRD", file=sys.stderr)
+            if apply_result.stderr:
+                print(apply_result.stderr, file=sys.stderr)
+            sys.exit(1)
+        else:
+            print("✅ CRD applied (with --validate=false)")
+    else:
+        print("✅ CRD applied successfully")
 
 
 if __name__ == "__main__":

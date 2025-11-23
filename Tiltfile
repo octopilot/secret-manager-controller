@@ -56,30 +56,9 @@ CRDGEN_NATIVE_PATH = '%s/target/debug/crdgen' % CONTROLLER_DIR
 
 
 # ====================
-# CRD Generation
-# ====================
-# Generate CRD using crdgen binary - matches PriceWhisperer's pattern
-local_resource(
-    'secret-manager-controller-crd-gen',
-    cmd='''
-        echo "🔄 Regenerating SecretManagerConfig CRD..."
-        cargo run -p controller --bin crdgen 2>/dev/null > config/crd/secretmanagerconfig.yaml
-        echo "✅ CRD regenerated: config/crd/secretmanagerconfig.yaml"
-    ''',
-    deps=[
-        '%s/crates/controller/src' % CONTROLLER_DIR,
-        '%s/crates/controller/Cargo.toml' % CONTROLLER_DIR,
-        '%s/Cargo.toml' % CONTROLLER_DIR,
-        '%s/Cargo.lock' % CONTROLLER_DIR,
-    ],
-    resource_deps=[],
-    labels=['controllers'],
-    allow_parallel=True,
-)
-
-# ====================
 # Build All Rust Binaries
 # ====================
+# Note: build-all-binaries now also generates and applies the CRD
 # Build all binaries (controller, mock servers, webhook) in a single build
 # This is more efficient than building each binary separately
 # Uses cargo zigbuild on macOS (like microservices) for cross-compilation
@@ -250,42 +229,8 @@ local_resource(
 # Note: microscaler-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
 # and is not managed by Tilt to ensure it's always available
 
-# CRITICAL: Apply CRD separately to prevent Tilt garbage collection from deleting it
-# The CRD is a cluster-scoped resource that must persist across Tilt restarts
-# If included in k8s_yaml, Tilt's garbage collection will delete it when resources change
-local_resource(
-    'apply-crd',
-    cmd='''
-        # Wait for cluster to be accessible (with timeout)
-        echo "Checking cluster connectivity..."
-        timeout=30
-        elapsed=0
-        while [ $elapsed -lt $timeout ]; do
-            if kubectl cluster-info >/dev/null 2>&1; then
-                echo "✅ Cluster is accessible"
-                break
-            fi
-            echo "  Waiting for cluster... (${elapsed}s/${timeout}s)"
-            sleep 2
-            elapsed=$((elapsed + 2))
-        done
-        
-        # Apply CRD with validation disabled if cluster is not accessible
-        # This allows CRD to be applied even if cluster validation fails
-        if kubectl cluster-info >/dev/null 2>&1; then
-            kubectl apply -f config/crd/secretmanagerconfig.yaml
-        else
-            echo "⚠️  Cluster not accessible, applying CRD without validation..."
-            kubectl apply -f config/crd/secretmanagerconfig.yaml --validate=false
-        fi
-    ''',
-    deps=[
-        'config/crd/secretmanagerconfig.yaml',
-    ],
-    labels=['controllers'],
-    resource_deps=['secret-manager-controller-crd-gen'],
-    allow_parallel=False,
-)
+# Note: CRD generation and application is now handled by build-all-binaries
+# This ensures the CRD is applied before any resources that use it
 
 # Deploy using kustomize
 # Note: CRD is NOT included in kustomize - it's applied separately above to prevent deletion
@@ -304,7 +249,7 @@ k8s_yaml(kustomize('%s/config' % CONTROLLER_DIR))
 k8s_resource(
     CONTROLLER_NAME,
     labels=['controllers'],
-    resource_deps=['build-all-binaries', 'secret-manager-controller-crd-gen', 'apply-crd', 'sops-key-setup'],
+    resource_deps=['build-all-binaries', 'sops-key-setup'],
 )
 
 # ====================
@@ -428,7 +373,14 @@ local_resource(
 k8s_resource(
     'pact-infrastructure',
     labels=['pact'],
-    port_forwards=['9292:9292', '1237:1237'],  # Forward broker and webhook ports
+    port_forwards=[
+        '9292:9292',  # Pact broker
+        '1234:1234',  # AWS mock server
+        '1235:1235',  # GCP mock server
+        '1236:1236',  # Azure mock server
+        '1237:1237',  # Mock webhook
+        '1238:1238',  # Manager health endpoint
+    ],
     resource_deps=['populate-pact-configmap'],  # Wait for ConfigMap to be populated
     # Tilt automatically detects image dependencies from k8s_yaml
     # The deployment references 'pact-mock-server' and 'mock-webhook' images
@@ -446,11 +398,11 @@ k8s_resource(
 
 local_resource(
     'pact-tests',
-    cmd='python3 scripts/pact_publish.py',
+    cmd='python3 scripts/pact_tests.py',
     deps=[
         '%s/tests' % CONTROLLER_DIR,
         '%s/Cargo.toml' % CONTROLLER_DIR,
-        'scripts/pact_publish.py',
+        'scripts/pact_tests.py',
     ],
     resource_deps=['pact-infrastructure'],  # Wait for infrastructure
     labels=['pact'],
@@ -511,6 +463,21 @@ local_resource(
 # Note: allow_duplicates=True is safe - Kubernetes handles idempotent applies gracefully
 # Note: microscaler-system namespace is created by Kind cluster setup, not by GitOps
 # Kubernetes handles idempotent applies gracefully, so duplicates are safe
+# CRITICAL: Must wait for build-all-binaries to ensure CRD is applied before SecretManagerConfig resources
+# We use a local_resource to apply gitops resources after CRD is ready
+local_resource(
+    'apply-gitops-cluster',
+    cmd='kubectl apply -k gitops/cluster',
+    deps=[
+        'gitops/cluster',  # Watch for changes in gitops resources
+    ],
+    labels=['infrastructure'],
+    resource_deps=['build-all-binaries'],  # Wait for CRD to be generated and applied
+    allow_parallel=False,
+)
+
+# Also load via k8s_yaml for Tilt to track the resources (for UI visibility)
+# This allows Tilt to show the resources in the UI, but they're actually applied by the local_resource above
 k8s_yaml(kustomize('gitops/cluster'), allow_duplicates=True)
 
 # ====================
@@ -533,7 +500,7 @@ local_resource(
     env={
         'CONTROLLER_DIR': CONTROLLER_DIR,
     },
-    resource_deps=['secret-manager-controller-crd-gen'],
+    resource_deps=['build-all-binaries'],
     labels=['controllers'],
     allow_parallel=True,
 )
