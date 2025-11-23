@@ -366,7 +366,7 @@ jobs:
   build-and-publish:
     name: Build and Publish (Final)
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [coverage]
     # Run on push (not PR), tags, or manual dispatch
     if: github.event_name != 'pull_request'
     permissions:
