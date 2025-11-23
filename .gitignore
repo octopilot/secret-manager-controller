@@ -4,7 +4,7 @@ target-crdgen/  # Separate target directory for CRD generation to avoid Cargo lo
 build_artifacts/  # Build artifacts directory (binaries, checksums, etc.)]
 build_artifacts
 Cargo.lock
-
+node_modules
 # IDE
 .vscode/
 .idea/

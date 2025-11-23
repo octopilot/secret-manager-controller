@@ -83,7 +83,7 @@ See `config/deployment/pact-env-patch.yaml` for the full configuration.
 ## Isolation
 
 This Pact Broker is completely isolated from:
-- Other PriceWhisperer submodules
+- Other project submodules
 - The shared `hack/controllers/pact-broker` directory
 - Any other Pact Broker instances
 

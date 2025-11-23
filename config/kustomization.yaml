@@ -21,6 +21,7 @@ resources:
   # - storage/pvc.yaml
   - deployment/deployment.yaml
   - service/metrics-service.yaml
+  - docs-site/
 
 # Pact Mode Patch
 # Adds environment variables to route cloud provider requests to Pact mock servers

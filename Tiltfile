@@ -1,6 +1,6 @@
 # Secret Manager Controller Tiltfile
 # 
-# This Tiltfile matches PriceWhisperer's build pattern:
+# This Tiltfile uses a standard build pattern:
 # 1. Builds Rust binaries on host (cross-compilation)
 # 2. Copies binaries to build_artifacts/
 # 3. Generates CRD using crdgen binary
@@ -37,7 +37,8 @@ default_registry('localhost:5000')
 # Suppress warnings for images that Tilt correctly substitutes
 # Tilt expands 'mock-webhook' to 'localhost:5000/mock-webhook' but the custom_build
 # is named 'mock-webhook', which Tilt correctly matches during substitution
-update_settings(suppress_unused_image_warnings=['localhost:5000/mock-webhook'])
+# docs-site is built with docker_build and Tilt will substitute it in the deployment
+update_settings(suppress_unused_image_warnings=['localhost:5000/mock-webhook', 'docs-site'])
 
 # Get the directory where this Tiltfile is located
 # Since the Tiltfile is in the root directory, use '.' for relative paths
@@ -46,7 +47,7 @@ CONTROLLER_NAME = 'secret-manager-controller'
 IMAGE_NAME = 'localhost:5000/secret-manager-controller'
 BINARY_NAME = 'secret-manager-controller'
 # Build for Linux x86_64 (cross-compile for container compatibility)
-# Matches PriceWhisperer's pattern - use target path directly, not build_artifacts
+# Use target path directly, not build_artifacts
 # Workspace builds output to root target/ directory
 BINARY_PATH = '%s/target/x86_64-unknown-linux-musl/debug/%s' % (CONTROLLER_DIR, BINARY_NAME)
 CRDGEN_PATH = '%s/target/x86_64-unknown-linux-musl/debug/crdgen' % CONTROLLER_DIR
@@ -87,7 +88,7 @@ local_resource(
 # Package controller binary into Docker image
 # Depends on unified build-all-binaries resource
 # Uses Dockerfile.controller.dev for development (expects pre-built binary)
-# Matches PriceWhisperer's exact pattern
+# Standard build pattern
 custom_build(
     IMAGE_NAME,
     'docker build -f dockerfiles/Dockerfile.controller.dev -t %s:tilt . && docker tag %s:tilt $EXPECTED_REF && docker push $EXPECTED_REF' % (
@@ -503,4 +504,34 @@ local_resource(
     resource_deps=['build-all-binaries'],
     labels=['controllers'],
     allow_parallel=True,
+)
+
+# ====================
+# Documentation Site
+# ====================
+
+# Build documentation site Docker image
+# Tilt will watch docs-site/ for changes and rebuild
+docker_build(
+    'docs-site',
+    '.',
+    dockerfile='./dockerfiles/Dockerfile.docs-site',
+    platform='linux/amd64',
+    only=[
+        './docs-site',
+        './dockerfiles/Dockerfile.docs-site',
+        './dockerfiles/nginx.docs-site.conf',
+    ],
+    ignore=[
+        'docs-site/node_modules',
+        'docs-site/dist',
+        'docs-site/.git',
+    ],
+)
+
+# Documentation site service (ClusterIP with port forward)
+k8s_resource(
+    'docs-site',
+    port_forwards='8800:80',
+    labels=['docs'],
 )

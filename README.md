@@ -908,13 +908,13 @@ msmctl reconcile secretmanagerconfig <name> [--namespace <namespace>] [--force]
 msmctl reconcile secretmanagerconfig idam-dev-secrets
 
 # Trigger reconciliation in specific namespace
-msmctl reconcile secretmanagerconfig idam-dev-secrets --namespace pricewhisperer
+msmctl reconcile secretmanagerconfig myapp-dev-secrets --namespace mysystem
 
 # Using short form 'smc'
 msmctl reconcile smc idam-dev-secrets
 
 # Force reconciliation (delete and wait for GitOps recreation)
-msmctl reconcile secretmanagerconfig idam-dev-secrets --namespace pricewhisperer --force
+msmctl reconcile secretmanagerconfig myapp-dev-secrets --namespace mysystem --force
 ```
 
 **How it works:**
@@ -929,9 +929,9 @@ msmctl reconcile secretmanagerconfig idam-dev-secrets --namespace pricewhisperer
 **Force mode output:**
 ```
 🔄 Force reconciliation mode enabled
-   Resource: pricewhisperer/idam-dev-secrets
+   Resource: mysystem/myapp-dev-secrets
 
-🗑️  Deleting SecretManagerConfig 'pricewhisperer/idam-dev-secrets'...
+🗑️  Deleting SecretManagerConfig 'mysystem/myapp-dev-secrets'...
    ✅ Resource deleted
 
 ⏳ Waiting for GitOps to recreate resource...
@@ -942,9 +942,9 @@ msmctl reconcile secretmanagerconfig idam-dev-secrets --namespace pricewhisperer
 
 ⏳ Waiting for resource to stabilize...
 
-🔄 Triggering reconciliation for SecretManagerConfig 'pricewhisperer/idam-dev-secrets'...
+🔄 Triggering reconciliation for SecretManagerConfig 'mysystem/myapp-dev-secrets'...
 ✅ Reconciliation triggered successfully
-   Resource: pricewhisperer/idam-dev-secrets
+   Resource: mysystem/myapp-dev-secrets
    Timestamp: 1702567890
 
 📊 Watching reconciliation logs...
@@ -972,7 +972,7 @@ msmctl list secretmanagerconfig [--namespace <namespace>]
 msmctl list secretmanagerconfig
 
 # List resources in specific namespace
-msmctl list secretmanagerconfig --namespace pricewhisperer
+msmctl list secretmanagerconfig --namespace mysystem
 
 # Using short form 'smc'
 msmctl list smc
@@ -1007,7 +1007,7 @@ msmctl status secretmanagerconfig <name> [--namespace <namespace>]
 
 **Example:**
 ```bash
-msmctl status secretmanagerconfig idam-dev-secrets --namespace pricewhisperer
+msmctl status secretmanagerconfig myapp-dev-secrets --namespace mysystem
 
 # Using short form 'smc'
 msmctl status smc idam-dev-secrets
@@ -1296,9 +1296,9 @@ Check status of all resources:
 #!/bin/bash
 # check-status.sh
 
-for config in $(msmctl list secretmanagerconfig --namespace pricewhisperer | awk 'NR>2 {print $1}'); do
+for config in $(msmctl list secretmanagerconfig --namespace mysystem | awk 'NR>2 {print $1}'); do
   echo "Checking $config..."
-  msmctl status secretmanagerconfig "$config" --namespace pricewhisperer
+  msmctl status secretmanagerconfig "$config" --namespace mysystem
   echo ""
 done
 ```

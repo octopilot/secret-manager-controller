@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docs-site
+  namespace: microscaler-system
+  labels:
+    app: docs-site
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docs-site
+  template:
+    metadata:
+      labels:
+        app: docs-site
+    spec:
+      containers:
+      - name: docs-site
+        image: docs-site:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+
