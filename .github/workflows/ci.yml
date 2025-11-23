@@ -186,9 +186,8 @@ jobs:
           sudo mv flux /usr/local/bin/flux
           chmod +x /usr/local/bin/flux
           rm flux_${FLUX_VERSION}_linux_amd64.tar.gz
-          # Verify flux is in PATH and works
-          echo "$PATH" | grep -q "/usr/local/bin" || export PATH="/usr/local/bin:$PATH"
-          flux version
+          # Verify flux CLI is installed (--client flag avoids cluster connection)
+          flux version --client
 
       - name: Setup Kind cluster (includes registry and microscaler-system namespace)
         env:
