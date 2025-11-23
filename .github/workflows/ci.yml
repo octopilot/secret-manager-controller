@@ -175,6 +175,21 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Install Flux CLI
+        run: |
+          # Download and install Flux CLI binary (required by install_fluxcd.py)
+          # We only need the CLI tool, not the full Flux installation
+          # Must be installed BEFORE setup_kind.py runs, as it calls install_fluxcd.py
+          FLUX_VERSION=$(curl -s https://api.github.com/repos/fluxcd/flux2/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/v//')
+          curl -LO "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz"
+          tar -xzf flux_${FLUX_VERSION}_linux_amd64.tar.gz
+          sudo mv flux /usr/local/bin/flux
+          chmod +x /usr/local/bin/flux
+          rm flux_${FLUX_VERSION}_linux_amd64.tar.gz
+          # Verify flux is in PATH and works
+          echo "$PATH" | grep -q "/usr/local/bin" || export PATH="/usr/local/bin:$PATH"
+          flux version
+
       - name: Setup Kind cluster (includes registry and microscaler-system namespace)
         env:
           NON_INTERACTIVE: "1"
@@ -185,20 +200,11 @@ jobs:
           # - Connects registry to cluster network
           # - Configures containerd to use local registry
           # - Creates microscaler-system namespace
+          # - Installs FluxCD (via install_gitops_components -> install_fluxcd.py)
+          # - Installs ArgoCD CRDs (via install_gitops_components -> install_argocd.py)
           # NON_INTERACTIVE=1 ensures it uses existing cluster if present (no prompts)
+          # Note: Flux CLI must be installed before this step
           python3 scripts/setup_kind.py
-
-      - name: Install Flux CLI
-        run: |
-          # Download and install Flux CLI binary (required by install_fluxcd.py)
-          # We only need the CLI tool, not the full Flux installation
-          FLUX_VERSION=$(curl -s https://api.github.com/repos/fluxcd/flux2/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/v//')
-          curl -LO "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz"
-          tar -xzf flux_${FLUX_VERSION}_linux_amd64.tar.gz
-          sudo mv flux /usr/local/bin/flux
-          chmod +x /usr/local/bin/flux
-          rm flux_${FLUX_VERSION}_linux_amd64.tar.gz
-          flux version
 
       - name: Install FluxCD (source-controller and notification-controller)
         run: |

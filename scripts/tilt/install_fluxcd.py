@@ -57,12 +57,23 @@ def log_error(msg):
 
 def check_flux_cli():
     """Check if flux CLI is installed."""
-    result = run_command("which flux", check=False, capture_output=True)
-    if result.returncode != 0:
-        log_error("flux CLI not found - required for installation")
-        log_error("  Install with: brew install fluxcd/tap/flux")
-        return False
-    return True
+    import shutil
+    
+    # Check common locations for flux CLI
+    flux_path = shutil.which("flux")
+    if flux_path:
+        log_info(f"Found flux CLI at: {flux_path}")
+        return True
+    
+    # Also check /usr/local/bin/flux (common CI installation location)
+    if Path("/usr/local/bin/flux").exists():
+        log_info("Found flux CLI at: /usr/local/bin/flux")
+        return True
+    
+    log_error("flux CLI not found - required for installation")
+    log_error("  Install with: brew install fluxcd/tap/flux")
+    log_error("  Or download from: https://github.com/fluxcd/flux2/releases")
+    return False
 
 
 def check_fluxcd_installed():
