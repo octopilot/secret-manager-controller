@@ -206,17 +206,19 @@ jobs:
           # Note: Flux CLI must be installed before this step
           python3 scripts/setup_kind.py
 
-      - name: Install FluxCD (source-controller and notification-controller)
-        run: |
-          # Install FluxCD components using the same script as local dev
-          # This installs source-controller and notification-controller (minimal FluxCD)
-          python3 scripts/tilt/install_fluxcd.py
+      # Note: FluxCD and ArgoCD are now installed by setup_kind.py
+      # No need to install them separately here
+      # - name: Install FluxCD (source-controller and notification-controller)
+      #   run: |
+      #     # Install FluxCD components using the same script as local dev
+      #     # This installs source-controller and notification-controller (minimal FluxCD)
+      #     python3 scripts/tilt/install_fluxcd.py
 
-      - name: Install ArgoCD CRDs
-        run: |
-          # Install ArgoCD CRDs using the same script as local dev
-          # This installs only the CRDs (minimal ArgoCD) from pact-broker/argocd
-          python3 scripts/tilt/install_argocd.py
+      # - name: Install ArgoCD CRDs
+      #   run: |
+      #     # Install ArgoCD CRDs using the same script as local dev
+      #     # This installs only the CRDs (minimal ArgoCD) from pact-broker/argocd
+      #     python3 scripts/tilt/install_argocd.py
 
       # Note: Tilt CI will build the controller image locally and push to local registry
       # No need for external test image
