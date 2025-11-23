@@ -630,11 +630,5 @@ pub use fixtures::{
     uncomment_secret,
 };
 
-// Export Kind cluster utilities
-pub mod kind_cluster;
-
-pub use kind_cluster::{
-    cleanup_kind_cluster, ensure_kind_cluster, install_argocd_application_crd,
-    install_fluxcd_source_controller, setup_test_environment, wait_for_argocd_crd_ready,
-    wait_for_fluxcd_ready,
-};
+// Note: Kind cluster setup is handled by scripts/setup_kind.py
+// Tests should use tests/integration/common/cluster_setup.rs for test utilities

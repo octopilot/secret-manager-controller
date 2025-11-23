@@ -478,7 +478,7 @@ local_resource(
 
 # Also load via k8s_yaml for Tilt to track the resources (for UI visibility)
 # This allows Tilt to show the resources in the UI, but they're actually applied by the local_resource above
-k8s_yaml(kustomize('gitops/cluster'), allow_duplicates=True)
+k8s_yaml(kustomize('gitops/cluster'), allow_duplicates=True,)
 
 # ====================
 # Test Resource Management
