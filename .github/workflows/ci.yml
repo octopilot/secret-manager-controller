@@ -135,7 +135,7 @@ jobs:
   # Step 2.5: Code Coverage with Pact Tests (Kind cluster)
   # Note: This job runs after build-test-image to use the test image
   coverage:
-    name: Code Coverage (with Pact Tests)
+    name: Coverage and Pact Tests
     runs-on: ubuntu-latest
     needs: test
     timeout-minutes: 30
@@ -364,7 +364,7 @@ jobs:
   
   # Step 4: Build binaries and publish final container and binaries
   build-and-publish:
-    name: Build and Publish (Final)
+    name: Build and Publish
     runs-on: ubuntu-latest
     needs: [coverage]
     # Run on push (not PR), tags, or manual dispatch
