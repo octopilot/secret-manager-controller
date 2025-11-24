@@ -5,9 +5,11 @@ import path from 'path';
 export default defineConfig({
   plugins: [solid()],
   base: '/',
+  publicDir: 'public', // Copy public directory (robots.txt, sitemap.xml) to dist
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    copyPublicDir: true, // Ensure public directory is copied
     // Aggressive code splitting for performance
     rollupOptions: {
       output: {
@@ -29,6 +31,10 @@ export default defineConfig({
           // Split markdown parser
           if (id.includes('marked')) {
             return 'marked';
+          }
+          // Split search library
+          if (id.includes('minisearch')) {
+            return 'minisearch';
           }
           // Split by route/page
           if (id.includes('/pages/')) {

@@ -51,3 +51,7 @@ __pycache__/
 *.pyzwz
 *.pyzwzw
 *.pyzwzwztests/integration/fixtures/
+
+# Build artifacts
+docs-site/dist/
+docs-site/node_modules/

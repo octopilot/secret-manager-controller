@@ -1,0 +1,185 @@
+name: Documentation Site Build and Publish
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'docs-site/**'
+      - 'dockerfiles/Dockerfile.docs-site'
+      - 'dockerfiles/nginx.docs-site.conf'
+      - '.github/workflows/docs-site.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'docs-site/**'
+      - 'dockerfiles/Dockerfile.docs-site'
+      - 'dockerfiles/nginx.docs-site.conf'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-docs-site
+  NODE_VERSION: '20'
+
+jobs:
+  # Build and test the documentation site
+  build:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install dependencies
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Build search index
+        working-directory: docs-site
+        run: npm run build:search-index
+
+      - name: Generate sitemap
+        working-directory: docs-site
+        env:
+          DOCS_BASE_URL: ${{ github.event.repository.full_name == 'microscaler/secret-manager-controller' && 'https://secret-manager-controller.microscaler.io' || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
+        run: npm run build:sitemap
+
+      - name: Generate RSS feed
+        working-directory: docs-site
+        env:
+          DOCS_BASE_URL: ${{ github.event.repository.full_name == 'microscaler/secret-manager-controller' && 'https://secret-manager-controller.microscaler.io' || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
+        run: npm run build:rss
+
+      - name: Build documentation site
+        working-directory: docs-site
+        run: npm run build
+
+      - name: Verify build output
+        working-directory: docs-site
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "❌ Build failed: dist directory not found"
+            exit 1
+          fi
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ Build failed: index.html not found"
+            exit 1
+          fi
+          if [ ! -f "public/sitemap.xml" ]; then
+            echo "❌ Build failed: sitemap.xml not found in public/"
+            exit 1
+          fi
+          if [ ! -f "dist/sitemap.xml" ]; then
+            echo "⚠️  Warning: sitemap.xml not found in dist/ (will be copied by Vite)"
+          fi
+          if [ ! -f "dist/robots.txt" ]; then
+            echo "⚠️  Warning: robots.txt not found in dist/ (will be copied by Vite)"
+          fi
+          echo "✅ Build verification passed"
+          echo "---"
+          echo "Dist contents:"
+          ls -lah dist/ | head -20
+          echo "---"
+          echo "Public contents:"
+          ls -lah public/ || echo "Public directory not found"
+          echo "---"
+          echo "Sitemap preview:"
+          head -20 public/sitemap.xml
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site-dist
+          path: docs-site/dist
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload sitemap and RSS feed
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site-feeds
+          path: |
+            docs-site/public/sitemap.xml
+            docs-site/public/feed.xml
+          retention-days: 7
+          if-no-files-found: error
+
+  #
+
+  # Optional: Publish to GitHub Pages (static site hosting)
+  publish-gh-pages:
+    name: Publish to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build
+    # Only publish on push to main branch, or manual dispatch
+    # if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site-dist
+          path: docs-site/dist
+
+      - name: Download feeds
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site-feeds
+          path: docs-site/public
+
+      - name: Ensure sitemap, RSS feed, and robots.txt in dist
+        run: |
+          # Vite should copy these, but ensure they're present
+          if [ -f "docs-site/public/sitemap.xml" ] && [ ! -f "docs-site/dist/sitemap.xml" ]; then
+            cp docs-site/public/sitemap.xml docs-site/dist/sitemap.xml
+            echo "✅ Copied sitemap.xml to dist/"
+          fi
+          if [ -f "docs-site/public/feed.xml" ] && [ ! -f "docs-site/dist/feed.xml" ]; then
+            cp docs-site/public/feed.xml docs-site/dist/feed.xml
+            echo "✅ Copied feed.xml to dist/"
+          fi
+          if [ -f "docs-site/public/robots.txt" ] && [ ! -f "docs-site/dist/robots.txt" ]; then
+            cp docs-site/public/robots.txt docs-site/dist/robots.txt
+            echo "✅ Copied robots.txt to dist/"
+          fi
+          echo "---"
+          echo "Final dist contents:"
+          ls -lah docs-site/dist/ | grep -E "(sitemap|feed|robots)" || echo "No feeds found"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Output deployment URL
+        run: |
+          echo "✅ Documentation site published to GitHub Pages"
+          echo "URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+

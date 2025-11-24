@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:search-index && npm run build:sitemap && npm run build:rss && vite build",
+    "build:search-index": "tsx scripts/build-search-index.ts",
+    "build:sitemap": "tsx scripts/generate-sitemap.ts",
+    "build:rss": "tsx scripts/generate-rss.ts",
     "preview": "vite preview"
   },
   "keywords": [],
@@ -16,6 +19,7 @@
     "katex": "^0.16.25",
     "marked": "^17.0.1",
     "mermaid": "^11.12.1",
+    "minisearch": "^7.2.0",
     "solid-js": "^1.9.10",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
@@ -25,7 +29,9 @@
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^24.10.1",
     "autoprefixer": "^10.4.22",
+    "glob": "^13.0.0",
     "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.0"
+    "tailwindcss": "^3.4.0",
+    "tsx": "^4.20.6"
   }
 }

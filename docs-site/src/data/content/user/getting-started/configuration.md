@@ -7,7 +7,7 @@ Complete guide to configuring the Secret Manager Controller.
 The `SecretManagerConfig` CRD is the main configuration resource. Here's the complete spec:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config

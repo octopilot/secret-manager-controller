@@ -23,7 +23,7 @@ kubectl create secret generic aws-credentials \
 Create a configuration file:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-app-secrets

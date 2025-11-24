@@ -36,7 +36,7 @@ kubectl apply -f gitrepository.yaml
 Create a `SecretManagerConfig` resource that references your GitRepository:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets

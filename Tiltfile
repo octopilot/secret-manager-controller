@@ -510,8 +510,25 @@ local_resource(
 # Documentation Site
 # ====================
 
+# Build search index for documentation site
+# This runs independently so developers can rebuild the search index
+# without rebuilding the entire Docker image
+local_resource(
+    'build-docs-search-index',
+    cmd='cd docs-site && npm run build:search-index',
+    deps=[
+        'docs-site/scripts/build-search-index.ts',
+        'docs-site/src/data/sections.ts',
+        'docs-site/src/data/content',  # Watch all content files
+    ],
+    labels=['docs'],
+    allow_parallel=True,
+)
+
 # Build documentation site Docker image
 # Tilt will watch docs-site/ for changes and rebuild
+# Note: The search index is built as part of 'npm run build' in the Dockerfile
+# but can also be built independently via build-docs-search-index resource
 docker_build(
     'docs-site',
     '.',
@@ -534,4 +551,5 @@ k8s_resource(
     'docs-site',
     port_forwards='8800:80',
     labels=['docs'],
+    resource_deps=['build-docs-search-index'],  # Ensure search index is built before deployment
 )

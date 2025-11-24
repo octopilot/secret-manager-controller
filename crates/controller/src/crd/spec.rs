@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```yaml
-/// apiVersion: secret-management.microscaler.io/v1
+/// apiVersion: secret-management.microscaler.io/v1beta1
 /// kind: SecretManagerConfig
 /// metadata:
 ///   name: my-service-secrets
@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 #[kube(
     kind = "SecretManagerConfig",
     group = "secret-management.microscaler.io",
-    version = "v1",
+    version = "v1beta1",
     namespaced,
     status = "crate::crd::SecretManagerConfigStatus",
     shortname = "smc",

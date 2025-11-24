@@ -22,7 +22,7 @@
 # - my-service-api-key
 # - my-service-properties (all properties as JSON)
 
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets

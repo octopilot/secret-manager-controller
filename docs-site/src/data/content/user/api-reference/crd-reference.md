@@ -6,7 +6,7 @@ Complete reference for the `SecretManagerConfig` Custom Resource Definition.
 
 ### API Version
 
-`secret-management.microscaler.io/v1`
+`secret-management.microscaler.io/v1beta1`
 
 ### Kind
 
@@ -15,7 +15,7 @@ Complete reference for the `SecretManagerConfig` Custom Resource Definition.
 ### Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets

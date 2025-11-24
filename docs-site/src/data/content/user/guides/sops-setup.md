@@ -209,7 +209,7 @@ Reference the encryption keys in your SecretManagerConfig:
 ### GPG-Only Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -226,7 +226,7 @@ spec:
 ### AGE-Only Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -245,7 +245,7 @@ spec:
 You can specify both for redundancy:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1
+apiVersion: secret-management.microscaler.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
