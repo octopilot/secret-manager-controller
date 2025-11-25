@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """
-Setup Git credentials for FluxCD GitRepository from SOPS-encrypted .env file.
+Setup Git credentials for FluxCD GitRepository.
 
 This script:
-1. Reads git credentials from SOPS-encrypted .env file
-2. Decrypts them using SOPS
-3. Creates Kubernetes secrets for GitRepository authentication
-4. Supports both HTTPS (username/password/token) and SSH (private key) authentication
+1. Detects if running in CI (GitHub Actions, GitLab CI, etc.) or locally
+2. For CI: Reads git credentials from environment variables (GITHUB_TOKEN, etc.)
+3. For local: Reads git credentials from SOPS-encrypted .env file
+4. Creates Kubernetes secrets for GitRepository authentication
+5. Supports both HTTPS (token-based) and SSH (private key) authentication
+
+Environment Variables (CI):
+  - GITHUB_TOKEN: GitHub personal access token (recommended)
+  - GIT_TOKEN or GIT_PASSWORD: Generic git token
+  - GIT_SSH_KEY or GIT_SSH_PRIVATE_KEY: SSH private key
+
+.env File (Local):
+  - GITHUB_TOKEN: GitHub personal access token (recommended)
+  - GIT_TOKEN or GIT_PASSWORD: Generic git token
+  - GIT_SSH_KEY: SSH private key
 """
 
 import os
@@ -47,21 +58,40 @@ def check_sops_installed():
     """Check if SOPS is installed."""
     result = run_command("sops --version", check=False, capture_output=True)
     if result.returncode != 0:
-        log_error("SOPS is not installed")
-        log_info("Install it with: brew install sops (macOS) or see https://github.com/mozilla/sops")
         return False
-    log_info(f"SOPS found: {result.stdout.strip()}")
     return True
 
 
-def decrypt_env_file(env_file: Path) -> dict:
+def is_ci_environment() -> bool:
+    """Check if running in CI environment (GitHub Actions, GitLab CI, etc.)."""
+    # Check for common CI environment variables
+    ci_indicators = [
+        "GITHUB_ACTIONS",  # GitHub Actions
+        "CI",  # Generic CI indicator
+        "GITLAB_CI",  # GitLab CI
+        "JENKINS_URL",  # Jenkins
+        "CIRCLECI",  # CircleCI
+    ]
+    
+    for indicator in ci_indicators:
+        if os.environ.get(indicator):
+            return True
+    
+    return False
+
+
+def get_env_vars_from_file(env_file: Path) -> dict:
     """Decrypt SOPS-encrypted .env file and return as dictionary."""
     if not env_file.exists():
         log_warn(f".env file not found: {env_file}")
-        log_info("Git credentials will not be configured")
         return {}
     
     log_info(f"Decrypting .env file: {env_file}")
+    
+    # Check if SOPS is installed (only needed for local .env files)
+    if not check_sops_installed():
+        log_warn("SOPS not available, cannot decrypt .env file")
+        return {}
     
     # Decrypt using SOPS
     result = run_command(
@@ -87,51 +117,107 @@ def decrypt_env_file(env_file: Path) -> dict:
             key, value = line.split('=', 1)
             env_vars[key.strip()] = value.strip()
     
-    log_info(f"Decrypted {len(env_vars)} environment variables")
+    log_info(f"Decrypted {len(env_vars)} environment variables from .env file")
+    return env_vars
+
+
+def get_env_vars_from_environment() -> dict:
+    """Get git credentials from environment variables (for CI environments)."""
+    env_vars = {}
+    
+    # Check for git credential environment variables
+    # Focus on tokens (HTTPS) and SSH keys
+    git_credential_vars = [
+        "GITHUB_TOKEN",
+        "GIT_TOKEN",
+        "GIT_PASSWORD",  # Treated as token
+        "GIT_SSH_KEY",
+        "GIT_SSH_PRIVATE_KEY",
+    ]
+    
+    for var in git_credential_vars:
+        value = os.environ.get(var)
+        if value:
+            env_vars[var] = value
+    
+    if env_vars:
+        log_info(f"Found {len(env_vars)} git credential environment variables")
+    
+    return env_vars
+
+
+def get_git_credentials(env_file: Path) -> dict:
+    """Get git credentials from either .env file (local) or environment variables (CI).
+    
+    Priority:
+    1. Environment variables - always takes precedence (works in both CI and local)
+    2. .env file - used if env vars not found or as base values
+    
+    This allows:
+    - CI: Use GITHUB_TOKEN from GitHub Actions secrets
+    - Local: Use .env file (SOPS-encrypted)
+    - Override: Environment variables can override .env file values (useful for testing)
+    
+    Returns:
+        Dictionary of environment variables containing git credentials
+    """
+    is_ci = is_ci_environment()
+    env_vars = {}
+    
+    # Always check environment variables first (they take precedence)
+    env_var_creds = get_env_vars_from_environment()
+    
+    if is_ci:
+        log_info("Running in CI environment - checking environment variables...")
+        if env_var_creds:
+            log_info("✅ Using git credentials from environment variables")
+            return env_var_creds
+        else:
+            log_warn("No git credentials found in environment variables")
+            log_info("Falling back to .env file (if available)...")
+    else:
+        log_info("Running in local environment - checking .env file...")
+        if env_var_creds:
+            log_info("Found environment variables (will override .env file values)")
+    
+    # Try .env file (local development or fallback in CI)
+    file_vars = get_env_vars_from_file(env_file)
+    
+    if file_vars:
+        if is_ci:
+            log_info("✅ Using git credentials from .env file (fallback)")
+        else:
+            log_info("✅ Using git credentials from .env file")
+        env_vars.update(file_vars)
+    
+    # Merge: environment variables take precedence over .env file
+    # This allows overriding .env file values with env vars (useful for testing)
+    env_vars.update(env_var_creds)
+    
     return env_vars
 
 
 def create_https_secret(env_vars: dict, secret_name: str, namespace: str) -> bool:
-    """Create Kubernetes secret for HTTPS git authentication."""
-    # Check for HTTPS credentials
-    # Support GITHUB_TOKEN as primary option (can be used with or without username)
-    github_token = env_vars.get('GITHUB_TOKEN')
-    git_token = env_vars.get('GIT_TOKEN')
-    git_password = env_vars.get('GIT_PASSWORD')
+    """Create Kubernetes secret for HTTPS git authentication using bearerToken.
     
-    # Get username (optional for GitHub tokens)
-    username = env_vars.get('GIT_USERNAME') or env_vars.get('GIT_USER')
+    FluxCD GitRepository supports bearerToken for token-based authentication.
+    This works with GitHub, GitLab, Bitbucket, and other modern Git providers.
+    """
+    # Check for token credentials
+    # Support GITHUB_TOKEN, GIT_TOKEN, or GIT_PASSWORD (all treated as tokens)
+    token = env_vars.get('GITHUB_TOKEN') or env_vars.get('GIT_TOKEN') or env_vars.get('GIT_PASSWORD')
     
-    # Determine password/token
-    password = github_token or git_token or git_password
-    
-    # For GitHub tokens, if no username provided, use token as username (GitHub accepts this)
-    # Or use "git" as username (common pattern)
-    if github_token and not username:
-        username = github_token  # GitHub accepts token as username
-        password = github_token
-    
-    if not password:
-        log_info("No HTTPS git credentials found in .env")
-        log_info("Supported variables: GITHUB_TOKEN, GIT_TOKEN, GIT_PASSWORD")
-        log_info("Optional: GIT_USERNAME (defaults to token if using GITHUB_TOKEN)")
+    if not token:
+        log_info("No HTTPS git token found in .env")
+        log_info("Supported variables: GITHUB_TOKEN, GIT_TOKEN, or GIT_PASSWORD")
         return False
     
-    if not username:
-        # Fallback: use token as username (works for GitHub)
-        username = password
-    
-    log_info(f"Creating HTTPS git credentials secret: {secret_name}")
-    
-    # Create secret using kubectl
-    # Format: username=<username>\npassword=<password>
-    credentials = f"username={username}\npassword={password}"
+    log_info(f"Creating HTTPS git credentials secret with bearerToken: {secret_name}")
     
     result = run_command(
         [
             "kubectl", "create", "secret", "generic", secret_name,
-            "--from-literal=username=" + username,
-            "--from-literal=password=" + password,
+            "--from-literal=bearerToken=" + token,
             "-n", namespace,
             "--dry-run=client", "-o", "yaml"
         ],
@@ -281,19 +367,37 @@ def main():
     log_info("Git Credentials Setup Script")
     log_info("=" * 50)
     
-    # Check prerequisites
-    if not check_sops_installed():
-        sys.exit(1)
+    # Detect environment
+    is_ci = is_ci_environment()
+    if is_ci:
+        log_info("Environment: CI (GitHub Actions/GitLab CI/etc.)")
+        log_info("  - Will use environment variables (GITHUB_TOKEN, etc.)")
+        log_info("  - Will fall back to .env file if env vars not found")
+    else:
+        log_info("Environment: Local development")
+        log_info("  - Will use SOPS-encrypted .env file")
+        log_info("  - Environment variables will override .env file if present")
     
-    # Decrypt .env file
-    env_vars = decrypt_env_file(args.env_file)
+    # Get git credentials from appropriate source
+    env_vars = get_git_credentials(args.env_file)
     
     if not env_vars:
-        log_warn("No environment variables found. Git credentials will not be configured.")
-        log_info("To configure git credentials, add to .env file:")
-        log_info("  For GitHub (recommended): GITHUB_TOKEN=ghp_...")
-        log_info("  For generic HTTPS: GIT_USERNAME=... and GIT_TOKEN=...")
-        log_info("  For SSH: GIT_SSH_KEY=...")
+        log_warn("No git credentials found.")
+        if is_ci:
+            log_info("For CI environments, set environment variables:")
+            log_info("  - GITHUB_TOKEN (recommended for GitHub)")
+            log_info("  - GIT_TOKEN or GIT_PASSWORD (for generic Git providers)")
+            log_info("  - GIT_SSH_KEY (for SSH authentication)")
+            log_info("")
+            log_info("Or provide a .env file as fallback.")
+        else:
+            log_info("For local development, add credentials to .env file:")
+            log_info("  - GITHUB_TOKEN=ghp_... (recommended for GitHub)")
+            log_info("  - GIT_TOKEN=... or GIT_PASSWORD=... (for generic Git providers)")
+            log_info("  - GIT_SSH_KEY=... (for SSH authentication)")
+            log_info("")
+            log_info("Encrypt the .env file with SOPS:")
+            log_info("  sops -e -i .env")
         sys.exit(0)
     
     # Determine namespaces to create secrets in
@@ -356,11 +460,17 @@ def main():
                 created = True
     
     if not created:
-        log_warn("No git credentials found in .env file")
-        log_info("Add credentials to .env file:")
-        log_info("  GitHub (recommended): GITHUB_TOKEN=ghp_...")
-        log_info("  Generic HTTPS: GIT_USERNAME=... and GIT_TOKEN=...")
-        log_info("  SSH: GIT_SSH_KEY=...")
+        log_warn("No git credentials found or credentials were invalid")
+        if is_ci:
+            log_info("For CI environments, ensure environment variables are set:")
+            log_info("  - GITHUB_TOKEN (recommended for GitHub)")
+            log_info("  - GIT_TOKEN or GIT_PASSWORD (for generic Git providers)")
+            log_info("  - GIT_SSH_KEY (for SSH authentication)")
+        else:
+            log_info("For local development, add credentials to .env file:")
+            log_info("  - GITHUB_TOKEN=ghp_... (recommended for GitHub)")
+            log_info("  - GIT_TOKEN=... or GIT_PASSWORD=... (for generic Git providers)")
+            log_info("  - GIT_SSH_KEY=... (for SSH authentication)")
         sys.exit(0)
     
     log_info("")
