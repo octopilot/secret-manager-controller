@@ -80,8 +80,28 @@ impl ManagerConfig {
 }
 
 /// Check if PostgreSQL is ready by attempting a connection
+/// Connects to 'postgres' database (always exists) instead of target database
 async fn check_postgres_ready(config: &ManagerConfig) -> Result<bool> {
-    match Database::connect(&config.database_url).await {
+    // Connect to 'postgres' database (always exists) to check if PostgreSQL is ready
+    // This avoids errors if the target database doesn't exist yet
+    let postgres_url = if config.database_url.contains("/pact_mock_servers") {
+        config
+            .database_url
+            .replace("/pact_mock_servers", "/postgres")
+    } else {
+        // Fallback: try to construct postgres URL
+        let db_name = config
+            .database_url
+            .split('/')
+            .last()
+            .and_then(|s| s.split('?').next())
+            .unwrap_or("postgres");
+        config
+            .database_url
+            .replace(&format!("/{}", db_name), "/postgres")
+    };
+
+    match Database::connect(&postgres_url).await {
         Ok(_) => Ok(true),
         Err(e) => {
             debug!("PostgreSQL connection check failed: {}", e);
@@ -462,6 +482,58 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
     statements
 }
 
+/// Ensure the target database exists, creating it if necessary
+async fn ensure_database_exists(config: &ManagerConfig) -> Result<()> {
+    // Parse database name from connection URL
+    // Format: postgresql://user:pass@host:port/database
+    let db_name = config
+        .database_url
+        .split('/')
+        .last()
+        .and_then(|s| s.split('?').next())
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse database name from URL"))?;
+
+    // Validate database name (must be a valid PostgreSQL identifier)
+    // Only allow alphanumeric and underscore characters
+    if !db_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(anyhow::anyhow!("Invalid database name: {}", db_name));
+    }
+
+    // Connect to 'postgres' database (always exists) to check/create target database
+    let postgres_url = config
+        .database_url
+        .replace(&format!("/{}", db_name), "/postgres");
+    let db = Database::connect(&postgres_url)
+        .await
+        .context("Failed to connect to PostgreSQL")?;
+
+    // Check if database exists using parameterized query
+    let result = db
+        .query_one(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT 1 FROM pg_database WHERE datname = $1",
+            vec![sea_orm::Value::String(Some(Box::new(db_name.to_string())))],
+        ))
+        .await
+        .context("Failed to check if database exists")?;
+
+    if result.is_none() {
+        info!("📦 Database '{}' does not exist, creating it...", db_name);
+        // CREATE DATABASE doesn't support parameters, but we've validated the name
+        db.execute(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!("CREATE DATABASE {}", db_name),
+        ))
+        .await
+        .context("Failed to create database")?;
+        info!("✅ Database '{}' created successfully", db_name);
+    } else {
+        debug!("Database '{}' already exists", db_name);
+    }
+
+    Ok(())
+}
+
 /// Run all migrations from prepared migration files
 async fn run_migrations(config: &ManagerConfig) -> Result<(usize, usize)> {
     // Read migrations from the prepared directory (processed by init container)
@@ -500,6 +572,9 @@ async fn run_migrations(config: &ManagerConfig) -> Result<(usize, usize)> {
     }
 
     info!("📋 Found {} migration file(s) to run", migrations.len());
+
+    // Ensure the target database exists before connecting
+    ensure_database_exists(&config).await?;
 
     // Connect to database
     let db = Database::connect(&config.database_url)

@@ -69,7 +69,11 @@ async fn test_azure_set_secret_contract() {
             .header("content-type", "application/json")
             .query_param("api-version", "7.4")
             .json_body(json!({
-                "value": "test-secret-value"
+                "value": "test-secret-value",
+                "tags": {
+                    "environment": "test",
+                    "location": "eastus"
+                }
             }));
         i.response
             .status(200)
@@ -103,7 +107,11 @@ async fn test_azure_set_secret_contract() {
         "PUT",
         &mock_url,
         Some(json!({
-            "value": "test-secret-value"
+            "value": "test-secret-value",
+            "tags": {
+                "environment": "test",
+                "location": "eastus"
+            }
         })),
         Some(vec![("api-version", "7.4")]),
     )

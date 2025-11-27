@@ -40,7 +40,11 @@ impl CreateSecretRequest {
     pub fn new(secret_id: String, environment: String, location: String) -> Self {
         let mut labels = std::collections::HashMap::new();
         labels.insert("environment".to_string(), environment);
-        labels.insert("location".to_string(), location);
+        // For GCP automatic replication, location should not be added to labels
+        // "automatic" is not a valid GCP location - it means no specific location (NULL)
+        if !location.is_empty() && location != "automatic" {
+            labels.insert("location".to_string(), location);
+        }
 
         Self {
             secret_id,

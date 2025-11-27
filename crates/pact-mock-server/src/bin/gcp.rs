@@ -947,10 +947,12 @@ async fn create_secret(
     // Extract location from replication config if available
     // GCP automatic replication doesn't specify a location (replicated to all regions)
     // For user-managed replication, location would be in replicas, but we only support automatic
-    let location = if body.replication.automatic.is_some() {
-        "automatic".to_string()
+    // For automatic replication, location should be NULL (not "automatic")
+    // We'll store NULL in the database for automatic replication
+    let location: Option<String> = if body.replication.automatic.is_some() {
+        None // Automatic replication = no specific location
     } else {
-        "unknown".to_string()
+        Some("unknown".to_string())
     };
 
     info!(
@@ -958,8 +960,8 @@ async fn create_secret(
         project = project,
         secret_id = body.secret_id,
         operation = "create_secret",
-        location = location,
-        "Creating secret with metadata: project={}, secret={}, location={}",
+        location = location.as_ref().map(|s| s.as_str()).unwrap_or("NULL"),
+        "Creating secret with metadata: project={}, secret={}, location={:?}",
         project,
         body.secret_id,
         location

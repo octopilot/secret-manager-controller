@@ -760,7 +760,15 @@ impl DbSecretStore {
                 let secret = GcpSecret::find_by_id(&key).one(&self.db).await?;
                 // Extract environment and location from updated metadata
                 let environment = Self::extract_environment(&metadata);
-                let location = Self::extract_location_from_labels(&metadata);
+                // For GCP, location is extracted from labels, but for automatic replication
+                // it should be NULL (not "automatic"). If location label is "automatic", set to None
+                let location = Self::extract_location_from_labels(&metadata).and_then(|loc| {
+                    if loc == "automatic" {
+                        None
+                    } else {
+                        Some(loc)
+                    }
+                });
 
                 if let Some(existing_secret) = secret {
                     // Update existing secret

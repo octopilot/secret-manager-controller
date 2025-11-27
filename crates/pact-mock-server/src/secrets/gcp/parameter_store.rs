@@ -223,13 +223,18 @@ impl GcpParameterStore {
     }
 
     /// List unique environments for parameters using database function
-    pub async fn list_environments(&self, _project: &str, _location: &str) -> Vec<String> {
+    pub async fn list_environments(&self, project: &str, location: &str) -> Vec<String> {
         if let Ok(database_url) = std::env::var("DATABASE_URL") {
             if let Ok(db) = sea_orm::Database::connect(&database_url).await {
                 use sea_orm::ConnectionTrait;
-                let stmt = sea_orm::Statement::from_string(
+                // Use parameterized query to prevent SQL injection
+                let stmt = sea_orm::Statement::from_sql_and_values(
                     sea_orm::DatabaseBackend::Postgres,
-                    "SELECT * FROM gcp.get_parameter_environments()".to_string(),
+                    "SELECT * FROM gcp.get_parameter_environments($1, $2)",
+                    vec![
+                        sea_orm::Value::String(Some(Box::new(project.to_string()))),
+                        sea_orm::Value::String(Some(Box::new(location.to_string()))),
+                    ],
                 );
 
                 if let Ok(rows) = db.query_all(stmt).await {
@@ -250,13 +255,15 @@ impl GcpParameterStore {
     }
 
     /// List unique locations for parameters using database function
-    pub async fn list_locations(&self, _project: &str) -> Vec<String> {
+    pub async fn list_locations(&self, project: &str) -> Vec<String> {
         if let Ok(database_url) = std::env::var("DATABASE_URL") {
             if let Ok(db) = sea_orm::Database::connect(&database_url).await {
                 use sea_orm::ConnectionTrait;
-                let stmt = sea_orm::Statement::from_string(
+                // Use parameterized query to prevent SQL injection
+                let stmt = sea_orm::Statement::from_sql_and_values(
                     sea_orm::DatabaseBackend::Postgres,
-                    "SELECT * FROM gcp.get_parameter_locations()".to_string(),
+                    "SELECT * FROM gcp.get_parameter_locations($1)",
+                    vec![sea_orm::Value::String(Some(Box::new(project.to_string())))],
                 );
 
                 if let Ok(rows) = db.query_all(stmt).await {

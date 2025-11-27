@@ -42,8 +42,11 @@ pub async fn store_secrets(
 
     // Extract environment and location from config
     let environment = &config.spec.secrets.environment;
+    // For GCP automatic replication, location should be empty string (not added to labels)
+    // "automatic" is not a valid GCP location - automatic replication means no specific location (NULL in DB)
+    // GCP Secret Manager uses replication: { automatic: {} } which is valid, but location should be NULL
     let location = match &config.spec.provider {
-        ProviderConfig::Gcp(_) => "automatic".to_string(), // GCP uses automatic replication
+        ProviderConfig::Gcp(_) => "".to_string(), // GCP automatic replication = empty (won't be added to labels)
         ProviderConfig::Aws(aws_config) => aws_config.region.clone(),
         ProviderConfig::Azure(azure_config) => {
             // Extract location from vault URL if available, otherwise use vault name as fallback

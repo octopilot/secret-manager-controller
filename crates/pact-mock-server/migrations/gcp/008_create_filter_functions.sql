@@ -1,25 +1,27 @@
 -- Create functions to get unique filter values for GCP secrets and parameters
 
--- Get unique environments from GCP secrets
-CREATE OR REPLACE FUNCTION gcp.get_secret_environments()
+-- Get unique environments from GCP secrets for a specific project
+CREATE OR REPLACE FUNCTION gcp.get_secret_environments(project_filter TEXT)
 RETURNS TABLE(environment TEXT) AS $$
 BEGIN
     RETURN QUERY
     SELECT DISTINCT s.environment
     FROM gcp.secrets s
     WHERE s.environment IS NOT NULL
+      AND s.key LIKE 'projects/' || project_filter || '/secrets/%'
     ORDER BY s.environment;
 END;
 $$ LANGUAGE plpgsql;
 
--- Get unique locations from GCP secrets
-CREATE OR REPLACE FUNCTION gcp.get_secret_locations()
+-- Get unique locations from GCP secrets for a specific project
+CREATE OR REPLACE FUNCTION gcp.get_secret_locations(project_filter TEXT)
 RETURNS TABLE(location TEXT) AS $$
 BEGIN
     RETURN QUERY
     SELECT DISTINCT s.location
     FROM gcp.secrets s
     WHERE s.location IS NOT NULL
+      AND s.key LIKE 'projects/' || project_filter || '/secrets/%'
     ORDER BY s.location;
 END;
 $$ LANGUAGE plpgsql;
@@ -37,26 +39,28 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Get unique environments from GCP parameters
-CREATE OR REPLACE FUNCTION gcp.get_parameter_environments()
+-- Get unique environments from GCP parameters for a specific project
+CREATE OR REPLACE FUNCTION gcp.get_parameter_environments(project_filter TEXT, location_filter TEXT)
 RETURNS TABLE(environment TEXT) AS $$
 BEGIN
     RETURN QUERY
     SELECT DISTINCT p.environment
     FROM gcp.parameters p
     WHERE p.environment IS NOT NULL
+      AND p.key LIKE 'projects/' || project_filter || '/locations/' || location_filter || '/parameters/%'
     ORDER BY p.environment;
 END;
 $$ LANGUAGE plpgsql;
 
--- Get unique locations from GCP parameters
-CREATE OR REPLACE FUNCTION gcp.get_parameter_locations()
+-- Get unique locations from GCP parameters for a specific project
+CREATE OR REPLACE FUNCTION gcp.get_parameter_locations(project_filter TEXT)
 RETURNS TABLE(location TEXT) AS $$
 BEGIN
     RETURN QUERY
     SELECT DISTINCT p.location
     FROM gcp.parameters p
     WHERE p.location IS NOT NULL
+      AND p.key LIKE 'projects/' || project_filter || '/locations/%/parameters/%'
     ORDER BY p.location;
 END;
 $$ LANGUAGE plpgsql;

@@ -1,4 +1,4 @@
-import { Component, createSignal, onMount, Show, For } from 'solid-js';
+import { Component, createSignal, createEffect, onMount, Show, For } from 'solid-js';
 
 interface Secret {
   name: string;
@@ -288,64 +288,127 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
     }
   };
 
-  // Load filter values from database functions via API endpoints
-  const loadFilterValues = async () => {
+  // Load locations for the selected project (GCP only)
+  const loadLocations = async () => {
+    const provider = selectedProvider();
+    const currentProject = project();
+    const currentViewType = viewType();
+    
+    if (provider !== 'gcp' || !currentProject) {
+      setLocations([]);
+      return;
+    }
+
     try {
-      if (selectedProvider() === 'gcp') {
-        if (!project()) {
-          return;
-        }
+      const endpoint = getEndpoint('gcp');
+      let url: string;
+      
+      if (currentViewType === 'secrets') {
+        url = `${endpoint}/v1/projects/${currentProject}/secrets/locations`;
+      } else {
+        url = `${endpoint}/v1/projects/${currentProject}/parameters/locations`;
+      }
+      
+      console.log(`[SecretsViewer] Loading locations for project: ${currentProject}, viewType: ${currentViewType}, url: ${url}`);
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const locationsList = (data.locations || []) as string[];
+        console.log(`[SecretsViewer] Loaded ${locationsList.length} locations:`, locationsList);
+        setLocations(locationsList);
+      } else {
+        console.warn(`[SecretsViewer] Failed to load locations: ${response.status} ${response.statusText}`);
+        setLocations([]);
+      }
+    } catch (err) {
+      console.error('[SecretsViewer] Error loading locations:', err);
+      setLocations([]);
+    }
+  };
+
+  // Load environments for the selected project+location combination (GCP only)
+  const loadEnvironments = async () => {
+    const provider = selectedProvider();
+    const currentProject = project();
+    const currentLocation = selectedLocation();
+    const currentViewType = viewType();
+    
+    if (provider !== 'gcp' || !currentProject) {
+      setEnvironments([]);
+      return;
+    }
+
+    // For secrets, we need project only (locations are independent)
+    // For parameters, we need project + location
+    if (currentViewType === 'secrets') {
+      // Load environments for all secrets in the project
+      try {
         const endpoint = getEndpoint('gcp');
-        
-        // Load environments and locations for secrets
-        if (viewType() === 'secrets') {
-          const [envResponse, locResponse] = await Promise.all([
-            fetch(`${endpoint}/v1/projects/${project()}/secrets/environments`),
-            fetch(`${endpoint}/v1/projects/${project()}/secrets/locations`),
-          ]);
-          
-          if (envResponse.ok) {
-            const envData = await envResponse.json();
-            const envs = (envData.environments || []) as string[];
-            // Only include 'pact' if it exists in the data or if no environments exist
-            const allEnvs = new Set(envs);
-            if (envs.length === 0 || envs.includes('pact')) {
-              allEnvs.add('pact');
-            }
-            setEnvironments(Array.from(allEnvs).sort());
+        const url = `${endpoint}/v1/projects/${currentProject}/secrets/environments`;
+        console.log(`[SecretsViewer] Loading environments for project: ${currentProject}, viewType: secrets, url: ${url}`);
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          const envs = (data.environments || []) as string[];
+          const allEnvs = new Set(envs);
+          if (envs.length === 0 || envs.includes('pact')) {
+            allEnvs.add('pact');
           }
-          
-          if (locResponse.ok) {
-            const locData = await locResponse.json();
-            setLocations((locData.locations || []) as string[]);
-          }
+          const sortedEnvs = Array.from(allEnvs).sort();
+          console.log(`[SecretsViewer] Loaded ${sortedEnvs.length} environments:`, sortedEnvs);
+          setEnvironments(sortedEnvs);
         } else {
-          // Load environments and locations for parameters
-          const [envResponse, locResponse] = await Promise.all([
-            fetch(`${endpoint}/v1/projects/${project()}/locations/global/parameters/environments`),
-            fetch(`${endpoint}/v1/projects/${project()}/parameters/locations`),
-          ]);
-          
-          if (envResponse.ok) {
-            const envData = await envResponse.json();
-            const envs = (envData.environments || []) as string[];
-            // Only include 'pact' if it exists in the data or if no environments exist
-            const allEnvs = new Set(envs);
-            if (envs.length === 0 || envs.includes('pact')) {
-              allEnvs.add('pact');
-            }
-            setEnvironments(Array.from(allEnvs).sort());
-          }
-          
-          if (locResponse.ok) {
-            const locData = await locResponse.json();
-            setLocations((locData.locations || []) as string[]);
-          }
+          console.warn(`[SecretsViewer] Failed to load environments: ${response.status} ${response.statusText}`);
+          setEnvironments([]);
         }
-      } else if (selectedProvider() === 'azure') {
+      } catch (err) {
+        console.error('[SecretsViewer] Error loading environments:', err);
+        setEnvironments([]);
+      }
+    } else {
+      // For parameters, we need location to be selected
+      if (!currentLocation) {
+        setEnvironments([]);
+        return;
+      }
+      
+      try {
+        const endpoint = getEndpoint('gcp');
+        const url = `${endpoint}/v1/projects/${currentProject}/locations/${currentLocation}/parameters/environments`;
+        console.log(`[SecretsViewer] Loading environments for project: ${currentProject}, location: ${currentLocation}, viewType: parameters, url: ${url}`);
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          const envs = (data.environments || []) as string[];
+          const allEnvs = new Set(envs);
+          if (envs.length === 0 || envs.includes('pact')) {
+            allEnvs.add('pact');
+          }
+          const sortedEnvs = Array.from(allEnvs).sort();
+          console.log(`[SecretsViewer] Loaded ${sortedEnvs.length} environments:`, sortedEnvs);
+          setEnvironments(sortedEnvs);
+        } else {
+          console.warn(`[SecretsViewer] Failed to load environments: ${response.status} ${response.statusText}`);
+          setEnvironments([]);
+        }
+      } catch (err) {
+        console.error('[SecretsViewer] Error loading environments:', err);
+        setEnvironments([]);
+      }
+    }
+  };
+
+  // Load filter values for AWS/Azure (non-GCP providers)
+  const loadFilterValues = async () => {
+    if (selectedProvider() === 'gcp') {
+      // GCP uses cascading dropdowns, handled separately
+      return;
+    }
+
+    try {
+      if (selectedProvider() === 'azure') {
         const endpoint = getEndpoint('azure');
         
-        // Load environments and locations for Azure secrets
         const [envResponse, locResponse] = await Promise.all([
           fetch(`${endpoint}/secrets/environments`),
           fetch(`${endpoint}/secrets/locations`),
@@ -364,7 +427,6 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
       } else if (selectedProvider() === 'aws') {
         const endpoint = getEndpoint('aws');
         
-        // Load environments, locations, and projects for AWS secrets
         const [envResponse, locResponse, projResponse] = await Promise.all([
           fetch(`${endpoint}/environments`),
           fetch(`${endpoint}/locations`),
@@ -384,14 +446,76 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
         
         if (projResponse.ok) {
           const projData = await projResponse.json();
-          const projs = (projData.projects || []) as string[];
-          setProjects(projs.sort());
+          setProjects((projData.projects || []) as string[]);
         }
       }
     } catch (err) {
-      console.warn('Failed to load filter values:', err);
+      console.error('Error loading filter values:', err);
     }
   };
+
+  // Reactive effect: Load locations when project or viewType changes (GCP only)
+  createEffect(() => {
+    // Read signals to track dependencies - SolidJS tracks these automatically
+    const provider = selectedProvider();
+    const currentProject = project();
+    const currentViewType = viewType();
+    
+    if (provider === 'gcp' && currentProject) {
+      // Clear location and environment when project or viewType changes
+      setSelectedLocation('');
+      setSelectedEnvironment('');
+      setSecrets([]);
+      // Load locations for the selected project (async, but don't await in effect)
+      loadLocations().catch(err => console.error('Error loading locations:', err));
+    } else if (provider === 'gcp') {
+      // Clear everything if no project selected
+      setLocations([]);
+      setEnvironments([]);
+      setSelectedLocation('');
+      setSelectedEnvironment('');
+      setSecrets([]);
+    }
+  });
+
+  // Reactive effect: Load environments when project+location+viewType changes (GCP only)
+  createEffect(() => {
+    // Read signals to track dependencies
+    const provider = selectedProvider();
+    const currentProject = project();
+    const currentLocation = selectedLocation();
+    const currentViewType = viewType();
+    
+    if (provider === 'gcp' && currentProject) {
+      if (currentViewType === 'secrets') {
+        // For secrets, load environments when project is selected (location is independent)
+        loadEnvironments().catch(err => console.error('Error loading environments:', err));
+      } else {
+        // For parameters, load environments when both project and location are selected
+        if (currentLocation) {
+          loadEnvironments().catch(err => console.error('Error loading environments:', err));
+        } else {
+          setEnvironments([]);
+          setSelectedEnvironment('');
+          setSecrets([]);
+        }
+      }
+    }
+  });
+
+  // Reactive effect: Load secrets when all filters are selected (GCP only)
+  createEffect(() => {
+    const provider = selectedProvider();
+    const currentProject = project();
+    const currentEnvironment = selectedEnvironment();
+    const currentLocation = selectedLocation();
+    
+    if (provider === 'gcp' && currentProject && currentEnvironment && currentLocation) {
+      loadSecrets();
+    } else if (provider === 'gcp') {
+      setSecrets([]);
+    }
+  });
 
   const fetchGCPParameters = async (projectId: string) => {
     try {
@@ -607,22 +731,16 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
                 <div class="text-sm text-gray-500">Loading projects...</div>
               </Show>
               <Show when={!loadingProjects() && projects().length > 0}>
-                <select
-                  value={project()}
-                  onChange={async (e) => {
-                    const newProject = e.currentTarget.value;
-                    setProject(newProject);
-                    setSelectedEnvironment('');
-                    setSelectedLocation('');
-                    setSecrets([]);
-                    if (newProject) {
-                      // Load filter values when project is selected
-                      await loadFilterValues();
-                    }
-                  }}
-                  required
-                  class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 w-full"
-                >
+              <select
+                value={project()}
+                onChange={(e) => {
+                  const newProject = e.currentTarget.value;
+                  setProject(newProject);
+                  // Reactive effects will handle loading locations and clearing dependent dropdowns
+                }}
+                required
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 w-full"
+              >
                   <option value="">Select Project</option>
                   <For each={projects()}>
                     {(proj) => (
@@ -644,13 +762,13 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
             <label class="block text-sm font-medium text-gray-700 mb-1">View Type</label>
             <select
               value={viewType()}
-              onChange={async (e) => {
+              onChange={(e) => {
                 setViewType(e.currentTarget.value as 'secrets' | 'parameters');
-                // Reload filter values when switching view type
-                if (selectedProvider() === 'gcp' && project()) {
-                  await loadFilterValues();
-                }
-                loadSecrets();
+                // Clear location and environment when switching view type
+                setSelectedLocation('');
+                setSelectedEnvironment('');
+                setSecrets([]);
+                // Reactive effects will handle reloading filter values
               }}
               class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
             >
@@ -664,25 +782,21 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
             <label class="block text-sm font-medium text-gray-700 mb-1">Environment *</label>
             <select
               value={selectedEnvironment()}
-              onChange={async (e) => {
+              onChange={(e) => {
                 setSelectedEnvironment(e.currentTarget.value);
-                // Reload filter values when environment changes (in case new environments appear)
-                if (selectedProvider() === 'gcp' && project()) {
-                  await loadFilterValues();
-                }
-                // Only load secrets if all filters are selected
-                if (selectedProvider() === 'gcp') {
-                  if (project() && e.currentTarget.value && selectedLocation()) {
-                    loadSecrets();
-                  } else {
-                    setSecrets([]);
-                  }
-                } else {
-                  loadSecrets();
-                }
+                // Reactive effect will handle loading secrets when all filters are selected
               }}
+              disabled={
+                selectedProvider() === 'gcp' && 
+                (!project() || (viewType() === 'parameters' && !selectedLocation()))
+              }
               required
-              class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              class={`border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                selectedProvider() === 'gcp' && 
+                (!project() || (viewType() === 'parameters' && !selectedLocation()))
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : ''
+              }`}
             >
               <option value="">Select Environment</option>
               <For each={environments()}>
@@ -699,21 +813,21 @@ const SecretsViewer: Component<SecretsViewerProps> = (_props) => {
               <label class="block text-sm font-medium text-gray-700 mb-1">Location *</label>
               <select
                 value={selectedLocation()}
-                onChange={async (e) => {
-                  setSelectedLocation(e.currentTarget.value);
-                  // Reload filter values when location changes (in case new locations appear)
-                  if (selectedProvider() === 'gcp' && project()) {
-                    await loadFilterValues();
-                  }
-                  // Only load secrets if all filters are selected
-                  if (project() && selectedEnvironment() && e.currentTarget.value) {
-                    loadSecrets();
-                  } else {
+                onChange={(e) => {
+                  const newLocation = e.currentTarget.value;
+                  setSelectedLocation(newLocation);
+                  // Clear environment when location changes (for parameters)
+                  if (viewType() === 'parameters') {
+                    setSelectedEnvironment('');
                     setSecrets([]);
                   }
+                  // Reactive effects will handle loading environments and secrets
                 }}
+                disabled={!project()}
                 required
-                class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                class={`border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                  !project() ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+                }`}
               >
                 <option value="">Select Location</option>
                 <For each={locations()}>

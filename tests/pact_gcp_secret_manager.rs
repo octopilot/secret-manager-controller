@@ -63,6 +63,10 @@ async fn test_gcp_create_secret_contract() {
                 "secretId": "test-secret-name",
                 "replication": {
                     "automatic": {}
+                },
+                "labels": {
+                    "environment": "test",
+                    "location": "us-central1"
                 }
             }));
         i.response
@@ -97,6 +101,10 @@ async fn test_gcp_create_secret_contract() {
             "secretId": "test-secret-name",
             "replication": {
                 "automatic": {}
+            },
+            "labels": {
+                "environment": "test",
+                "location": "us-central1"
             }
         })),
     )

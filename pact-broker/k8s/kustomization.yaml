@@ -8,6 +8,7 @@ resources:
   - namespace.yaml
   - pact-contracts-configmap.yaml  # Created first, populated automatically
   - postgres-migrations-configmap.yaml  # Created first, populated automatically
+  - postgres-init-configmap.yaml  # Init scripts for PostgreSQL (runs on first initialization)
   - rbac-serviceaccount.yaml  # ServiceAccount for manager sidecars
   - rbac-role.yaml  # Role granting ConfigMap read permissions
   - rbac-rolebinding.yaml  # RoleBinding for manager ServiceAccount

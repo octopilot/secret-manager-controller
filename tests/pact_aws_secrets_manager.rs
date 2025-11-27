@@ -68,11 +68,12 @@ async fn test_aws_create_secret_contract() {
                 .header("content-type", "application/x-amz-json-1.1")
                 .header("x-amz-target", "secretsmanager.CreateSecret")
                 .header("authorization", "AWS4-HMAC-SHA256 Credential=test/20240101/us-east-1/secretsmanager/aws4_request")
-                .body(json!({
-                    "Name": "test-secret-name",
-                    "SecretString": "test-secret-value",
-                    "Description": "Test secret"
-                }).to_string());
+                // AWS SDK automatically adds ClientRequestToken (UUID) to CreateSecret requests
+                // In Pact mode, the provider sets a fixed UUID, so we match it exactly
+                // AWS SDK sends compact JSON (no spaces) with fields in specific order
+                // SDK order: Name, ClientRequestToken, SecretString, Tags
+                // Tags are added with environment and location from the controller
+                .body(r#"{"Name":"test-secret-name","ClientRequestToken":"00000000-0000-0000-0000-000000000000","SecretString":"test-secret-value","Description":"Test secret","Tags":[{"Key":"environment","Value":"test"},{"Key":"location","Value":"us-east-1"}]}"#);
             i.response
                 .status(200)
                 .header("content-type", "application/x-amz-json-1.1")
@@ -94,20 +95,24 @@ async fn test_aws_create_secret_contract() {
     let mock_url = format!("{base_url}/");
 
     // Make the actual HTTP request to verify the contract
+    // Note: AWS SDK sends compact JSON (no spaces) with fields in specific order
+    // Order: Name, ClientRequestToken, SecretString, Description, Tags
+    // We need to send the exact compact JSON string to match the Pact contract
     let client = reqwest::Client::new();
-    let response = make_request(
-        &client,
-        "POST",
-        &mock_url,
-        Some(json!({
-            "Name": "test-secret-name",
-            "SecretString": "test-secret-value",
-            "Description": "Test secret"
-        })),
-        "secretsmanager.CreateSecret",
-    )
-    .await
-    .expect("Failed to make request");
+    let request_body = r#"{"Name":"test-secret-name","ClientRequestToken":"00000000-0000-0000-0000-000000000000","SecretString":"test-secret-value","Description":"Test secret","Tags":[{"Key":"environment","Value":"test"},{"Key":"location","Value":"us-east-1"}]}"#;
+
+    let response = client
+        .post(&mock_url)
+        .header(
+            "authorization",
+            "AWS4-HMAC-SHA256 Credential=test/20240101/us-east-1/secretsmanager/aws4_request",
+        )
+        .header("x-amz-target", "secretsmanager.CreateSecret")
+        .header("content-type", "application/x-amz-json-1.1")
+        .body(request_body.to_string())
+        .send()
+        .await
+        .expect("Failed to make request");
 
     assert_eq!(response.status(), 200);
     let body: serde_json::Value = response.json().await.expect("Failed to parse response");

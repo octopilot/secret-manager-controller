@@ -46,36 +46,19 @@ spec:
     spec:
       serviceAccountName: pact-manager  # ServiceAccount for postgres-manager sidecar to watch ConfigMap
       # Use init containers to:
-      # 1. Create data directory with proper permissions
+      # 1. Create data directory with proper permissions (using PriceWhisperer approach)
       # 2. Process ConfigMap and create sentinel file (migrations ready)
       # 3. Wait for sentinel file (safety check)
       initContainers:
         - name: create-dirs
-          image: postgres:16-alpine
+          image: busybox:1.36
           command:
             - sh
             - -c
             - |
-              # Create PostgreSQL data directory and pgdata subdirectory
-              # PostgreSQL will use PGDATA=/var/lib/postgresql/data/pgdata
-              mkdir -p /var/lib/postgresql/data/pgdata
-              
-              # Create runtime directory for PostgreSQL socket and PID files
-              # This directory will be writable by postgres user (999:999)
-              mkdir -p /var/lib/postgresql/data/pgdata/run
-              
-              # Create /var/run/postgresql to prevent entrypoint chmod errors
-              # Even though we won't use it, the entrypoint tries to chmod it
-              mkdir -p /var/run/postgresql
-              chown 999:999 /var/run/postgresql
-              chmod 755 /var/run/postgresql
-              
-              # Set ownership to postgres user (999:999) so postgres can write to it
-              chown -R 999:999 /var/lib/postgresql/data
+              # Create PostgreSQL data directory
+              mkdir -p /var/lib/postgresql/data
               chmod -R 755 /var/lib/postgresql/data
-              
-              # Ensure runtime directory has proper permissions
-              chmod 700 /var/lib/postgresql/data/pgdata/run
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -160,51 +143,25 @@ spec:
               mountPath: /shared
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          # Use same PostgreSQL image as PriceWhisperer
+          image: docker.io/casibbald/postgres:17-duckdb-supabase-v2
           ports:
             - containerPort: 5432
               name: postgres
           env:
-            - name: POSTGRES_DB
-              value: "pact_mock_servers"
             - name: POSTGRES_USER
               value: "pact"
             - name: POSTGRES_PASSWORD
               value: "pact"
-            # Set PGDATA to subdirectory to avoid "directory exists but is not empty" errors
-            # This allows PostgreSQL to initialize cleanly even if the parent directory has files
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
-            # Configure PostgreSQL to use writable paths for runtime files
-            # Unix socket directory will be in PGDATA/run (writable by postgres user)
-            - name: POSTGRES_INITDB_ARGS
-              value: "--data-checksums"
-          command:
-            - sh
-            - -c
-            - |
-              # Ensure socket directory exists in PGDATA (writable by postgres user)
-              mkdir -p /var/lib/postgresql/data/pgdata/run
-              chmod 700 /var/lib/postgresql/data/pgdata/run
-              
-              # Create /var/run/postgresql to prevent entrypoint chmod errors
-              # Even though we configure PostgreSQL to use PGDATA/run, the entrypoint
-              # still tries to chmod /var/run/postgresql during initialization
-              # Since /var/run is tmpfs, we need to create it here (not just in init container)
-              mkdir -p /var/run/postgresql
-              chmod 755 /var/run/postgresql || true
-              
-              # Start PostgreSQL using the standard entrypoint
-              # Configure socket directory to use PGDATA/run (writable location)
-              exec /usr/local/bin/docker-entrypoint.sh postgres \
-                -c unix_socket_directories=/var/lib/postgresql/data/pgdata/run
+            - name: POSTGRES_DB
+              value: "postgres"
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
-          securityContext:
-            runAsUser: 999
-            runAsGroup: 999
-            fsGroup: 999
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          # Let PostgreSQL image handle security context (it runs as postgres user)
           resources:
             requests:
               memory: 128Mi
@@ -212,38 +169,24 @@ spec:
             limits:
               memory: 512Mi
               cpu: 500m
-          startupProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - pg_isready -h localhost -p 5432 -U pact -d pact_mock_servers
-            # Startup probe allows up to 5 minutes for PostgreSQL to start
-            # This prevents liveness/readiness probes from killing the container during slow startup
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 30  # 30 * 10s = 5 minutes max startup time
-          livenessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - pg_isready -h localhost -p 5432 -U pact -d pact_mock_servers
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
           readinessProbe:
             exec:
               command:
-                - /bin/sh
+                - sh
                 - -c
-                - pg_isready -h localhost -p 5432 -U pact -d pact_mock_servers
+                - |
+                  PGPASSWORD=pact pg_isready -U pact -d postgres -h 127.0.0.1 -p 5432
             initialDelaySeconds: 5
             periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  PGPASSWORD=pact pg_isready -U pact -d postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
         # PostgreSQL migration manager sidecar
         # Watches ConfigMap for migration files and runs them when postgres is ready
         # Note: Tilt will automatically substitute 'postgres-manager' with 'localhost:5000/postgres-manager:tilt-{hash}'
@@ -323,4 +266,7 @@ spec:
             name: postgres-migrations
         - name: shared-data
           emptyDir: {}
+        - name: init-scripts
+          configMap:
+            name: postgres-init
 

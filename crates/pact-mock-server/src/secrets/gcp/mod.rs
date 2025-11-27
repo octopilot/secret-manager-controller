@@ -260,18 +260,20 @@ impl GcpSecretStore {
 
     /// List unique environments for secrets using database function
     /// Returns empty vec if database is not available
-    pub async fn list_environments(&self, _project: &str, resource_type: &str) -> Vec<String> {
+    pub async fn list_environments(&self, project: &str, resource_type: &str) -> Vec<String> {
         // Try to use existing database store connection first (much faster)
         if let SecretStoreEnum::Database(db_store) = self.store.as_ref() {
-            let function_name = if resource_type == "secrets" {
-                "gcp.get_secret_environments"
-            } else {
-                "gcp.get_parameter_environments"
-            };
+            if resource_type != "secrets" {
+                // For parameters, we need location too - but this method doesn't have it
+                // This should be called from parameter_store.rs instead
+                return vec![];
+            }
 
-            let stmt = sea_orm::Statement::from_string(
+            // Use parameterized query to prevent SQL injection
+            let stmt = sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                format!("SELECT * FROM {}()", function_name),
+                "SELECT * FROM gcp.get_secret_environments($1)",
+                vec![sea_orm::Value::String(Some(Box::new(project.to_string())))],
             );
 
             if let Ok(rows) = db_store.query_all(stmt).await {
@@ -292,19 +294,21 @@ impl GcpSecretStore {
 
     /// List unique locations for secrets using database function
     /// Returns empty vec if database is not available
-    pub async fn list_locations(&self, _project: &str, resource_type: &str) -> Vec<String> {
+    pub async fn list_locations(&self, project: &str, resource_type: &str) -> Vec<String> {
         // Try to use existing database store connection first (much faster)
         if let SecretStoreEnum::Database(db_store) = self.store.as_ref() {
-            let function_name = if resource_type == "secrets" {
-                "gcp.get_secret_locations"
+            let stmt = if resource_type == "secrets" {
+                // Use parameterized query to prevent SQL injection
+                sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    "SELECT * FROM gcp.get_secret_locations($1)",
+                    vec![sea_orm::Value::String(Some(Box::new(project.to_string())))],
+                )
             } else {
-                "gcp.get_parameter_locations"
+                // For parameters, we need location too - but this method doesn't have it
+                // This should be called from parameter_store.rs instead
+                return vec![];
             };
-
-            let stmt = sea_orm::Statement::from_string(
-                sea_orm::DatabaseBackend::Postgres,
-                format!("SELECT * FROM {}()", function_name),
-            );
 
             if let Ok(rows) = db_store.query_all(stmt).await {
                 return rows
