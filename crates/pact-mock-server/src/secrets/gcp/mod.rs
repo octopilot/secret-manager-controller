@@ -260,7 +260,13 @@ impl GcpSecretStore {
 
     /// List unique environments for secrets using database function
     /// Returns empty vec if database is not available
-    pub async fn list_environments(&self, project: &str, resource_type: &str) -> Vec<String> {
+    /// CRITICAL: Requires both project AND location - different locations can have different environments
+    pub async fn list_environments(
+        &self,
+        project: &str,
+        location: Option<&str>,
+        resource_type: &str,
+    ) -> Vec<String> {
         // Try to use existing database store connection first (much faster)
         if let SecretStoreEnum::Database(db_store) = self.store.as_ref() {
             if resource_type != "secrets" {
@@ -269,11 +275,20 @@ impl GcpSecretStore {
                 return vec![];
             }
 
+            // Location is required for secrets too - different locations can have different environments
+            let location_value = match location {
+                Some(loc) => sea_orm::Value::String(Some(Box::new(loc.to_string()))),
+                None => sea_orm::Value::String(None),
+            };
+
             // Use parameterized query to prevent SQL injection
             let stmt = sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "SELECT * FROM gcp.get_secret_environments($1)",
-                vec![sea_orm::Value::String(Some(Box::new(project.to_string())))],
+                "SELECT * FROM gcp.get_secret_environments($1, $2)",
+                vec![
+                    sea_orm::Value::String(Some(Box::new(project.to_string()))),
+                    location_value,
+                ],
             );
 
             if let Ok(rows) = db_store.query_all(stmt).await {

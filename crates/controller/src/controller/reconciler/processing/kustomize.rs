@@ -37,12 +37,24 @@ pub async fn process_kustomize_secrets(
 
     // Extract environment and location from config
     let environment = &config.spec.secrets.environment;
-    // For GCP automatic replication, location should be empty string (not added to labels)
+    // For GCP, location is required in the config (enforced by CRD validation)
     // "automatic" is not a valid GCP location - automatic replication means no specific location (NULL in DB)
+    // If location is empty string, treat it as automatic replication (NULL in DB)
     let location = match &config.spec.provider {
-        ProviderConfig::Gcp(_) => "".to_string(), // GCP automatic replication = empty (won't be added to labels)
+        ProviderConfig::Gcp(gcp_config) => {
+            // Location is required, but if it's empty string, treat as automatic replication
+            let loc = gcp_config.location.clone();
+            if loc.is_empty() || loc == "automatic" {
+                "".to_string() // Empty means automatic replication (NULL in DB)
+            } else {
+                loc
+            }
+        }
         ProviderConfig::Aws(aws_config) => aws_config.region.clone(),
-        ProviderConfig::Azure(azure_config) => azure_config.vault_name.clone(),
+        ProviderConfig::Azure(azure_config) => {
+            // Location is required in the config (enforced by CRD validation)
+            azure_config.location.clone()
+        }
     };
 
     let publish_span = info_span!(

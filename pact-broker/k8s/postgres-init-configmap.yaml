@@ -1,0 +1,232 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: secret-manager-controller-pact-broker
+data:
+  # PostgreSQL executes files in /docker-entrypoint-initdb.d/ in alphabetical order
+  # Numbered prefixes ensure correct execution order
+  # Based on Supabase's docker setup: https://github.com/supabase/supabase/tree/master/docker/volumes/db
+  
+  # 00-roles.sql - Create Supabase roles and users
+  # Based on Supabase's roles.sql and realtime.sql
+  # These roles are required for Supabase background workers (pg_net, pg_cron) to function
+  00-roles.sql: |
+    -- Supabase Roles and Users Setup
+    -- Based on Supabase's default initialization
+    
+    -- Create postgres role if it doesn't exist (required by Supabase scripts)
+    -- Our deployment uses 'pact' user, but Supabase scripts expect 'postgres' role
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN
+            CREATE ROLE postgres WITH LOGIN SUPERUSER CREATEDB CREATEROLE PASSWORD 'postgres';
+        END IF;
+    END $$;
+    
+    -- Create schemas for Supabase services
+    CREATE SCHEMA IF NOT EXISTS auth;
+    CREATE SCHEMA IF NOT EXISTS storage;
+    CREATE SCHEMA IF NOT EXISTS _realtime;
+    CREATE SCHEMA IF NOT EXISTS realtime;
+    
+    -- Create anon role for PostgREST
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+            CREATE ROLE anon NOLOGIN NOINHERIT;
+            GRANT USAGE ON SCHEMA public TO anon;
+            GRANT USAGE ON SCHEMA storage TO anon;
+            GRANT USAGE ON SCHEMA auth TO anon;
+        END IF;
+    END $$;
+    
+    -- Create service_role role for PostgREST
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
+            CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
+            GRANT ALL ON SCHEMA public TO service_role;
+            GRANT ALL ON SCHEMA storage TO service_role;
+            GRANT ALL ON SCHEMA auth TO service_role;
+        END IF;
+    END $$;
+    
+    -- Create authenticated role (used by Supabase auth)
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+            CREATE ROLE authenticated NOLOGIN NOINHERIT;
+            GRANT USAGE ON SCHEMA public TO authenticated;
+            GRANT USAGE ON SCHEMA storage TO authenticated;
+            GRANT USAGE ON SCHEMA auth TO authenticated;
+        END IF;
+    END $$;
+    
+    -- Create authenticator role for PostgREST
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
+            CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'postgres';
+            GRANT anon TO authenticator;
+            GRANT service_role TO authenticator;
+        ELSE
+            ALTER ROLE authenticator WITH PASSWORD 'postgres';
+        END IF;
+    END $$;
+    
+    -- Create Supabase admin users
+    DO $$
+    BEGIN
+        -- supabase_admin (for Realtime, Logflare, Postgres Meta)
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+            CREATE ROLE supabase_admin WITH LOGIN PASSWORD 'postgres' SUPERUSER CREATEDB CREATEROLE;
+        ELSE
+            ALTER ROLE supabase_admin WITH PASSWORD 'postgres';
+        END IF;
+        
+        -- supabase_auth_admin (for GoTrue)
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
+            CREATE ROLE supabase_auth_admin WITH LOGIN PASSWORD 'postgres';
+        ELSE
+            ALTER ROLE supabase_auth_admin WITH PASSWORD 'postgres';
+        END IF;
+        
+        -- supabase_storage_admin (for Storage API)
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_storage_admin') THEN
+            CREATE ROLE supabase_storage_admin WITH LOGIN PASSWORD 'postgres';
+        ELSE
+            ALTER ROLE supabase_storage_admin WITH PASSWORD 'postgres';
+        END IF;
+        
+        -- supabase_functions_admin (for Edge Functions)
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_functions_admin') THEN
+            CREATE ROLE supabase_functions_admin WITH LOGIN PASSWORD 'postgres' NOINHERIT CREATEROLE;
+        ELSE
+            ALTER ROLE supabase_functions_admin WITH PASSWORD 'postgres';
+        END IF;
+        
+        -- pgbouncer (for connection pooling)
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'pgbouncer') THEN
+            CREATE ROLE pgbouncer WITH LOGIN PASSWORD 'postgres';
+        ELSE
+            ALTER ROLE pgbouncer WITH PASSWORD 'postgres';
+        END IF;
+    END $$;
+    
+    -- Grant permissions to supabase_auth_admin
+    -- GoTrue needs permissions on public schema for schema_migrations table
+    GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
+    GRANT CREATE ON SCHEMA public TO supabase_auth_admin;
+    GRANT ALL ON ALL TABLES IN SCHEMA public TO supabase_auth_admin;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO supabase_auth_admin;
+    GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO supabase_auth_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO supabase_auth_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO supabase_auth_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO supabase_auth_admin;
+    
+    -- Grant permissions on auth schema
+    -- GoTrue needs CREATE permission to create tables in auth schema
+    GRANT USAGE ON SCHEMA auth TO supabase_auth_admin;
+    GRANT CREATE ON SCHEMA auth TO supabase_auth_admin;
+    ALTER SCHEMA auth OWNER TO supabase_auth_admin;
+    GRANT ALL ON ALL TABLES IN SCHEMA auth TO supabase_auth_admin;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO supabase_auth_admin;
+    GRANT ALL ON ALL FUNCTIONS IN SCHEMA auth TO supabase_auth_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON TABLES TO supabase_auth_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON SEQUENCES TO supabase_auth_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON FUNCTIONS TO supabase_auth_admin;
+    
+    -- Create auth.factor_type enum for GoTrue MFA
+    -- GoTrue migrations expect this enum to exist in the auth schema with supabase_auth_admin ownership
+    -- This must be created before GoTrue runs its migrations
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_type WHERE typname = 'factor_type' AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'auth')) THEN
+            CREATE TYPE auth.factor_type AS ENUM ('totp', 'webauthn', 'phone');
+            ALTER TYPE auth.factor_type OWNER TO supabase_auth_admin;
+        END IF;
+    END $$;
+    
+    -- Grant permissions to supabase_storage_admin
+    -- Storage API needs to create and manage the storage schema
+    GRANT CREATE ON DATABASE postgres TO supabase_storage_admin;
+    GRANT USAGE ON SCHEMA storage TO supabase_storage_admin;
+    GRANT CREATE ON SCHEMA storage TO supabase_storage_admin;
+    ALTER SCHEMA storage OWNER TO supabase_storage_admin;
+    GRANT ALL ON ALL TABLES IN SCHEMA storage TO supabase_storage_admin;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO supabase_storage_admin;
+    GRANT ALL ON ALL FUNCTIONS IN SCHEMA storage TO supabase_storage_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA storage GRANT ALL ON TABLES TO supabase_storage_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA storage GRANT ALL ON SEQUENCES TO supabase_storage_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA storage GRANT ALL ON FUNCTIONS TO supabase_storage_admin;
+    
+    -- Create supabase_functions schema for Edge Functions webhooks
+    CREATE SCHEMA IF NOT EXISTS supabase_functions;
+    ALTER SCHEMA supabase_functions OWNER TO postgres;
+    GRANT USAGE ON SCHEMA supabase_functions TO postgres, anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+    GRANT ALL ON SCHEMA supabase_functions TO supabase_functions_admin;
+  
+  # 01-jwt.sql - Set JWT settings
+  # Based on Supabase's jwt.sql
+  01-jwt.sql: |
+    -- Set JWT settings for the postgres database
+    ALTER DATABASE postgres SET "app.settings.jwt_secret" TO 'your-super-secret-jwt-token-with-at-least-32-characters-long';
+    ALTER DATABASE postgres SET "app.settings.jwt_exp" TO '3600';
+  
+  # 02-realtime.sql - Create realtime schemas
+  # Based on Supabase's realtime.sql
+  # Realtime needs both "realtime" schema (for internal migrations) and "_realtime" schema (for functionality)
+  02-realtime.sql: |
+    -- Create realtime schema for Realtime's internal migrations
+    CREATE SCHEMA IF NOT EXISTS realtime;
+    ALTER SCHEMA realtime OWNER TO postgres;
+    
+    -- Create _realtime schema for Supabase Realtime functionality
+    CREATE SCHEMA IF NOT EXISTS _realtime;
+    ALTER SCHEMA _realtime OWNER TO postgres;
+    
+    -- Grant permissions to supabase_admin for realtime schemas
+    GRANT USAGE ON SCHEMA realtime TO supabase_admin;
+    GRANT ALL ON ALL TABLES IN SCHEMA realtime TO supabase_admin;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA realtime TO supabase_admin;
+    GRANT ALL ON ALL FUNCTIONS IN SCHEMA realtime TO supabase_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA realtime GRANT ALL ON TABLES TO supabase_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA realtime GRANT ALL ON SEQUENCES TO supabase_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA realtime GRANT ALL ON FUNCTIONS TO supabase_admin;
+    
+    GRANT USAGE ON SCHEMA _realtime TO supabase_admin;
+    GRANT ALL ON ALL TABLES IN SCHEMA _realtime TO supabase_admin;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA _realtime TO supabase_admin;
+    GRANT ALL ON ALL FUNCTIONS IN SCHEMA _realtime TO supabase_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA _realtime GRANT ALL ON TABLES TO supabase_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA _realtime GRANT ALL ON SEQUENCES TO supabase_admin;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA _realtime GRANT ALL ON FUNCTIONS TO supabase_admin;
+  
+  # 03-_supabase.sql - Create _supabase database
+  # Based on Supabase's _supabase.sql
+  03-_supabase.sql: |
+    -- Create _supabase database (required for Logflare analytics)
+    -- Based on Supabase's _supabase.sql
+    CREATE DATABASE _supabase WITH OWNER postgres;
+  
+  # 04-logs.sql - Create _analytics schema in _supabase database
+  # Based on Supabase's logs.sql
+  04-logs.sql: |
+    -- Create _analytics schema in _supabase database for Logflare
+    \c _supabase
+    CREATE SCHEMA IF NOT EXISTS _analytics;
+    ALTER SCHEMA _analytics OWNER TO postgres;
+    \c postgres
+  
+  # 05-pooler.sql - Create _supavisor schema in _supabase database
+  # Based on Supabase's pooler.sql
+  05-pooler.sql: |
+    -- Create _supavisor schema in _supabase database for connection pooling
+    \c _supabase
+    CREATE SCHEMA IF NOT EXISTS _supavisor;
+    ALTER SCHEMA _supavisor OWNER TO postgres;
+    \c postgres

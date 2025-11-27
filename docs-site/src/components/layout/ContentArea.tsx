@@ -124,7 +124,7 @@ const ContentArea: Component<ContentAreaProps> = (props) => {
 
   return (
     <main id="main-content" class="flex-1 overflow-y-auto bg-white custom-scrollbar" role="main">
-      <div class="max-w-4xl mx-auto px-8 py-10">
+      <div class="max-w-[1100px] mx-auto px-8 py-10">
           <Show when={loading()}>
             <div class="text-center py-16" role="status" aria-live="polite">
               <div class="animate-spin rounded-full h-12 w-12 border-2 border-[#e5e3df] border-t-[#5a6c5d] mx-auto mb-4" aria-hidden="true"></div>

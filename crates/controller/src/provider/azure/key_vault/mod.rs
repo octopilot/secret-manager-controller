@@ -70,6 +70,7 @@ mod tests {
     fn test_azure_config_workload_identity() {
         let config = AzureConfig {
             vault_name: "my-vault".to_string(),
+            location: "eastus".to_string(),
             auth: Some(AzureAuthConfig::WorkloadIdentity {
                 client_id: "12345678-1234-1234-1234-123456789012".to_string(),
             }),
@@ -88,6 +89,7 @@ mod tests {
     fn test_azure_config_default() {
         let config = AzureConfig {
             vault_name: "prod-vault".to_string(),
+            location: "eastus".to_string(),
             auth: None,
         };
 
@@ -100,6 +102,7 @@ mod tests {
         // Test vault URL construction
         let config1 = AzureConfig {
             vault_name: "my-vault".to_string(),
+            location: "eastus".to_string(),
             auth: None,
         };
         let expected_url = "https://my-vault.vault.azure.net/";
@@ -114,6 +117,7 @@ mod tests {
         // Test with full URL
         let config2 = AzureConfig {
             vault_name: "https://custom-vault.vault.azure.net/".to_string(),
+            location: "eastus".to_string(),
             auth: None,
         };
         let vault_url2 = if config2.vault_name.starts_with("https://") {

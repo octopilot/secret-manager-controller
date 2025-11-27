@@ -1208,16 +1208,22 @@ async fn list_projects(State(app_state): State<GcpAppState>) -> Response {
 }
 
 /// GET unique environments for secrets
-/// Custom endpoint: /v1/projects/{project}/secrets/environments
+/// Custom endpoint: /v1/projects/{project}/secrets/environments?location={location}
+/// CRITICAL: Location is required - different locations can have different environments
 async fn list_secret_environments(
     State(app_state): State<GcpAppState>,
     Path(project): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
-    info!("  GET secret environments: project={}", project);
+    let location = params.get("location").map(|s| s.as_str());
+    info!(
+        "  GET secret environments: project={}, location={:?}",
+        project, location
+    );
 
     let environments = app_state
         .secrets
-        .list_environments(&project, "secrets")
+        .list_environments(&project, location, "secrets")
         .await;
 
     Json(json!({

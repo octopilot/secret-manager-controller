@@ -1,4 +1,9 @@
-# Secret Manager Controller
+<p align="center"><img src="website/images/hero-banner.png" alt="Secret Manager Controller" width="800" /></p>
+
+[![CI](https://github.com/microscaler/secret-manager-controller/actions/workflows/ci.yml/badge.svg)](https://github.com/microscaler/secret-manager-controller/actions)
+[![Dependabot](https://github.com/microscaler/secret-manager-controller/actions/workflows/dependabot-automerge.yml/badge.svg)](https://github.com/microscaler/secret-manager-controller/actions)
+[![Docs](https://github.com/microscaler/secret-manager-controller/actions/workflows/docs-site.yml/badge.svg)](https://secret-manager-controller.microscaler.io/#/)
+[![Crate](https://img.shields.io/crates/v/secret-manager-controller.svg)](https://crates.io/crates/secret-manager-controller)
 
 **The Missing Bridge Between GitOps and Serverless**
 
@@ -6,7 +11,7 @@ A Kubernetes controller that syncs SOPS-encrypted secrets from GitOps repositori
 
 ## Why This Exists
 
-Finance and platform leadership are mandating cost optimization through serverless adoption. The problem? **SOPS works for Kubernetes, but not serverless.**
+Platform teams optimization of cloud footprints through serverless adoption. The problem? **SOPS works for Kubernetes, but not serverless.**
 
 When secrets exist only inside Kubernetes (encrypted via SOPS), you're left with:
 - ❌ Two parallel worlds of secrets (K8s vs. serverless)

@@ -12,6 +12,49 @@ export interface DocPage {
   file: string;
 }
 
+/**
+ * Check if the Pact Mock Secrets Viewer should be enabled.
+ * - In Node.js (build scripts): checks process.env.ENABLE_PACT_VIEWER
+ * - In browser (app): checks import.meta.env.VITE_ENABLE_PACT_VIEWER (via type assertion)
+ * - Defaults to true (enabled) unless explicitly set to 'false'
+ */
+function isPactViewerEnabled(): boolean {
+  // Check if we're in a Node.js environment (build scripts)
+  if (typeof process !== 'undefined' && process.env) {
+    const envValue = process.env.ENABLE_PACT_VIEWER;
+    if (envValue !== undefined) {
+      return envValue !== 'false' && envValue !== '0';
+    }
+  }
+  
+  // Check if we're in a browser/Vite environment
+  // Access import.meta via type assertion to avoid parse errors in Node.js contexts
+  // Only check this if we're not in a Node.js environment (process is undefined)
+  if (typeof process === 'undefined') {
+    try {
+      // Use a type assertion to access import.meta safely
+      // This works in Vite/browser but won't cause parse errors in Node.js
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const metaEnv = (import.meta as any)?.env;
+      if (metaEnv) {
+        const viteValue = metaEnv.VITE_ENABLE_PACT_VIEWER;
+        if (viteValue !== undefined) {
+          return viteValue !== 'false' && viteValue !== '0';
+        }
+        // In production builds, disable by default unless explicitly enabled
+        if (metaEnv.PROD) {
+          return false;
+        }
+      }
+    } catch {
+      // If import.meta is not available, fall through to default
+    }
+  }
+  
+  // Default: enabled (for local development/Tilt)
+  return true;
+}
+
 export const userSections: DocSection[] = [
   {
     id: 'getting-started',
@@ -61,7 +104,6 @@ export const userSections: DocSection[] = [
       { id: 'basic-usage', title: 'Basic Usage', file: 'tutorials/basic-usage.md' },
       { id: 'advanced-scenarios', title: 'Advanced Scenarios', file: 'tutorials/advanced-scenarios.md' },
       { id: 'troubleshooting', title: 'Troubleshooting', file: 'tutorials/troubleshooting.md' },
-      { id: 'secrets-viewer', title: 'Secrets Viewer', file: '' }, // Special component page
     ],
   },
   {
@@ -85,6 +127,9 @@ export const contributorSections: DocSection[] = [
       { id: 'setup', title: 'Development Setup', file: 'development/setup.md' },
       { id: 'tilt-integration', title: 'Tilt Integration', file: 'development/tilt-integration.md' },
       { id: 'kind-cluster-setup', title: 'Kind Cluster Setup', file: 'development/kind-cluster-setup.md' },
+      { id: 'postgres-manager', title: 'Postgres Manager', file: 'development/postgres-manager.md' },
+      { id: 'pact-mocks-manager', title: 'Pact Mocks Manager', file: 'development/pact-mocks-manager.md' },
+      { id: 'python-scripts', title: 'Python Scripts', file: 'development/python-scripts.md' },
     ],
   },
   {
@@ -97,6 +142,8 @@ export const contributorSections: DocSection[] = [
       { id: 'pact-setup', title: 'Pact Testing Setup', file: 'testing/pact-testing/setup.md' },
       { id: 'pact-writing-tests', title: 'Writing Pact Tests', file: 'testing/pact-testing/writing-tests.md' },
       { id: 'integration-testing', title: 'Integration Testing', file: 'testing/integration-testing.md' },
+      // Conditionally include Pact Mock Secrets Viewer (development/testing only, not in production builds)
+      ...(isPactViewerEnabled() ? [{ id: 'secrets-viewer', title: 'Pact Mock Secrets Viewer', file: '' }] : []),
     ],
   },
   {

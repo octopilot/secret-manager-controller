@@ -2,253 +2,283 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://secret-manager-controller.microscaler.io/</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>weekly</changefreq>
         <priority>1</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/getting-started/installation</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/getting-started/quick-start</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/getting-started/configuration</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/architecture/overview</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/architecture/components</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/architecture/serverless-integration</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/aws-setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/azure-setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/gcp-setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/gitops-integration</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/sops-setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/application-files</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://secret-manager-controller.microscaler.io/#/user/guides/hot-reload</loc>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/guides/msmctl-cli</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/api-reference/crd-reference</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/api-reference/provider-apis</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/api-reference/configuration-options</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/tutorials/basic-usage</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/tutorials/advanced-scenarios</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/tutorials/troubleshooting</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/monitoring/observability-guide</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/monitoring/metrics</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/monitoring/tracing</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/monitoring/opentelemetry</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/user/monitoring/datadog</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/development/setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/development/tilt-integration</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/development/kind-cluster-setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://secret-manager-controller.microscaler.io/#/contributor/development/postgres-manager</loc>
+        <lastmod>2025-11-27</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://secret-manager-controller.microscaler.io/#/contributor/development/pact-mocks-manager</loc>
+        <lastmod>2025-11-27</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://secret-manager-controller.microscaler.io/#/contributor/development/python-scripts</loc>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/testing-guide</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-overview</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-architecture</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-setup</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-writing-tests</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/integration-testing</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://secret-manager-controller.microscaler.io/#/contributor/testing/secrets-viewer</loc>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/architecture/design-decisions</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/architecture/crd-design</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/architecture/implementation-details</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/conventional-commits</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/error-handling</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/logging</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/code-style</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>
   <url>
     <loc>https://secret-manager-controller.microscaler.io/#/contributor/contributing/contributing-guide</loc>
-        <lastmod>2025-11-24</lastmod>
+        <lastmod>2025-11-27</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
   </url>

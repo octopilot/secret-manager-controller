@@ -570,8 +570,10 @@ local_resource(
 # without rebuilding the entire Docker image
 local_resource(
     'build-docs-search-index',
-    cmd='cd docs-site && npm run build:search-index',
+    cmd='cd docs-site && ([ -d node_modules ] || npm install) && npm run build:search-index',
     deps=[
+        'docs-site/package.json',
+        'docs-site/package-lock.json',
         'docs-site/scripts/build-search-index.ts',
         'docs-site/src/data/sections.ts',
         'docs-site/src/data/content',  # Watch all content files

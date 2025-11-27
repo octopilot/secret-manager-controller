@@ -1,4 +1,4 @@
-name: Documentation Site Build and Publish
+name: Documentation
 
 on:
   push:
@@ -44,7 +44,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs-site
-        run: npm ci
+        run: |
+          npm ci || npm install
+          echo "✅ Dependencies installed"
 
       - name: Build search index
         working-directory: docs-site

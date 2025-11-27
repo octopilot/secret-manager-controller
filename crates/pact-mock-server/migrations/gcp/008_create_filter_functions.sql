@@ -1,7 +1,8 @@
 -- Create functions to get unique filter values for GCP secrets and parameters
 
--- Get unique environments from GCP secrets for a specific project
-CREATE OR REPLACE FUNCTION gcp.get_secret_environments(project_filter TEXT)
+-- Get unique environments from GCP secrets for a specific project and location
+-- CRITICAL: Different locations can have different environments
+CREATE OR REPLACE FUNCTION gcp.get_secret_environments(project_filter TEXT, location_filter TEXT)
 RETURNS TABLE(environment TEXT) AS $$
 BEGIN
     RETURN QUERY
@@ -9,6 +10,7 @@ BEGIN
     FROM gcp.secrets s
     WHERE s.environment IS NOT NULL
       AND s.key LIKE 'projects/' || project_filter || '/secrets/%'
+      AND (s.location = location_filter OR (s.location IS NULL AND location_filter IS NULL))
     ORDER BY s.environment;
 END;
 $$ LANGUAGE plpgsql;

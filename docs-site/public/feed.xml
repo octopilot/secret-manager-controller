@@ -5,15 +5,15 @@
     <link>https://secret-manager-controller.microscaler.io</link>
     <description>Documentation for Secret Manager Controller - Unified secret management for Kubernetes and serverless platforms</description>
     <language>en-us</language>
-    <lastBuildDate>Mon, 24 Nov 2025 14:06:23 GMT</lastBuildDate>
-    <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+    <lastBuildDate>Thu, 27 Nov 2025 22:36:04 GMT</lastBuildDate>
+    <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
     <ttl>60</ttl>
     <atom:link href="https://secret-manager-controller.microscaler.io/feed.xml" rel="self" type="application/rss+xml" />
         <item>
       <title>Secret Manager Controller - Documentation</title>
       <link>https://secret-manager-controller.microscaler.io/</link>
       <description>Unified secret management for Kubernetes and serverless platforms. Unlock serverless migration and deliver massive FinOps savings.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Documentation</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/</guid>
     </item>
@@ -21,7 +21,7 @@
       <title>Installation - Getting Started</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/getting-started/installation</link>
       <description>Installation documentation in the Getting Started section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Getting Started</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/getting-started/installation</guid>
     </item>
@@ -29,7 +29,7 @@
       <title>Quick Start - Getting Started</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/getting-started/quick-start</link>
       <description>Quick Start documentation in the Getting Started section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Getting Started</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/getting-started/quick-start</guid>
     </item>
@@ -37,7 +37,7 @@
       <title>Configuration - Getting Started</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/getting-started/configuration</link>
       <description>Configuration documentation in the Getting Started section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Getting Started</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/getting-started/configuration</guid>
     </item>
@@ -45,7 +45,7 @@
       <title>Overview - Architecture</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/architecture/overview</link>
       <description>Overview documentation in the Architecture section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Architecture</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/architecture/overview</guid>
     </item>
@@ -53,7 +53,7 @@
       <title>Components - Architecture</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/architecture/components</link>
       <description>Components documentation in the Architecture section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Architecture</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/architecture/components</guid>
     </item>
@@ -61,7 +61,7 @@
       <title>Serverless Integration - Architecture</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/architecture/serverless-integration</link>
       <description>Serverless Integration documentation in the Architecture section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Architecture</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/architecture/serverless-integration</guid>
     </item>
@@ -69,7 +69,7 @@
       <title>AWS Setup - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/aws-setup</link>
       <description>AWS Setup documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/aws-setup</guid>
     </item>
@@ -77,7 +77,7 @@
       <title>Azure Setup - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/azure-setup</link>
       <description>Azure Setup documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/azure-setup</guid>
     </item>
@@ -85,7 +85,7 @@
       <title>GCP Setup - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/gcp-setup</link>
       <description>GCP Setup documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/gcp-setup</guid>
     </item>
@@ -93,7 +93,7 @@
       <title>GitOps Integration - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/gitops-integration</link>
       <description>GitOps Integration documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/gitops-integration</guid>
     </item>
@@ -101,7 +101,7 @@
       <title>SOPS Setup - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/sops-setup</link>
       <description>SOPS Setup documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/sops-setup</guid>
     </item>
@@ -109,15 +109,23 @@
       <title>Application Files - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/application-files</link>
       <description>Application Files documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/application-files</guid>
+    </item>
+    <item>
+      <title>Hot Reload - Guides</title>
+      <link>https://secret-manager-controller.microscaler.io/#/user/guides/hot-reload</link>
+      <description>Hot Reload documentation in the Guides section of Secret Manager Controller user documentation.</description>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
+      <category>User Docs / Guides</category>
+      <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/hot-reload</guid>
     </item>
     <item>
       <title>MSMCTL CLI - Guides</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/guides/msmctl-cli</link>
       <description>MSMCTL CLI documentation in the Guides section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Guides</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/guides/msmctl-cli</guid>
     </item>
@@ -125,7 +133,7 @@
       <title>CRD Reference - API Reference</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/api-reference/crd-reference</link>
       <description>CRD Reference documentation in the API Reference section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / API Reference</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/api-reference/crd-reference</guid>
     </item>
@@ -133,7 +141,7 @@
       <title>Provider APIs - API Reference</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/api-reference/provider-apis</link>
       <description>Provider APIs documentation in the API Reference section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / API Reference</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/api-reference/provider-apis</guid>
     </item>
@@ -141,7 +149,7 @@
       <title>Configuration Options - API Reference</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/api-reference/configuration-options</link>
       <description>Configuration Options documentation in the API Reference section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / API Reference</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/api-reference/configuration-options</guid>
     </item>
@@ -149,7 +157,7 @@
       <title>Basic Usage - Tutorials</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/tutorials/basic-usage</link>
       <description>Basic Usage documentation in the Tutorials section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Tutorials</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/tutorials/basic-usage</guid>
     </item>
@@ -157,7 +165,7 @@
       <title>Advanced Scenarios - Tutorials</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/tutorials/advanced-scenarios</link>
       <description>Advanced Scenarios documentation in the Tutorials section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Tutorials</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/tutorials/advanced-scenarios</guid>
     </item>
@@ -165,7 +173,7 @@
       <title>Troubleshooting - Tutorials</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/tutorials/troubleshooting</link>
       <description>Troubleshooting documentation in the Tutorials section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Tutorials</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/tutorials/troubleshooting</guid>
     </item>
@@ -173,7 +181,7 @@
       <title>Observability Guide - Monitoring &amp; Observability</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/monitoring/observability-guide</link>
       <description>Observability Guide documentation in the Monitoring &amp; Observability section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Monitoring &amp; Observability</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/monitoring/observability-guide</guid>
     </item>
@@ -181,7 +189,7 @@
       <title>Prometheus Metrics - Monitoring &amp; Observability</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/monitoring/metrics</link>
       <description>Prometheus Metrics documentation in the Monitoring &amp; Observability section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Monitoring &amp; Observability</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/monitoring/metrics</guid>
     </item>
@@ -189,7 +197,7 @@
       <title>Logging &amp; Tracing - Monitoring &amp; Observability</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/monitoring/tracing</link>
       <description>Logging &amp; Tracing documentation in the Monitoring &amp; Observability section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Monitoring &amp; Observability</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/monitoring/tracing</guid>
     </item>
@@ -197,7 +205,7 @@
       <title>OpenTelemetry - Monitoring &amp; Observability</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/monitoring/opentelemetry</link>
       <description>OpenTelemetry documentation in the Monitoring &amp; Observability section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Monitoring &amp; Observability</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/monitoring/opentelemetry</guid>
     </item>
@@ -205,7 +213,7 @@
       <title>Datadog APM - Monitoring &amp; Observability</title>
       <link>https://secret-manager-controller.microscaler.io/#/user/monitoring/datadog</link>
       <description>Datadog APM documentation in the Monitoring &amp; Observability section of Secret Manager Controller user documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>User Docs / Monitoring &amp; Observability</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/user/monitoring/datadog</guid>
     </item>
@@ -213,7 +221,7 @@
       <title>Development Setup - Development</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/development/setup</link>
       <description>Development Setup documentation in the Development section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Development</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/development/setup</guid>
     </item>
@@ -221,7 +229,7 @@
       <title>Tilt Integration - Development</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/development/tilt-integration</link>
       <description>Tilt Integration documentation in the Development section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Development</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/development/tilt-integration</guid>
     </item>
@@ -229,15 +237,39 @@
       <title>Kind Cluster Setup - Development</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/development/kind-cluster-setup</link>
       <description>Kind Cluster Setup documentation in the Development section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Development</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/development/kind-cluster-setup</guid>
+    </item>
+    <item>
+      <title>Postgres Manager - Development</title>
+      <link>https://secret-manager-controller.microscaler.io/#/contributor/development/postgres-manager</link>
+      <description>Postgres Manager documentation in the Development section of Secret Manager Controller contributor documentation.</description>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
+      <category>Contributor Docs / Development</category>
+      <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/development/postgres-manager</guid>
+    </item>
+    <item>
+      <title>Pact Mocks Manager - Development</title>
+      <link>https://secret-manager-controller.microscaler.io/#/contributor/development/pact-mocks-manager</link>
+      <description>Pact Mocks Manager documentation in the Development section of Secret Manager Controller contributor documentation.</description>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
+      <category>Contributor Docs / Development</category>
+      <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/development/pact-mocks-manager</guid>
+    </item>
+    <item>
+      <title>Python Scripts - Development</title>
+      <link>https://secret-manager-controller.microscaler.io/#/contributor/development/python-scripts</link>
+      <description>Python Scripts documentation in the Development section of Secret Manager Controller contributor documentation.</description>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
+      <category>Contributor Docs / Development</category>
+      <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/development/python-scripts</guid>
     </item>
     <item>
       <title>Testing Guide - Testing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/testing-guide</link>
       <description>Testing Guide documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Testing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/testing-guide</guid>
     </item>
@@ -245,7 +277,7 @@
       <title>Pact Testing Overview - Testing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-overview</link>
       <description>Pact Testing Overview documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Testing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-overview</guid>
     </item>
@@ -253,7 +285,7 @@
       <title>Pact Testing Architecture - Testing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-architecture</link>
       <description>Pact Testing Architecture documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Testing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-architecture</guid>
     </item>
@@ -261,7 +293,7 @@
       <title>Pact Testing Setup - Testing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-setup</link>
       <description>Pact Testing Setup documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Testing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-setup</guid>
     </item>
@@ -269,7 +301,7 @@
       <title>Writing Pact Tests - Testing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-writing-tests</link>
       <description>Writing Pact Tests documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Testing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/pact-writing-tests</guid>
     </item>
@@ -277,15 +309,23 @@
       <title>Integration Testing - Testing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/integration-testing</link>
       <description>Integration Testing documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Testing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/integration-testing</guid>
+    </item>
+    <item>
+      <title>Pact Mock Secrets Viewer - Testing</title>
+      <link>https://secret-manager-controller.microscaler.io/#/contributor/testing/secrets-viewer</link>
+      <description>Pact Mock Secrets Viewer documentation in the Testing section of Secret Manager Controller contributor documentation.</description>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
+      <category>Contributor Docs / Testing</category>
+      <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/testing/secrets-viewer</guid>
     </item>
     <item>
       <title>Design Decisions - Architecture</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/architecture/design-decisions</link>
       <description>Design Decisions documentation in the Architecture section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Architecture</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/architecture/design-decisions</guid>
     </item>
@@ -293,7 +333,7 @@
       <title>CRD Design - Architecture</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/architecture/crd-design</link>
       <description>CRD Design documentation in the Architecture section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Architecture</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/architecture/crd-design</guid>
     </item>
@@ -301,7 +341,7 @@
       <title>Implementation Details - Architecture</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/architecture/implementation-details</link>
       <description>Implementation Details documentation in the Architecture section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Architecture</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/architecture/implementation-details</guid>
     </item>
@@ -309,7 +349,7 @@
       <title>Conventional Commits - Guidelines</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/conventional-commits</link>
       <description>Conventional Commits documentation in the Guidelines section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Guidelines</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/guidelines/conventional-commits</guid>
     </item>
@@ -317,7 +357,7 @@
       <title>Error Handling - Guidelines</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/error-handling</link>
       <description>Error Handling documentation in the Guidelines section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Guidelines</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/guidelines/error-handling</guid>
     </item>
@@ -325,7 +365,7 @@
       <title>Logging - Guidelines</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/logging</link>
       <description>Logging documentation in the Guidelines section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Guidelines</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/guidelines/logging</guid>
     </item>
@@ -333,7 +373,7 @@
       <title>Code Style - Guidelines</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/guidelines/code-style</link>
       <description>Code Style documentation in the Guidelines section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Guidelines</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/guidelines/code-style</guid>
     </item>
@@ -341,7 +381,7 @@
       <title>Contributing Guide - Contributing</title>
       <link>https://secret-manager-controller.microscaler.io/#/contributor/contributing/contributing-guide</link>
       <description>Contributing Guide documentation in the Contributing section of Secret Manager Controller contributor documentation.</description>
-      <pubDate>Mon, 24 Nov 2025 14:06:23 GMT</pubDate>
+      <pubDate>Thu, 27 Nov 2025 22:36:04 GMT</pubDate>
       <category>Contributor Docs / Contributing</category>
       <guid isPermaLink="true">https://secret-manager-controller.microscaler.io/#/contributor/contributing/contributing-guide</guid>
     </item>

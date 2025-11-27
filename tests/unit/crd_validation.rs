@@ -28,6 +28,7 @@ spec:
     type: gcp
     gcp:
       projectId: my-gcp-project
+      location: us-central1
       auth:
         authType: workloadIdentity
         serviceAccountEmail: sa@project.iam.gserviceaccount.com
@@ -55,6 +56,7 @@ spec:
     match &config.spec.provider {
         ProviderConfig::Gcp(gcp) => {
             assert_eq!(gcp.project_id, "my-gcp-project");
+            assert_eq!(gcp.location, "us-central1");
             assert!(gcp.auth.is_some());
             match gcp.auth.as_ref().unwrap() {
                 GcpAuthConfig::WorkloadIdentity { service_account_email } => {
@@ -108,6 +110,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -118,6 +121,7 @@ spec:
     match &config.spec.provider {
         ProviderConfig::Gcp(gcp) => {
             assert_eq!(gcp.project_id, "my-gcp-project");
+            assert_eq!(gcp.location, "us-central1");
         }
         _ => panic!("Expected GCP provider"),
     }
@@ -140,6 +144,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -249,6 +254,7 @@ spec:
     type: azure
     azure:
       vaultName: my-vault
+      location: eastus
       auth:
         authType: workloadIdentity
         clientId: 12345678-1234-1234-1234-123456789012
@@ -290,6 +296,7 @@ spec:
   provider:
     azure:
       vaultName: my-vault
+      location: eastus
   secrets:
     environment: dev
   configs:
@@ -325,6 +332,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -353,6 +361,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -403,6 +412,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   otel:
@@ -449,6 +459,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   otel:
@@ -498,6 +509,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   configs:
@@ -529,6 +541,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
     kustomizePath: microservices/my-service/deployment-configuration/profiles/dev
@@ -566,6 +579,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   suspend: true
@@ -597,6 +611,7 @@ spec:
     type: gcp
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -643,6 +658,7 @@ spec:
     type: azure
     azure:
       vaultName: my-vault
+      location: eastus
   secrets:
     environment: dev
 "#;

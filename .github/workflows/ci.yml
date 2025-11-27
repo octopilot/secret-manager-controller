@@ -30,6 +30,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Import GPG key for SOPS
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+        run: |
+          if [ -z "$GPG_KEY" ]; then
+            echo "ℹ️  GPG_KEY secret not set, skipping GPG key import"
+            exit 0
+          fi
+          echo "🔑 Importing GPG key from GitHub secret..."
+          echo "$GPG_KEY" | base64 -d | gpg --import --batch --yes || echo "⚠️  GPG key import failed or key already exists"
+          # List imported keys for verification (shows key ID from .sops.yaml)
+          echo "📋 Imported GPG keys:"
+          gpg --list-secret-keys --keyid-format LONG || echo "⚠️  No GPG keys found"
+          echo "✅ GPG key import completed"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -149,6 +164,35 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for accurate coverage diff
 
+      - name: Initial disk space cleanup
+        run: |
+          echo "🧹 Initial cleanup to free disk space..."
+          echo "📊 Disk usage before cleanup:"
+          df -h
+          # Clean up any leftover Docker resources
+          docker system prune -af || true
+          # Clean up any leftover Rust artifacts
+          rm -rf target/debug/deps/*.rlib 2>/dev/null || true
+          rm -rf target/debug/deps/*.rmeta 2>/dev/null || true
+          echo "📊 Disk usage after cleanup:"
+          df -h
+          echo "✅ Initial cleanup complete"
+
+      - name: Import GPG key for SOPS
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+        run: |
+          if [ -z "$GPG_KEY" ]; then
+            echo "ℹ️  GPG_KEY secret not set, skipping GPG key import"
+            exit 0
+          fi
+          echo "🔑 Importing GPG key from GitHub secret..."
+          echo "$GPG_KEY" | base64 -d | gpg --import --batch --yes || echo "⚠️  GPG key import failed or key already exists"
+          # List imported keys for verification (shows key ID from .sops.yaml)
+          echo "📋 Imported GPG keys:"
+          gpg --list-secret-keys --keyid-format LONG || echo "⚠️  No GPG keys found"
+          echo "✅ GPG key import completed"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -248,10 +292,49 @@ jobs:
           python3 scripts/tilt/build_all_binaries.py
           echo "✅ All binaries built and CRD applied"
 
+      - name: Cleanup Docker before Tilt CI
+        run: |
+          echo "🧹 Cleaning up Docker to free disk space..."
+          # Remove stopped containers
+          docker container prune -f || true
+          # Remove dangling images
+          docker image prune -f || true
+          # Remove unused build cache
+          docker builder prune -f || true
+          # Show disk usage
+          df -h
+          echo "✅ Docker cleanup complete"
+
       - name: Install Tilt
         run: |
           curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash
           tilt version
+
+
+      - name: Verify local registry is accessible
+        run: |
+          echo "Checking local registry accessibility..."
+          # Wait for registry to be ready (with retries)
+          for i in {1..10}; do
+            if curl -f -s http://localhost:5000/v2/ >/dev/null 2>&1; then
+              echo "✅ Registry is accessible"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "⚠️  Registry not responding after 10 attempts"
+              echo "Registry status:"
+              docker ps | grep registry || echo "No registry container found"
+              exit 1
+            fi
+            echo "Waiting for registry... (attempt $i/10)"
+            sleep 2
+          done
+          # Test a small push/pull to verify registry works
+          echo "Testing registry with small image..."
+          docker pull alpine:latest >/dev/null 2>&1 || true
+          docker tag alpine:latest localhost:5000/test:latest || true
+          docker push localhost:5000/test:latest >/dev/null 2>&1 && echo "✅ Registry push test successful" || echo "⚠️  Registry push test failed"
+          echo "✅ Registry check complete"
 
       - name: Run Tilt CI (deploys controller and all infrastructure)
         run: |
@@ -261,8 +344,25 @@ jobs:
           # - Push to local registry
           # - Apply RBAC, deployment, and GitOps resources
           # - Wait for all resources to be healthy
-          tilt ci --timeout 10m
-        timeout-minutes: 12
+          # Increased timeout for large image pushes
+          tilt ci --timeout 20m
+        timeout-minutes: 25
+
+      - name: Cleanup after Tilt CI
+        if: always()
+        run: |
+          echo "🧹 Cleaning up after Tilt CI..."
+          echo "📊 Disk usage before cleanup:"
+          df -h
+          # Remove unused Docker images (keep only what's needed)
+          docker image prune -f || true
+          # Clean up build cache
+          docker builder prune -f || true
+          # Clean up stopped containers
+          docker container prune -f || true
+          echo "📊 Disk usage after cleanup:"
+          df -h
+          echo "✅ Post-Tilt cleanup complete"
 
       # Note: Tilt CI already built and deployed the controller image
       # No need to patch - Tilt handles the image build and deployment
@@ -321,11 +421,42 @@ jobs:
           echo "Waiting for manager to publish pacts..."
           timeout 120 bash -c 'until kubectl exec -n secret-manager-controller-pact-broker $(kubectl get pod -n secret-manager-controller-pact-broker -l app=pact-infrastructure -o jsonpath="{.items[0].metadata.name}") -c manager -- curl -s http://localhost:1238/ready | grep -q "ready"; do sleep 2; done' || echo "Manager ready check completed (continuing anyway)"
 
+      - name: Cleanup before tests
+        run: |
+          echo "🧹 Cleaning up before running tests..."
+          echo "📊 Disk usage before cleanup:"
+          df -h
+          # Remove unused Docker images
+          docker image prune -f || true
+          # Clean up build cache
+          docker builder prune -f || true
+          # Clean up Rust target artifacts (keep only what's needed for tests)
+          # Note: We keep target/ for incremental builds, but clean up old artifacts
+          echo "📊 Disk usage after cleanup:"
+          df -h
+          echo "✅ Pre-test cleanup complete"
+
       - name: Run all tests with coverage (includes Pact tests)
         run: |
           # Run all tests with coverage, including Pact tests that need the cluster
           # This will run all tests including the Pact tests that were previously commented out
           cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --tests
+
+      - name: Cleanup after tests
+        if: always()
+        run: |
+          echo "🧹 Final cleanup after tests..."
+          echo "📊 Disk usage before cleanup:"
+          df -h
+          # Aggressive cleanup to free maximum space
+          docker system prune -af --volumes || true
+          # Clean up Rust target directory (keep only what's needed for artifacts)
+          # Remove test artifacts but keep coverage files
+          find target -name "*.rlib" -delete 2>/dev/null || true
+          find target -name "*.rmeta" -delete 2>/dev/null || true
+          echo "📊 Disk usage after cleanup:"
+          df -h
+          echo "✅ Final cleanup complete"
 
       - name: Generate coverage summary
         run: |

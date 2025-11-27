@@ -138,11 +138,33 @@ nodes:
 
 ## Local Docker Registry
 
-The setup script automatically configures a local Docker registry for development:
+The setup script automatically configures a local Docker registry for development. This is essential for local development because:
+
+1. **No External Registry Needed**: Build images locally without pushing to Docker Hub or other registries
+2. **Fast Iteration**: Push images instantly without network delays
+3. **CI/CD Compatibility**: Same workflow works in CI/CD (GitHub Actions uses local registry)
+4. **Tilt Integration**: Tilt automatically pushes images to local registry
+
+### Registry Details
 
 - **Registry Name**: `secret-manager-controller-registry`
-- **Port**: `5000`
-- **Purpose**: Store locally-built container images without pushing to external registries
+- **Port**: `5000` (host port, also accessible from Kind cluster)
+- **Image**: `registry:2` (official Docker registry image)
+- **Volume**: `secret-manager-controller-registry-data` (persists registry data)
+
+### Why We Need a Local Registry
+
+**Without Local Registry**:
+- Would need to push images to external registry (Docker Hub, etc.)
+- Requires authentication and network access
+- Slower iteration (push/pull over network)
+- CI/CD complexity (managing registry credentials)
+
+**With Local Registry**:
+- Build and push images locally instantly
+- No authentication needed
+- Works offline
+- Same workflow in CI/CD and local development
 
 ### Registry Setup
 
@@ -162,12 +184,47 @@ docker run -d \
 
 ### Connecting Registry to Cluster
 
-The registry is automatically connected to the Kind cluster network:
+The registry is automatically connected to the Kind cluster network. This is critical for pods to pull images:
 
+**Network Connection**:
 ```bash
 # Connect registry to Kind network
 docker network connect kind secret-manager-controller-registry
 ```
+
+**Why This Matters**:
+- Kind cluster runs in Docker containers
+- Registry must be on same Docker network for pods to access it
+- Without network connection, pods get `ImagePullBackOff` errors
+
+**How It Works**:
+1. Kind creates a Docker network named `kind`
+2. All Kind nodes are on this network
+3. Registry container is connected to same network
+4. Pods can now access registry via container name or IP
+
+### Containerd Registry Mirror Configuration
+
+The setup script configures containerd on Kind nodes to use the local registry as a mirror for `localhost:5000`:
+
+**Configuration**:
+```toml
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+  endpoint = ["http://secret-manager-controller-registry:5000"]
+```
+
+**Why This Is Needed**:
+- Kubernetes images are referenced as `localhost:5000/image:tag`
+- Containerd needs to know where to pull from
+- Registry mirror tells containerd to pull from local registry instead of external
+
+**How It Works**:
+1. Script finds registry container IP address
+2. Updates containerd config on all Kind nodes
+3. Restarts containerd to apply changes
+4. Pods can now pull images from `localhost:5000/*`
+
+**Troubleshooting**: If images fail to pull, run `python3 scripts/fix_registry_config.py` to reconfigure.
 
 ### Using the Registry
 
@@ -186,37 +243,70 @@ image: localhost:5000/secret-manager-controller:dev
 
 ## GitOps Components
 
-The setup script automatically installs GitOps components:
+The setup script automatically installs GitOps components. These are required for the controller to work with GitOps repositories.
+
+### Why Install GitOps Components?
+
+The Secret Manager Controller integrates with GitOps tools to sync secrets from Git repositories:
+
+- **FluxCD**: Provides `GitRepository` CRD for FluxCD-managed repositories
+- **ArgoCD**: Provides `Application` CRD for ArgoCD-managed repositories
+
+The controller reads these CRs to discover Git repositories and clone them for secret extraction.
 
 ### FluxCD
 
-FluxCD source-controller is installed for GitRepository support:
+FluxCD source-controller is installed for `GitRepository` support:
 
 ```bash
 # Install FluxCD (via script)
 python3 scripts/tilt/install_fluxcd.py
 ```
 
-This installs:
-- `source-controller` CRDs
-- Source controller deployment
-- Required RBAC resources
+**What Gets Installed**:
+- `GitRepository` CRD: Defines Git repository sources
+- `Bucket` CRD: Defines bucket sources (not used by controller)
+- Source controller deployment: Manages Git repository lifecycle
+- Required RBAC resources: ServiceAccount, ClusterRole, ClusterRoleBinding
+
+**Why We Need It**:
+The controller watches for `GitRepository` CRs and uses them to:
+1. Discover Git repository URLs
+2. Clone repositories for secret extraction
+3. Monitor repository changes
+
+**What We Don't Install**:
+- FluxCD controller (not needed - controller handles reconciliation)
+- FluxCD UI (not needed for development)
+- Other FluxCD components (Kustomize controller, Helm controller, etc.)
 
 ### ArgoCD
 
-ArgoCD CRDs are installed for Application support:
+ArgoCD CRDs are installed for `Application` support:
 
 ```bash
 # Install ArgoCD CRDs (via script)
 python3 scripts/tilt/install_argocd.py
 ```
 
-This installs:
-- `Application` CRD
-- `ApplicationSet` CRD
-- Other required ArgoCD CRDs
+**What Gets Installed**:
+- `Application` CRD: Defines ArgoCD applications
+- `ApplicationSet` CRD: Defines application sets (not used by controller)
+- Other required ArgoCD CRDs: For CRD validation
 
-**Note**: Only CRDs are installed, not the full ArgoCD server. The controller clones Git repositories directly.
+**Why We Need It**:
+The controller watches for `Application` CRs and uses them to:
+1. Discover Git repository URLs from Application spec
+2. Clone repositories for secret extraction
+3. Monitor application changes
+
+**What We Don't Install**:
+- ArgoCD server (not needed - controller clones repos directly)
+- ArgoCD application controller (not needed - controller handles reconciliation)
+- ArgoCD UI (not needed for development)
+- ArgoCD repo server (not needed - controller clones repos directly)
+
+**Important**: The controller does NOT use ArgoCD's Git repository management. It clones repositories directly using the information from `Application` CRs.
 
 ## Subnet Allocation
 
@@ -499,9 +589,76 @@ docker stop secret-manager-controller-registry 2>/dev/null || true
 docker rm secret-manager-controller-registry 2>/dev/null || true
 ```
 
+## Moving Parts Summary
+
+### What Gets Installed and Why
+
+| Component | Purpose | Why We Need It |
+|-----------|---------|----------------|
+| **Kind Cluster** | Local Kubernetes environment | Test controller in real K8s environment |
+| **Docker Registry** | Local image storage | Build/push images without external registry |
+| **FluxCD CRDs** | GitRepository support | Controller watches GitRepository CRs |
+| **ArgoCD CRDs** | Application support | Controller watches Application CRs |
+| **microscaler-system Namespace** | Controller namespace | Where controller runs |
+
+### Network Architecture
+
+```
+Host Machine
+├── Docker Network: kind
+│   ├── Kind Control Plane Node
+│   │   └── Kubernetes API Server
+│   ├── Registry Container (secret-manager-controller-registry:5000)
+│   └── Pods (can access registry via network)
+└── Host Port Mappings
+    ├── 6443 → Kubernetes API
+    ├── 5000 → Registry
+    └── 8080/8443 → Ingress (if configured)
+```
+
+### Image Pull Flow
+
+1. **Tilt builds image**: `docker build -t localhost:5000/controller:dev .`
+2. **Tilt pushes to registry**: `docker push localhost:5000/controller:dev`
+3. **Kubernetes pulls image**: Pod references `localhost:5000/controller:dev`
+4. **Containerd resolves**: Uses registry mirror config to find local registry
+5. **Image pulled**: From local registry (fast, no network)
+
+### Component Interactions
+
+```
+┌─────────────────┐
+│  setup_kind.py  │
+└────────┬────────┘
+         │
+         ├── Creates Kind cluster
+         ├── Creates registry
+         ├── Connects registry to network
+         ├── Configures containerd
+         ├── Installs FluxCD CRDs
+         ├── Installs ArgoCD CRDs
+         └── Creates namespace
+              │
+              ▼
+┌─────────────────┐
+│  Kind Cluster   │
+│                 │
+│  ┌───────────┐  │
+│  │ Registry  │  │◄─── Images pushed here
+│  └─────┬─────┘  │
+│        │        │
+│  ┌─────▼─────┐  │
+│  │  Pods     │  │◄─── Pull images from registry
+│  └───────────┘  │
+└─────────────────┘
+```
+
 ## Next Steps
 
 - [Development Setup](./setup.md) - Complete development environment setup
 - [Tilt Integration](./tilt-integration.md) - Using Tilt for development
+- [Postgres Manager](./postgres-manager.md) - Database migration management
+- [Pact Mocks Manager](./pact-mocks-manager.md) - Pact infrastructure management
+- [Python Scripts](./python-scripts.md) - Development automation scripts
 - [Testing Guide](../testing/testing-guide.md) - Running tests in Kind cluster
 

@@ -7,7 +7,7 @@ use crate::provider::SecretManagerProvider;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::time::Instant;
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::AwsSecretManager;
 
@@ -95,6 +95,18 @@ impl SecretManagerProvider for AwsSecretManager {
                         span_clone
                             .record("operation.duration_ms", start.elapsed().as_millis() as u64);
                         metrics::increment_provider_operation_errors("aws");
+                        // Log detailed error information for debugging
+                        let error_details = format!("{:?}", e);
+                        warn!(
+                            provider = "aws",
+                            region = self._region,
+                            secret_name = secret_name,
+                            operation = "create",
+                            error = %e,
+                            error_details = %error_details,
+                            "Failed to create AWS secret: {}",
+                            e
+                        );
                         return Err(anyhow::anyhow!(
                             "Failed to create AWS secret {secret_name}: {e}"
                         ));
@@ -347,6 +359,18 @@ impl SecretManagerProvider for AwsSecretManager {
             }
             Err(e) => {
                 let error_msg = e.to_string();
+                // Log detailed error information for debugging
+                let error_details = format!("{:?}", e);
+                warn!(
+                    provider = "aws",
+                    region = self._region,
+                    secret_name = secret_name,
+                    operation = "enable",
+                    error = %e,
+                    error_details = %error_details,
+                    "Failed to enable AWS secret: {}",
+                    e
+                );
                 // If secret doesn't exist or is already enabled, return false
                 if error_msg.contains("not found") || error_msg.contains("InvalidRequestException")
                 {

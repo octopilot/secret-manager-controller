@@ -241,6 +241,7 @@ async fn test_azure_provider_create_secret_with_pact() {
     // Create Azure provider instance
     let config = AzureConfig {
         vault_name: "test-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None, // Use default (Managed Identity) - won't matter for Pact
     };
 
@@ -342,6 +343,7 @@ async fn test_azure_provider_update_secret_with_pact() {
 
     let config = AzureConfig {
         vault_name: "test-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     };
 
@@ -410,6 +412,7 @@ async fn test_azure_provider_no_change_with_pact() {
 
     let config = AzureConfig {
         vault_name: "test-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     };
 
