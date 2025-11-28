@@ -14,8 +14,10 @@ use kube::{api::Api, Client};
 use kube_runtime::watcher::{self, Config};
 use sea_orm::{ConnectionTrait, Database, Statement};
 use serde_json::{json, Value};
+use std::collections::hash_map::DefaultHasher;
 use std::{
     collections::HashMap,
+    hash::{Hash, Hasher},
     path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -702,6 +704,23 @@ async fn wait_for_rbac_ready(
     Ok(())
 }
 
+/// Compute hash of ConfigMap data to detect actual content changes
+fn hash_configmap_data(configmap: &ConfigMap) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    if let Some(data) = &configmap.data {
+        // Sort keys for consistent hashing
+        let mut sorted_keys: Vec<_> = data.keys().collect();
+        sorted_keys.sort();
+        for key in sorted_keys {
+            key.hash(&mut hasher);
+            if let Some(value) = data.get(key) {
+                value.hash(&mut hasher);
+            }
+        }
+    }
+    hasher.finish()
+}
+
 /// Watch ConfigMap for changes and rerun migrations
 async fn watch_configmap(
     client: Client,
@@ -719,6 +738,15 @@ async fn watch_configmap(
     }
 
     let configmaps: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
+
+    // Track last ConfigMap data hash to detect actual content changes
+    // Initialize from current ConfigMap if it exists (before moving configmaps into watcher)
+    let mut last_data_hash: Option<u64> = None;
+    if let Ok(cm) = configmaps.get(&configmap_name).await {
+        last_data_hash = Some(hash_configmap_data(&cm));
+        info!("📋 Initialized ConfigMap data hash from current state");
+    }
+
     let watcher_config = Config::default().fields(&format!("metadata.name={}", configmap_name));
     let watcher = watcher::watcher(configmaps, watcher_config);
     pin_mut!(watcher);
@@ -734,8 +762,24 @@ async fn watch_configmap(
                 match event {
                     kube::runtime::watcher::Event::Apply(cm) => {
                         if cm.metadata.name.as_deref() == Some(&configmap_name) {
+                            // Compute hash of ConfigMap data to detect actual content changes
+                            let current_hash = hash_configmap_data(&cm);
+
+                            // Only proceed if data actually changed (not just metadata)
+                            if let Some(last_hash) = last_data_hash {
+                                if current_hash == last_hash {
+                                    debug!(
+                                        "ConfigMap {} metadata changed but data unchanged, skipping migrations",
+                                        configmap_name
+                                    );
+                                    continue;
+                                }
+                            }
+
+                            last_data_hash = Some(current_hash);
+
                             info!(
-                                "📝 ConfigMap {} changed, checking for migration files...",
+                                "📝 ConfigMap {} data changed, checking for migration files...",
                                 configmap_name
                             );
 

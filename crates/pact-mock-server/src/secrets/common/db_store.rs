@@ -23,8 +23,8 @@ use sea_orm::{
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use tracing::info;
 use tracing::warn;
+use tracing::{debug, info};
 
 /// Database-backed secret store with versioning support
 ///
@@ -66,11 +66,49 @@ impl DbSecretStore {
     }
 
     /// Initialize the database schema for this provider
+    /// This is a fallback mechanism - normally postgres-manager handles migrations
+    /// We check if schema/tables exist first to avoid unnecessary operations and log noise
     async fn init_schema(&self) -> Result<()> {
         use sea_orm::ConnectionTrait;
         use sea_orm::Statement;
 
         let schema = self.schema.clone();
+
+        // Check if schema already exists by querying for a table
+        // If tables exist, assume migrations have run and skip initialization
+        let check_table = match schema.as_str() {
+            "gcp" => "secrets",
+            "aws" => "secrets",
+            "azure" => "secrets",
+            _ => anyhow::bail!("Unknown schema: {}", schema),
+        };
+
+        let table_exists = self
+            .db
+            .query_one(Statement::from_string(
+                sea_orm::DatabaseBackend::Postgres,
+                format!(
+                    "SELECT 1 FROM information_schema.tables WHERE table_schema = '{}' AND table_name = '{}'",
+                    schema, check_table
+                ),
+            ))
+            .await
+            .context("Failed to check if table exists")?;
+
+        if table_exists.is_some() {
+            // Schema and tables already exist (migrations have run)
+            debug!(
+                "Schema {} already initialized, skipping table creation",
+                schema
+            );
+            return Ok(());
+        }
+
+        // Schema/tables don't exist - create them (fallback for environments without migrations)
+        debug!(
+            "Schema {} not found, initializing tables (fallback mode)",
+            schema
+        );
 
         // Create schema if it doesn't exist
         self.db

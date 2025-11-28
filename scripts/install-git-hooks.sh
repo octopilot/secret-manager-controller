@@ -23,11 +23,25 @@ if [ -f ".git/hooks/pre-commit" ]; then
     chmod +x .git/hooks/pre-commit
 fi
 
+# Ensure all pre-commit scripts are executable
+if [ -f "scripts/pre_commit_ggshield.py" ]; then
+    chmod +x scripts/pre_commit_ggshield.py
+fi
+if [ -f "scripts/pre_commit_workflows.py" ]; then
+    chmod +x scripts/pre_commit_workflows.py
+fi
+if [ -f "scripts/pre_commit_sops.py" ]; then
+    chmod +x scripts/pre_commit_sops.py
+fi
+if [ -f "scripts/pre_commit_rust.py" ]; then
+    chmod +x scripts/pre_commit_rust.py
+fi
+
 echo "✅ Git hooks installed successfully!"
 echo ""
 echo "The following hooks are now active:"
 echo "  - commit-msg: Validates conventional commit messages"
-echo "  - pre-commit: Runs GitHub Actions workflow validation, SOPS encryption check, and Rust formatting"
+echo "  - pre-commit: Runs secret scanning (ggshield), GitHub Actions workflow validation, SOPS encryption check, and Rust formatting"
 echo ""
 echo "To test the commit-msg hook, try:"
 echo "  git commit --allow-empty -m 'test: this is a valid commit message'"

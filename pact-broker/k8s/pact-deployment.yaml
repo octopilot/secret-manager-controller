@@ -172,10 +172,10 @@ spec:
           value: "postgresql://pact:pact@postgres.secret-manager-controller-pact-broker.svc.cluster.local:5432/pact_mock_servers"
         resources:
           requests:
-            memory: 64Mi
+            memory: 128Mi
             cpu: 50m
           limits:
-            memory: 128Mi
+            memory: 256Mi
             cpu: 100m
         startupProbe:
           httpGet:
@@ -232,10 +232,10 @@ spec:
           value: "postgresql://pact:pact@postgres.secret-manager-controller-pact-broker.svc.cluster.local:5432/pact_mock_servers"
         resources:
           requests:
-            memory: 64Mi
+            memory: 128Mi
             cpu: 50m
           limits:
-            memory: 128Mi
+            memory: 256Mi
             cpu: 100m
         startupProbe:
           httpGet:
@@ -292,10 +292,10 @@ spec:
           value: "postgresql://pact:pact@postgres.secret-manager-controller-pact-broker.svc.cluster.local:5432/pact_mock_servers"
         resources:
           requests:
-            memory: 64Mi
+            memory: 128Mi
             cpu: 50m
           limits:
-            memory: 128Mi
+            memory: 256Mi
             cpu: 100m
         startupProbe:
           httpGet:
