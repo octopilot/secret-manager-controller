@@ -10,211 +10,10 @@ use anyhow::{Context, Result};
 use k8s_openapi::api::core::v1::Secret;
 use kube::Api;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{info, info_span, warn, Instrument};
 
 use super::download::cleanup_old_revisions;
-
-/// Repository lock file manager to prevent concurrent git operations
-struct RepoLock {
-    lock_path: PathBuf,
-}
-
-impl RepoLock {
-    /// Create a new lock manager for a repository path
-    fn new(repo_path: &PathBuf) -> Self {
-        let lock_path = repo_path.with_extension("lock");
-        Self { lock_path }
-    }
-
-    /// Acquire a lock on the repository, waiting up to `timeout` seconds
-    /// Returns true if lock was acquired, false if timeout
-    async fn acquire(&self, timeout_secs: u64) -> Result<bool> {
-        let timeout = Duration::from_secs(timeout_secs);
-        let start = Instant::now();
-        let pid = std::process::id();
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        loop {
-            // Check if lock file exists
-            if self.lock_path.exists() {
-                // Try to read lock file to check if it's stale
-                if let Ok(lock_content) = tokio::fs::read_to_string(&self.lock_path).await {
-                    if let Some((lock_pid, lock_timestamp)) = Self::parse_lock_file(&lock_content) {
-                        // Check if lock is stale (older than 5 minutes or PID doesn't exist)
-                        let lock_age = timestamp.saturating_sub(lock_timestamp);
-                        let is_stale = lock_age > 300 || !Self::is_process_running(lock_pid);
-
-                        if is_stale {
-                            warn!(
-                                "Removing stale lock file: {} (PID: {}, age: {}s)",
-                                self.lock_path.display(),
-                                lock_pid,
-                                lock_age
-                            );
-                            // Remove stale lock file and git lock files
-                            let _ = tokio::fs::remove_file(&self.lock_path).await;
-                            Self::cleanup_git_locks(&self.lock_path.parent().unwrap()).await;
-                        } else {
-                            // Lock is held by another process, wait a bit
-                            if start.elapsed() >= timeout {
-                                warn!(
-                                    "Timeout waiting for repository lock: {} (held by PID: {})",
-                                    self.lock_path.display(),
-                                    lock_pid
-                                );
-                                return Ok(false);
-                            }
-                            tokio::time::sleep(Duration::from_millis(500)).await;
-                            continue;
-                        }
-                    } else {
-                        // Lock file is malformed, remove it
-                        warn!("Removing malformed lock file: {}", self.lock_path.display());
-                        let _ = tokio::fs::remove_file(&self.lock_path).await;
-                        Self::cleanup_git_locks(&self.lock_path.parent().unwrap()).await;
-                    }
-                } else {
-                    // Lock file exists but can't be read, might be in use
-                    if start.elapsed() >= timeout {
-                        warn!(
-                            "Timeout waiting for repository lock: {} (file exists but unreadable)",
-                            self.lock_path.display()
-                        );
-                        return Ok(false);
-                    }
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    continue;
-                }
-            }
-
-            // Try to create lock file atomically
-            let lock_content = format!("{}\n{}", pid, timestamp);
-            match tokio::fs::write(&self.lock_path, &lock_content).await {
-                Ok(_) => {
-                    info!(
-                        "Acquired repository lock: {} (PID: {})",
-                        self.lock_path.display(),
-                        pid
-                    );
-                    return Ok(true);
-                }
-                Err(e) => {
-                    // Lock file might have been created by another process
-                    if start.elapsed() >= timeout {
-                        warn!(
-                            "Timeout acquiring repository lock: {} (error: {})",
-                            self.lock_path.display(),
-                            e
-                        );
-                        return Ok(false);
-                    }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-            }
-        }
-    }
-
-    /// Release the lock
-    #[allow(dead_code)] // May be useful for explicit cleanup in the future
-    async fn release(&self) -> Result<()> {
-        if self.lock_path.exists() {
-            tokio::fs::remove_file(&self.lock_path)
-                .await
-                .context(format!(
-                    "Failed to remove lock file: {}",
-                    self.lock_path.display()
-                ))?;
-            info!("Released repository lock: {}", self.lock_path.display());
-        }
-        Ok(())
-    }
-
-    /// Parse lock file content (PID and timestamp)
-    fn parse_lock_file(content: &str) -> Option<(u32, u64)> {
-        let lines: Vec<&str> = content.trim().lines().collect();
-        if lines.len() >= 2 {
-            if let (Ok(pid), Ok(timestamp)) = (lines[0].parse::<u32>(), lines[1].parse::<u64>()) {
-                return Some((pid, timestamp));
-            }
-        }
-        None
-    }
-
-    /// Check if a process with given PID is still running
-    fn is_process_running(pid: u32) -> bool {
-        // On Unix systems, check if /proc/{pid} exists
-        #[cfg(unix)]
-        {
-            std::path::Path::new(&format!("/proc/{}", pid)).exists()
-        }
-        #[cfg(not(unix))]
-        {
-            // On non-Unix systems, assume process is running (conservative)
-            true
-        }
-    }
-
-    /// Clean up git lock files in the repository directory
-    async fn cleanup_git_locks(repo_dir: &std::path::Path) {
-        // Clean up common git lock files
-        let git_locks = [
-            ".git/shallow.lock",
-            ".git/index.lock",
-            ".git/refs/heads/.lock",
-            ".git/config.lock",
-        ];
-
-        for lock_file in &git_locks {
-            let lock_path = repo_dir.join(lock_file);
-            if lock_path.exists() {
-                if let Err(e) = tokio::fs::remove_file(&lock_path).await {
-                    warn!(
-                        "Failed to remove git lock file {}: {}",
-                        lock_path.display(),
-                        e
-                    );
-                } else {
-                    info!("Removed stale git lock file: {}", lock_path.display());
-                }
-            }
-        }
-    }
-}
-
-/// Guard to ensure lock is released when dropped
-struct LockGuard {
-    lock: RepoLock,
-}
-
-impl LockGuard {
-    fn new(lock: RepoLock) -> Self {
-        Self { lock }
-    }
-}
-
-impl Drop for LockGuard {
-    fn drop(&mut self) {
-        // Try to release lock on drop (best effort)
-        // Cannot use async operations in Drop, so just remove the lock file directly
-        // This is best-effort cleanup - if it fails, the stale lock detection will handle it
-        if self.lock.lock_path.exists() {
-            let _ = std::fs::remove_file(&self.lock.lock_path);
-        }
-    }
-}
-
-impl Drop for RepoLock {
-    fn drop(&mut self) {
-        // Try to release lock on drop (best effort)
-        if self.lock_path.exists() {
-            let _ = std::fs::remove_file(&self.lock_path);
-        }
-    }
-}
 
 /// Git credentials for repository authentication
 #[derive(Debug, Clone)]
@@ -492,20 +291,15 @@ pub async fn get_argocd_artifact_path(
         None
     };
 
-    // Acquire lock before any git operations
-    let repo_lock = RepoLock::new(&path_buf);
-    if !repo_lock.acquire(30).await? {
-        return Err(anyhow::anyhow!(
-            "Failed to acquire lock for repository at {} - another operation may be in progress",
-            clone_path
-        ));
-    }
-
-    // Keep a reference to the lock path for explicit release
-    let lock_path = repo_lock.lock_path.clone();
-
-    // Ensure lock is released on completion (use a guard to ensure cleanup on panic)
-    let _lock_guard = LockGuard::new(repo_lock);
+    // Acquire singleton lock for this resource to serialize git operations
+    // This ensures only one git operation (clone/fetch) per resource at a time
+    // The lock is automatically released when the guard is dropped
+    let git_lock = reconciler.get_git_operation_lock(&source_ref.namespace, &source_ref.name);
+    info!(
+        "Acquiring git operation lock for resource: {}/{}",
+        source_ref.namespace, source_ref.name
+    );
+    let _lock_guard = git_lock.lock().await;
 
     // Check if repository already exists and try to update it if it's a valid git repo
     if path_buf.exists() {
@@ -1104,12 +898,7 @@ pub async fn get_argocd_artifact_path(
     .instrument(span)
     .await;
 
-    // Explicitly release lock before returning (LockGuard will also try on drop as backup)
-    if lock_path.exists() {
-        let _ = tokio::fs::remove_file(&lock_path).await;
-    }
-
-    // Lock will be released automatically by LockGuard on drop (as backup)
+    // Lock will be released automatically when _lock_guard is dropped
     match clone_result {
         Ok(_) => {
             span_clone_for_match

@@ -25,6 +25,7 @@ creation_rules:
     key_groups:
       - pgp:
           # Flux SOPS Key (for automated decryption in cluster)
+          - 564F22B9BCE625AC1A935A10BC2D684F8DCF5CD4
           - B9C71A2FEFCB2AA3F228996EA161E0A9C72A6692
           # Developer Keys (for manual access)
           # TODO: Add developer PGP key fingerprints
@@ -38,6 +39,7 @@ creation_rules:
     key_groups:
       - pgp:
           # Flux SOPS Key (for automated decryption in CI/CD)
+          - 564F22B9BCE625AC1A935A10BC2D684F8DCF5CD4
           - B9C71A2FEFCB2AA3F228996EA161E0A9C72A6692
           # Developer Keys (for manual access)
           # TODO: Add developer PGP key fingerprints
