@@ -25,7 +25,7 @@ When secrets exist only inside Kubernetes (encrypted via SOPS), you're left with
 
 Secret Manager Controller reads SOPS-encrypted secrets from Git, decrypts them securely inside Kubernetes, and pushes them into cloud-native secret managers:
 
-- ✔ **Google Secret Manager** (GCP)
+- ✔ **Google Secret Manager**
 - ✔ **AWS Secrets Manager**
 - ✔ **Azure Key Vault**
 

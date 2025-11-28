@@ -46,11 +46,17 @@ def main():
     
     log_info(f"  Binary found: {binary_path} ({binary_path.stat().st_size:,} bytes)")
     
-    # Build Docker image
-    dockerfile = Path("dockerfiles/Dockerfile.postgres-manager")
+    # Build Docker image (use optimized version)
+    dockerfile = Path("dockerfiles/Dockerfile.postgres-manager.optimized")
     if not dockerfile.exists():
-        log_error(f"Dockerfile not found: {dockerfile}")
-        sys.exit(1)
+        # Fallback to non-optimized if optimized doesn't exist
+        dockerfile = Path("dockerfiles/Dockerfile.postgres-manager")
+        if not dockerfile.exists():
+            log_error(f"Dockerfile not found: {dockerfile}")
+            sys.exit(1)
+        log_info("  Using non-optimized Dockerfile (optimized not found)")
+    else:
+        log_info("  Using optimized Dockerfile (alpine base)")
     
     log_info(f"  Dockerfile: {dockerfile}")
     

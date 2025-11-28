@@ -32,14 +32,9 @@ spec:
         app.kubernetes.io/part-of: secret-manager-controller
     spec:
       serviceAccountName: pact-manager
-      initContainers:
-      # Initialize Pact Broker database directory
-      - name: init-pact-db
-        image: busybox:latest
-        command: ['sh', '-c', 'mkdir -p /pacts && chmod 777 /pacts']
-        volumeMounts:
-        - name: pacts-storage
-          mountPath: /pacts
+      # Note: Init container removed to avoid Docker Hub dependency
+      # The emptyDir volume will be created automatically, and pact-broker
+      # will create the SQLite database file in /pacts when it starts
       containers:
       # Pact Broker - Main service
       - name: pact-broker

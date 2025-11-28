@@ -5,6 +5,8 @@ build_artifacts/  # Build artifacts directory (binaries, checksums, etc.)]
 build_artifacts
 Cargo.lock
 node_modules
+package-lock.json
+yarn-error.log
 # IDE
 .vscode/
 .idea/

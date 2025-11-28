@@ -6,16 +6,16 @@ Documentation site for the Secret Manager Controller project, built with SolidJS
 
 ```bash
 # Install dependencies
-npm install
+yarn install
 
 # Start development server
-npm run dev
+yarn dev
 
 # Build for production
-npm run build
+yarn build
 
 # Preview production build
-npm run preview
+yarn preview
 ```
 
 ## Project Structure

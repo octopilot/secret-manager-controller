@@ -959,6 +959,9 @@ async fn main() -> Result<()> {
         error!("Failed to wait for PostgreSQL: {}", e);
         return Err(e);
     }
+    // PostgreSQL is ready, set health flag immediately so readiness probe passes
+    postgres_healthy.store(true, Ordering::Relaxed);
+    info!("✅ PostgreSQL is ready - health flag set");
 
     // Run migrations if not already applied
     let applied_flag = Path::new(&config.migrations_applied_flag_path);

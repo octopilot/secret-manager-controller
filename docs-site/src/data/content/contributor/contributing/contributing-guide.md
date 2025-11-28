@@ -199,8 +199,8 @@ Contributor documentation is in `docs-site/src/data/content/contributor/`:
 
 ```bash
 cd docs-site
-npm install
-npm run build
+yarn install
+yarn build
 ```
 
 ## Pull Request Process

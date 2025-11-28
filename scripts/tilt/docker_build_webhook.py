@@ -47,10 +47,17 @@ def main():
         print("   Please run the build-all-binaries resource first", file=sys.stderr)
         sys.exit(1)
     
-    dockerfile = Path("dockerfiles/Dockerfile.pact-webhook")
+    # Use optimized Dockerfile (alpine base, no Ruby)
+    dockerfile = Path("dockerfiles/Dockerfile.pact-webhook.optimized")
     if not dockerfile.exists():
-        print(f"❌ Error: Dockerfile not found: {dockerfile}", file=sys.stderr)
-        sys.exit(1)
+        # Fallback to non-optimized if optimized doesn't exist
+        dockerfile = Path("dockerfiles/Dockerfile.pact-webhook")
+        if not dockerfile.exists():
+            print(f"❌ Error: Dockerfile not found: {dockerfile}", file=sys.stderr)
+            sys.exit(1)
+        print("  Using non-optimized Dockerfile (optimized not found)")
+    else:
+        print("  Using optimized Dockerfile (alpine base)")
     
     # Build Docker image
     print(f"🐳 Building Docker image: {tagged_image}")

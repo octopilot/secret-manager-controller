@@ -34,16 +34,20 @@ COPY crates/controller/src ./crates/controller/src
 COPY crates/gcp-api-paths/src ./crates/gcp-api-paths/src
 COPY config ./config
 
-# Build the binary in release mode
+# Build the binary in release mode with optimizations
 # Pass build-time environment variables to build.rs
 # Use --locked to ensure Cargo.lock is respected and transitive dependencies resolve correctly
 # CARGO_NET_GIT_FETCH_WITH_CLI=true forces Cargo to use git CLI instead of libgit2
+# RUSTFLAGS="-C link-arg=-s" strips debug symbols to reduce binary size
 # This ensures full git clones and better compatibility with git dependencies
 RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
     BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
     BUILD_DATETIME=${BUILD_DATETIME} \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    cargo build --release --locked --bin secret-manager-controller
+    RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --locked --bin secret-manager-controller && \
+    # Strip the binary to remove debug symbols (further size reduction)
+    strip target/release/secret-manager-controller
 
 # Stage 2: Runtime image
 # Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds

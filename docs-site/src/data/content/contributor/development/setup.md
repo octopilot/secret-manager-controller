@@ -83,7 +83,7 @@ If you plan to work on the documentation site:
 
 ```bash
 cd docs-site
-npm install
+yarn install
 ```
 
 **Node.js Version:** 18+ required

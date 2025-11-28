@@ -18,8 +18,8 @@ use super::entities::gcp::version::{ActiveModel as GcpVersionActiveModel, Entity
 use super::store::{SecretEntry, SecretVersion};
 use anyhow::{Context, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectOptions, Database, DatabaseConnection, EntityTrait,
+    QueryFilter, QueryOrder, Set,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -48,7 +48,16 @@ impl DbSecretStore {
     /// * `connection_string` - PostgreSQL connection string (e.g., "postgresql://user:pass@host/dbname")
     /// * `schema` - Schema name for this provider (e.g., "gcp", "aws", "azure")
     pub async fn new(connection_string: &str, schema: &str) -> Result<Self> {
-        let db = Database::connect(connection_string)
+        // Configure connection pool for better reconnection handling
+        let mut opt = ConnectOptions::new(connection_string.to_owned());
+        opt.max_connections(10)
+            .min_connections(1)
+            .idle_timeout(std::time::Duration::from_secs(600)) // 10 minutes
+            .max_lifetime(std::time::Duration::from_secs(1800)) // 30 minutes
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .sqlx_logging(false); // Disable sqlx logging (we use tracing)
+
+        let db = Database::connect(opt)
             .await
             .context("Failed to connect to PostgreSQL")?;
 

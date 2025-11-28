@@ -1,0 +1,36 @@
+# Optimized Dockerfile for Webhook Server
+# Uses alpine for minimal size (no Ruby needed)
+# Image size: ~5MB base (alpine) + binary size vs ~100MB (debian + Ruby)
+
+ARG TARGETPLATFORM=linux/amd64
+ARG TARGETARCH
+FROM alpine:3.20
+
+# Create non-root user
+RUN addgroup -g 1001 pact && \
+    adduser -D -u 1001 -G pact pact
+
+# Install ca-certificates for HTTPS (required for rustls)
+RUN apk add --no-cache ca-certificates && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Make /app writable for Tilt live updates (required for file syncing)
+RUN chmod -R 777 /app
+
+# Copy pre-built webhook binary (statically linked with musl)
+COPY ./build_artifacts/mock-server/webhook /app/webhook
+
+# Verify file exists and set permissions (fail fast if missing)
+RUN test -f /app/webhook && \
+    chmod +x /app/webhook && \
+    chown pact:pact /app/webhook && \
+    chmod -R 777 /app
+
+# Switch to non-root user
+USER pact
+
+# Run webhook server
+CMD ["/app/webhook"]
+

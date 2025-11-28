@@ -143,8 +143,9 @@ spec:
               mountPath: /shared
       containers:
         - name: postgres
-          # Use same PostgreSQL image as PriceWhisperer
-          image: docker.io/casibbald/postgres:17-duckdb-supabase-v2
+          # Use standard PostgreSQL 15 image (much smaller than custom 17-duckdb image)
+          # PostgreSQL 15 is fully compatible with all SQL migrations
+          image: postgres:15.15-trixie
           ports:
             - containerPort: 5432
               name: postgres
@@ -155,6 +156,10 @@ spec:
               value: "pact"
             - name: POSTGRES_DB
               value: "postgres"
+            # Configure authentication: use password authentication instead of trust
+            # This prevents the "trust" authentication warning
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "md5"
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data

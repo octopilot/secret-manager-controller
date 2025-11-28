@@ -327,7 +327,7 @@ custom_build(
     'python3 scripts/tilt/docker_build_webhook.py',
     deps=[
         'build_artifacts/mock-server/webhook',
-        'dockerfiles/Dockerfile.pact-webhook',
+        'dockerfiles/Dockerfile.pact-webhook.optimized',
         './scripts/tilt/docker_build_webhook.py',
     ],
     # File dependencies in deps ensure binaries exist before build
@@ -350,7 +350,7 @@ custom_build(
     'python3 scripts/tilt/docker_build_postgres_manager.py',
     deps=[
         'build_artifacts/mock-server/postgres-manager',
-        'dockerfiles/Dockerfile.postgres-manager',
+        'dockerfiles/Dockerfile.postgres-manager.optimized',
         './scripts/tilt/docker_build_postgres_manager.py',
     ],
     # File dependencies in deps ensure binaries exist before build
@@ -397,12 +397,13 @@ k8s_resource(
     'pact-infrastructure',
     labels=['pact'],
     port_forwards=[
-        '9292:9292',  # Pact broker
-        '1234:1234',  # AWS mock server
-        '1235:1235',  # GCP mock server
-        '1236:1236',  # Azure mock server
-        '1237:1237',  # Mock webhook
-        '1238:1238',  # Manager health endpoint
+        '9292:9292',  # Pact broker (essential for pact tests)
+        # Other ports are optional - can be added via kubectl port-forward if needed
+        # '1234:1234',  # AWS mock server
+        # '1235:1235',  # GCP mock server
+        # '1236:1236',  # Azure mock server
+        # '1237:1237',  # Mock webhook
+        # '1238:1238',  # Manager health endpoint
     ],
     resource_deps=['populate-pact-configmap'],  # Wait for ConfigMap to be populated
     # Tilt automatically detects image dependencies from k8s_yaml
@@ -411,6 +412,8 @@ k8s_resource(
     # All services (pact-broker, aws-mock-server, gcp-mock-server, azure-mock-server, mock-webhook)
     # are part of this single deployment, accessed via their respective services
     # Contract publishing is handled by the manager sidecar which reads from the ConfigMap
+    # Note: Reduced port forwards to prevent Tilt from getting stuck in "updating" state
+    # Additional ports can be forwarded manually if needed: kubectl port-forward -n secret-manager-controller-pact-broker deployment/pact-infrastructure <local>:<remote>
 )
 
 # Populate the postgres-migrations ConfigMap from local migration SQL files
@@ -570,10 +573,10 @@ local_resource(
 # without rebuilding the entire Docker image
 local_resource(
     'build-docs-search-index',
-    cmd='cd docs-site && ([ -d node_modules ] || npm install) && npm run build:search-index',
+    cmd='cd docs-site && ([ -d node_modules ] || yarn install) && yarn build:search-index',
     deps=[
         'docs-site/package.json',
-        'docs-site/package-lock.json',
+        'docs-site/yarn.lock',
         'docs-site/scripts/build-search-index.ts',
         'docs-site/src/data/sections.ts',
         'docs-site/src/data/content',  # Watch all content files
@@ -584,7 +587,7 @@ local_resource(
 
 # Build documentation site Docker image
 # Tilt will watch docs-site/ for changes and rebuild
-# Note: The search index is built as part of 'npm run build' in the Dockerfile
+# Note: The search index is built as part of 'yarn build' in the Dockerfile
 # but can also be built independently via build-docs-search-index resource
 docker_build(
     'docs-site',

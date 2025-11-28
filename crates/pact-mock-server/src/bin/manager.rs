@@ -738,9 +738,11 @@ async fn main() -> Result<()> {
     }
 
     // Shared state for health checks
-    let broker_healthy = Arc::new(AtomicBool::new(false));
+    let broker_healthy = Arc::new(AtomicBool::new(true)); // Broker is ready - we just confirmed it
     let pacts_published = Arc::new(AtomicBool::new(false));
     let published_providers = Arc::new(tokio::sync::RwLock::new(HashSet::new()));
+
+    info!("✅ Broker is ready - health flag set");
 
     // Publish pacts if not already published
     let published_flag = Path::new(&config.published_flag_path);

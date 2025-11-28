@@ -22,7 +22,7 @@ The `postgres-manager` runs as a sidecar container in the PostgreSQL pod:
 spec:
   containers:
     - name: postgres
-      image: docker.io/casibbald/postgres:17-duckdb-supabase-v2
+      image: postgres:15.15-trixie
       # ... PostgreSQL configuration ...
     
     - name: postgres-manager

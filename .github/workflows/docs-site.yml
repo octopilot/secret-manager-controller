@@ -39,34 +39,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Enable Corepack (Yarn)
+        run: corepack enable
 
       - name: Install dependencies
         working-directory: docs-site
         run: |
-          npm ci || npm install
+          yarn install --frozen-lockfile
           echo "✅ Dependencies installed"
 
       - name: Build search index
         working-directory: docs-site
-        run: npm run build:search-index
+        run: yarn build:search-index
 
       - name: Generate sitemap
         working-directory: docs-site
         env:
           DOCS_BASE_URL: ${{ github.event.repository.full_name == 'microscaler/secret-manager-controller' && 'https://secret-manager-controller.microscaler.io' || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
-        run: npm run build:sitemap
+        run: yarn build:sitemap
 
       - name: Generate RSS feed
         working-directory: docs-site
         env:
           DOCS_BASE_URL: ${{ github.event.repository.full_name == 'microscaler/secret-manager-controller' && 'https://secret-manager-controller.microscaler.io' || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
-        run: npm run build:rss
+        run: yarn build:rss
 
       - name: Build documentation site
         working-directory: docs-site
-        run: npm run build
+        run: yarn build
 
       - name: Verify build output
         working-directory: docs-site
