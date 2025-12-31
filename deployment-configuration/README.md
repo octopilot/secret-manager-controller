@@ -28,13 +28,18 @@ deployment-configuration/
 - Contains SOPS-encrypted secrets in ENV format
 - Synced to secret stores (AWS Secrets Manager, GCP Secret Manager, Azure Key Vault)
 - Format: `KEY=VALUE`
+- Comment support: Lines starting with `#` are treated as disabled secrets
 - Must be encrypted with SOPS before committing
+- **Merging**: If both `.env` and `.yaml` files exist, `.yaml` values override `.env` values
 
 ### `application.secrets.yaml`
 - Contains SOPS-encrypted secrets in YAML format
-- Supports nested structure
-- Synced to secret stores
+- Supports nested structure (automatically flattened to dot notation)
+- Comment support: Commented sections (starting with `#`) are treated as disabled secrets
+- Synced to secret stores (AWS Secrets Manager, GCP Secret Manager, Azure Key Vault)
 - Must be encrypted with SOPS before committing
+- **Flattening**: Nested keys like `database.password` are flattened to `database.password` in the secret store
+- **Merging**: If both `.env` and `.yaml` files exist, `.yaml` values override `.env` values
 
 ## SOPS Encryption
 
@@ -59,24 +64,33 @@ deployment-configuration/
 ### Encrypting Files
 
 ```bash
-# Encrypt a file
+# Encrypt .env file
 sops -e -i profiles/dev/application.secrets.env
+
+# Encrypt .yaml file
+sops -e -i profiles/dev/application.secrets.yaml
 
 # Encrypt and edit in place
 sops profiles/dev/application.secrets.env
+sops profiles/dev/application.secrets.yaml
 
 # Verify encryption
 sops -d profiles/dev/application.secrets.env
+sops -d profiles/dev/application.secrets.yaml
 ```
 
 ### Decrypting Files (for testing)
 
 ```bash
-# Decrypt to stdout
+# Decrypt .env file to stdout
 sops -d profiles/dev/application.secrets.env
+
+# Decrypt .yaml file to stdout
+sops -d profiles/dev/application.secrets.yaml
 
 # Decrypt to file (for testing only - don't commit)
 sops -d profiles/dev/application.secrets.env > profiles/dev/application.secrets.env.decrypted
+sops -d profiles/dev/application.secrets.yaml > profiles/dev/application.secrets.yaml.decrypted
 ```
 
 ## Flux Integration

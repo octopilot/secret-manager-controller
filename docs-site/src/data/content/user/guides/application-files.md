@@ -123,6 +123,7 @@ YAML format for secrets. Supports nested structures that are automatically flatt
 ### Format
 
 ```yaml
+# Enabled secrets
 database:
   password: super-secret-password
   username: admin
@@ -133,12 +134,19 @@ api:
 
 jwt:
   secret: my-jwt-secret-key
+
+# Disabled secrets (commented out)
+#old_api:
+#  key: deprecated-key
+#legacy:
+#  password: old-password
 ```
 
 ### Features
 
 - **Nested structures**: Supports hierarchical YAML
 - **Automatic flattening**: Nested keys are flattened with dot notation
+- **Comment support**: Commented sections (starting with `#`) are treated as disabled secrets
 - **SOPS encryption**: Can be encrypted with SOPS (GPG or AGE keys)
 - **Merging**: If both `.env` and `.yaml` files exist, `.yaml` values override `.env` values
 
@@ -159,6 +167,29 @@ database:
 database.connection.password = secret123
 database.connection.host = db.example.com
 ```
+
+### Disabled Secrets
+
+Commented sections (starting with `#`) are parsed but marked as disabled:
+- **Enabled secrets**: Synced to cloud provider secret manager
+- **Disabled secrets**: Disabled in cloud provider (but not deleted) - useful for secret rotation
+
+**Example:**
+```yaml
+# Active secret
+database:
+  password: new-password
+
+# Disabled (old secret being rotated out)
+#database:
+#  password: old-password
+```
+
+The controller will:
+1. Create/update `database.password` with value `new-password`
+2. Disable (but not delete) any existing `database.password` with value `old-password`
+
+**Note:** You can comment out entire sections or individual keys. The controller will flatten the structure and handle disabled secrets appropriately.
 
 ### SOPS Encryption
 

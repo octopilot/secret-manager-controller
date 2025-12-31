@@ -79,31 +79,58 @@ const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
             wrapper.className = 'mermaid';
             wrapper.innerHTML = result.svg;
             
-            // Remove black background layer if present (only target the background rect)
+            // Set SVG background to transparent and remove dark background rectangles
             const svg = wrapper.querySelector('svg');
             if (svg) {
-              const rootGroup = svg.querySelector('g:first-child');
-              if (rootGroup) {
-                const firstRect = rootGroup.querySelector('rect:first-child');
-                if (firstRect) {
-                  const fill = firstRect.getAttribute('fill');
-                  const width = parseFloat(firstRect.getAttribute('width') || '0');
-                  const height = parseFloat(firstRect.getAttribute('height') || '0');
-                  const x = parseFloat(firstRect.getAttribute('x') || '0');
-                  const y = parseFloat(firstRect.getAttribute('y') || '0');
-                  
-                  // Only modify if it's clearly a background layer (large, at origin, dark)
-                  if (x === 0 && y === 0 && width > 500 && height > 300 && 
-                      (fill === '#1f2328' || fill === '#0d1117' || fill === '#161b22' || 
-                       fill === '#21262d' || fill === '#000000')) {
-                    firstRect.setAttribute('fill', '#ffffff');
-                    firstRect.setAttribute('stroke', 'none');
-                  }
+              // Set SVG background to transparent
+              svg.style.backgroundColor = 'transparent';
+              
+              // Find and replace all dark background rectangles
+              const allRects = svg.querySelectorAll('rect');
+              allRects.forEach((rect) => {
+                const fill = rect.getAttribute('fill') || '';
+                const style = rect.getAttribute('style') || '';
+                const computedStyle = window.getComputedStyle(rect);
+                const actualFill = fill || computedStyle.fill || '';
+                
+                // Check if this is a background rectangle (large, at origin, dark color)
+                const width = parseFloat(rect.getAttribute('width') || '0');
+                const height = parseFloat(rect.getAttribute('height') || '0');
+                const x = parseFloat(rect.getAttribute('x') || '0');
+                const y = parseFloat(rect.getAttribute('y') || '0');
+                
+                // Dark colors to replace
+                const darkColors = [
+                  '#1f2328', '#0d1117', '#161b22', '#21262d', '#000000',
+                  '#1a1a1a', '#2d2d2d', '#333333', '#1e1e1e', '#0a0a0a'
+                ];
+                
+                const isDarkBackground = darkColors.some(color => 
+                  actualFill.toLowerCase() === color.toLowerCase() ||
+                  actualFill.toLowerCase() === color.toLowerCase().replace('#', '')
+                );
+                
+                // If it's a large rectangle at the origin with dark fill, make it transparent
+                if (isDarkBackground && width > 200 && height > 100 && 
+                    Math.abs(x) < 10 && Math.abs(y) < 10) {
+                  rect.setAttribute('fill', 'transparent');
+                  rect.setAttribute('style', (style + '; fill: transparent !important;').replace(/fill:[^;]+;?/gi, ''));
                 }
-              }
+              });
             }
             
-            el.replaceWith(wrapper);
+            // Replace the element
+            const parent = el.parentNode;
+            if (parent) {
+              el.replaceWith(wrapper);
+              
+              // If parent is a pre element, add a class to mark it as containing mermaid
+              if (parent.tagName === 'PRE') {
+                parent.classList.add('contains-mermaid');
+              }
+            } else {
+              el.replaceWith(wrapper);
+            }
           }).catch((err) => {
             console.error('Mermaid rendering error:', err);
           });
