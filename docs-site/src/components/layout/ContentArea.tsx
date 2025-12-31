@@ -123,49 +123,49 @@ const ContentArea: Component<ContentAreaProps> = (props) => {
   };
 
   return (
-    <main id="main-content" class="flex-1 overflow-y-auto bg-white custom-scrollbar" role="main">
+    <main class="flex-1 overflow-y-auto custom-scrollbar bg-white" role="main">
       <div class="max-w-[1100px] mx-auto px-8 py-10">
-          <Show when={loading()}>
-            <div class="text-center py-16" role="status" aria-live="polite">
-              <div class="animate-spin rounded-full h-12 w-12 border-2 border-[#e5e3df] border-t-[#5a6c5d] mx-auto mb-4" aria-hidden="true"></div>
-              <p class="text-[#6b7280]">Loading content...</p>
+        <Show when={loading()}>
+          <div class="text-center py-16" role="status" aria-live="polite">
+            <div class="animate-spin rounded-full h-12 w-12 border-2 border-[#e5e3df] border-t-[#5a6c5d] mx-auto mb-4" aria-hidden="true"></div>
+            <p class="text-[#6b7280]">Loading content...</p>
+          </div>
+        </Show>
+        
+        <Show when={!loading() && error()}>
+          <div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 mb-6" role="alert">
+            <p class="text-[#991b1b]">{error()}</p>
+          </div>
+        </Show>
+
+        <Show when={!loading() && !error()}>
+          {/* Special component pages */}
+          <Show when={props.page === 'secrets-viewer'}>
+            <SecretsViewer onNavigate={props.onNavigate} />
+          </Show>
+          
+          {/* Regular markdown pages */}
+          <Show when={props.page !== 'secrets-viewer'}>
+            {/* Reading time */}
+            <Show when={readingTime() > 0 && props.page !== 'index'}>
+              <div class="mb-6 text-sm text-[#6b7280] flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{readingTime()} {readingTime() === 1 ? 'minute' : 'minutes'} read</span>
+              </div>
+            </Show>
+            <div class="prose prose-slate max-w-none">
+              <MarkdownRenderer content={content()} />
             </div>
           </Show>
           
-          <Show when={!loading() && error()}>
-            <div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 mb-6" role="alert">
-              <p class="text-[#991b1b]">{error()}</p>
-            </div>
-          </Show>
-
-        <Show when={!loading() && !error()}>
-          <div>
-            {/* Special component pages */}
-            <Show when={props.page === 'secrets-viewer'}>
-              <SecretsViewer onNavigate={props.onNavigate} />
-            </Show>
-            
-            {/* Regular markdown pages */}
-            <Show when={props.page !== 'secrets-viewer'}>
-              {/* Reading time */}
-              <Show when={readingTime() > 0 && props.page !== 'index'}>
-                <div class="mb-6 text-sm text-[#6b7280] flex items-center gap-2">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>{readingTime()} {readingTime() === 1 ? 'minute' : 'minutes'} read</span>
-                </div>
-              </Show>
-              <MarkdownRenderer content={content()} />
-            </Show>
-            
-            <PageNavigation
-              category={props.category}
-              section={props.section}
-              page={props.page}
-              onNavigate={props.onNavigate}
-            />
-          </div>
+          <PageNavigation
+            category={props.category}
+            section={props.section}
+            page={props.page}
+            onNavigate={props.onNavigate}
+          />
         </Show>
       </div>
     </main>
