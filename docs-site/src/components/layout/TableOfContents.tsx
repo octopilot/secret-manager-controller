@@ -159,9 +159,18 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
       let current = '';
       
       headingElements.forEach((el) => {
+        // Ensure heading has an ID (generate if missing)
+        if (!el.id) {
+          const text = el.textContent || '';
+          const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+          if (id) {
+            el.id = id;
+          }
+        }
+        
         const rect = el.getBoundingClientRect();
         // Use 100px threshold like DCops (accounts for sticky header)
-        if (rect.top <= 100) {
+        if (rect.top <= 100 && el.id) {
           current = el.id;
         }
       });
@@ -233,7 +242,8 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
 
   // Render a heading node and its children
   const renderHeadingNode = (node: HeadingNode, depth: number = 0) => {
-    const isActive = activeAnchor() === node.heading.id;
+    const active = activeAnchor();
+    const isActive = active !== null && active === node.heading.id;
     const hasChildren = node.children.length > 0;
     const indentClass = depth === 0 ? 'pl-0' : `pl-${depth * 4}`;
 
