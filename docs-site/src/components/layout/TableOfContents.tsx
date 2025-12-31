@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
+import { Component, createSignal, createEffect, For, Show } from 'solid-js';
 
 interface Heading {
   id: string;
@@ -18,169 +18,173 @@ interface HeadingNode {
 const TableOfContents: Component<TableOfContentsProps> = (props) => {
   const [headings, setHeadings] = createSignal<Heading[]>([]);
   const [activeAnchor, setActiveAnchor] = createSignal<string | null>(null);
-  let observer: IntersectionObserver | null = null;
 
-  // Extract headings from markdown content
-  createEffect(() => {
-    if (!props.content) {
-      setHeadings([]);
+  // Pattern to detect timestamps (dates, times, ISO dates, etc.)
+  const timestampPattern = /\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{1,2}:\d{2}(:\d{2})?|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+  // Extract headings from DOM (like DCops) - only H1 and H2, filter timestamps
+  const extractHeadings = () => {
+    // Look for headings in the markdown content area
+    const markdownContent = document.querySelector('main .markdown-content');
+    const container = markdownContent || document.querySelector('main');
+    
+    if (!container) {
       return;
     }
-
-    // Parse markdown headings (lines starting with #)
-    const lines = props.content.split('\n');
-    const extractedHeadings: Heading[] = [];
     
-    // Pattern to detect timestamps (dates, times, ISO dates, etc.)
-    // Matches: YYYY-MM-DD, MM/DD/YYYY, HH:MM, ISO dates, and timestamps with colons
-    const timestampPattern = /\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{1,2}:\d{2}(:\d{2})?|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+    // Only get H1 and H2 headings (matching original behavior)
+    const headingElements = container.querySelectorAll('h1, h2');
+    const extracted: Heading[] = [];
     
-    lines.forEach((line) => {
-      const match = line.match(/^(#{1,6})\s+(.+)$/);
-      if (match) {
-        const level = match[1].length;
-        const text = match[2].trim();
-        
-        // Only include H1 and H2 headings (exclude H3 and below)
-        if (level > 2) {
-          return;
-        }
-        
-        // Filter out headings that look like timestamps (check if text is primarily a timestamp)
-        // If the text matches timestamp pattern and is short, it's likely a timestamp
-        if (timestampPattern.test(text) && text.length < 30) {
-          return;
-        }
-        
-        // Generate ID from heading text (lowercase, replace spaces with hyphens, remove special chars)
-        const id = text
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, '')
-          .replace(/\s+/g, '-')
-          .replace(/-+/g, '-')
-          .trim();
-        
-        extractedHeadings.push({ id, text, level });
+    headingElements.forEach((el) => {
+      const text = el.textContent || '';
+      
+      // Filter out headings that look like timestamps
+      if (timestampPattern.test(text) && text.length < 30) {
+        return;
       }
-    });
-
-    setHeadings(extractedHeadings);
-  });
-
-  // Set up Intersection Observer to track active heading (simplified like PriceWhisperer FTE)
-  const setupObserver = () => {
-    if (headings().length === 0) {
-      return;
-    }
-
-    // Clean up existing observer
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
-
-    // Find the scrollable main content area
-    const mainContent = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement | null;
-
-    // Create observer with options (simplified from FTE pattern)
-    const observerOptions = {
-      root: mainContent,
-      rootMargin: '-112px 0px -70% 0px', // Account for header (112px), trigger when heading is near top
-      threshold: [0, 0.25, 0.5, 0.75, 1],
-    };
-
-    observer = new IntersectionObserver((entries) => {
-      // Find the entry that's most visible and closest to the top
-      let mostVisible: IntersectionObserverEntry | null = null;
-      let highestRatio = 0;
-      let closestToTop = Infinity;
-
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const ratio = entry.intersectionRatio;
-          const top = entry.boundingClientRect.top;
-
-          // Prefer entries that are:
-          // 1. More visible (higher ratio)
-          // 2. Closer to the top of the viewport
-            if (ratio > highestRatio || (ratio === highestRatio && top < closestToTop)) {
-              mostVisible = entry;
-              highestRatio = ratio;
-              closestToTop = top;
-          }
-        }
-      });
-
-      // If we found a visible heading, set it as active
-      if (mostVisible) {
-        const anchor = mostVisible.target.id;
-        if (anchor) {
-          setActiveAnchor(anchor);
-        }
-      } else {
-      // If no heading is intersecting, find the one that's just above the viewport
-      entries.forEach((entry) => {
-        const rect = entry.boundingClientRect;
-          if (rect.top < 120 && rect.bottom > 0) {
-            const anchor = entry.target.id;
-            if (anchor) {
-              setActiveAnchor(anchor);
-        }
-      }
+      
+      // Use existing ID or generate one
+      const id = el.id || text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+      if (id) {
+        el.id = id;
+        extracted.push({
+          id,
+          text,
+          level: parseInt(el.tagName.charAt(1)),
         });
       }
-    }, observerOptions);
-
-    // Function to observe headings
-    const observeHeadings = () => {
-      if (!observer) return;
-
-      // Observe all headings that are in our headings list
-      headings().forEach((heading) => {
-        const element = document.getElementById(heading.id);
-        if (element) {
-          observer!.observe(element);
-        }
-      });
-
-      // Also observe all headings with IDs as a fallback (only H1 and H2)
-      const allHeadings = document.querySelectorAll('h1[id], h2[id]');
-      allHeadings.forEach((heading) => {
-        if (!heading.id || !headings().some(h => h.id === heading.id)) {
-          observer!.observe(heading);
-        }
-      });
-    };
-
-    // Try to observe immediately
-    observeHeadings();
-
-    // Also try after delays to catch async-loaded content (headings get IDs after render)
-    setTimeout(observeHeadings, 100);
-    setTimeout(observeHeadings, 500);
+    });
+    
+    if (extracted.length > 0) {
+      setHeadings(extracted);
+    }
   };
 
-  onMount(() => {
-    setupObserver();
-  });
-
-  // Re-initialize observer when content or headings change
+  // Extract headings when content changes (using MutationObserver like DCops)
   createEffect(() => {
-    // Track headings to trigger effect
-    headings().length;
-    // Reset active anchor
-    setActiveAnchor(null);
-    // Re-setup observer after a short delay to allow content to load
-    setTimeout(() => {
-      setupObserver();
-    }, 100);
+    // Reset headings when content changes
+    setHeadings([]);
+    
+    if (!props.content) {
+      return;
+    }
+    
+    let extractTimeout: ReturnType<typeof setTimeout> | null = null;
+    let observer: MutationObserver | null = null;
+    
+    const scheduleExtraction = () => {
+      if (extractTimeout) {
+        clearTimeout(extractTimeout);
+      }
+      extractTimeout = setTimeout(() => {
+        extractHeadings();
+      }, 50);
+    };
+    
+    // Use MutationObserver to watch for DOM changes
+    const mainElement = document.querySelector('main');
+    if (!mainElement) {
+      // Retry mechanism for initial load
+      let retries = 0;
+      const maxRetries = 20;
+      const retryInterval = setInterval(() => {
+        retries++;
+        const main = document.querySelector('main');
+        if (main) {
+          clearInterval(retryInterval);
+          scheduleExtraction();
+          
+          // Set up observer once main exists
+          observer = new MutationObserver(() => {
+            scheduleExtraction();
+          });
+          observer.observe(main, {
+            childList: true,
+            subtree: true,
+          });
+        } else if (retries >= maxRetries) {
+          clearInterval(retryInterval);
+        }
+      }, 100);
+      
+      return () => {
+        clearInterval(retryInterval);
+        if (extractTimeout) clearTimeout(extractTimeout);
+        if (observer) observer.disconnect();
+      };
+    }
+
+    // Extract headings immediately if content is already rendered
+    scheduleExtraction();
+
+    // Watch for changes to the main element's children
+    observer = new MutationObserver(() => {
+      scheduleExtraction();
+    });
+
+    observer.observe(mainElement, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Fallback timeouts to catch different render timings
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+    [100, 300, 600].forEach((delay) => {
+      const timeout = setTimeout(() => {
+        extractHeadings();
+      }, delay);
+      timeouts.push(timeout);
+    });
+
+    return () => {
+      if (observer) observer.disconnect();
+      if (extractTimeout) clearTimeout(extractTimeout);
+      timeouts.forEach(clearTimeout);
+    };
   });
 
-  onCleanup(() => {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
+  // Track active heading on scroll (using DCops pattern)
+  createEffect(() => {
+    const handleScroll = () => {
+      const markdownContent = document.querySelector('main .markdown-content');
+      const container = markdownContent || document.querySelector('main');
+      
+      if (!container) {
+        return;
+      }
+      
+      // Only check H1 and H2 headings (matching our heading extraction)
+      const headingElements = container.querySelectorAll('h1, h2');
+      let current = '';
+      
+      headingElements.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        // Use 100px threshold like DCops (accounts for sticky header)
+        if (rect.top <= 100) {
+          current = el.id;
+        }
+      });
+      
+      setActiveAnchor(current || null);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    // Also listen to scroll on main element if it's scrollable
+    const mainElement = document.querySelector('main');
+    if (mainElement) {
+      mainElement.addEventListener('scroll', handleScroll);
     }
+    
+    // Initial check
+    handleScroll();
+    
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (mainElement) {
+        mainElement.removeEventListener('scroll', handleScroll);
+      }
+    };
   });
 
   const scrollToHeading = (id: string) => {
