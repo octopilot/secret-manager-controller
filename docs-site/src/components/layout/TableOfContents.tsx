@@ -61,7 +61,7 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
     }
   };
 
-  // Extract headings when content changes (using MutationObserver like DCops)
+  // Extract headings when content changes (simplified - no complex debouncing)
   createEffect(() => {
     // Reset headings when content changes
     setHeadings([]);
@@ -128,19 +128,15 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
       subtree: true,
     });
 
-    // Fallback timeouts to catch different render timings
-    const timeouts: ReturnType<typeof setTimeout>[] = [];
-    [100, 300, 600].forEach((delay) => {
-      const timeout = setTimeout(() => {
-        extractHeadings();
-      }, delay);
-      timeouts.push(timeout);
-    });
+    // Single fallback timeout (removed multiple timeouts that could cause race conditions)
+    const timeout = setTimeout(() => {
+      extractHeadings();
+    }, 100);
 
     return () => {
       if (observer) observer.disconnect();
       if (extractTimeout) clearTimeout(extractTimeout);
-      timeouts.forEach(clearTimeout);
+      clearTimeout(timeout);
     };
   });
 
