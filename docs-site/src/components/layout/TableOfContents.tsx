@@ -144,7 +144,7 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
     };
   });
 
-  // Track active heading on scroll (using DCops pattern)
+  // Track active heading on scroll (using DCops pattern - simple and reliable)
   createEffect(() => {
     const handleScroll = () => {
       const markdownContent = document.querySelector('main .markdown-content');
@@ -170,89 +170,23 @@ const TableOfContents: Component<TableOfContentsProps> = (props) => {
     };
 
     window.addEventListener('scroll', handleScroll);
-    // Also listen to scroll on main element if it's scrollable
-    const mainElement = document.querySelector('main');
-    if (mainElement) {
-      mainElement.addEventListener('scroll', handleScroll);
-    }
-    
-    // Initial check
     handleScroll();
     
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      if (mainElement) {
-        mainElement.removeEventListener('scroll', handleScroll);
-      }
-    };
+    return () => window.removeEventListener('scroll', handleScroll);
   });
 
   const scrollToHeading = (id: string) => {
-    // Try to find element
-    let element = document.getElementById(id);
-    
-    if (!element) {
-      // Try querySelector
-      element = document.querySelector(`#${id}`) as HTMLElement;
-    }
-    
-    if (!element) {
-      // Try finding headings with matching text (fallback - only H1 and H2)
-      const allHeadings = document.querySelectorAll('h1, h2');
-      for (const heading of Array.from(allHeadings)) {
-        const headingText = heading.textContent || heading.innerText || '';
-        const headingId = headingText
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim();
-        if (headingId === id || heading.id === id) {
-          element = heading as HTMLElement;
-          if (!element.id || element.id !== id) {
-            element.id = id;
-          }
-          break;
-        }
-      }
-    }
-    
-    // If still not found, wait a bit and retry (for async content loading)
-    if (!element) {
-      setTimeout(() => {
-        let retryElement = document.getElementById(id);
-        if (retryElement) {
-          scrollToElement(retryElement);
-        }
-      }, 200);
-      return;
-    }
-    
-    scrollToElement(element);
-  };
-
-  const scrollToElement = (element: HTMLElement) => {
-      // Account for sticky header offset
-      const headerOffset = 112; // Height of sticky header with breadcrumbs
-      const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
-      const offsetPosition = elementPosition - headerOffset;
-      
+    const element = document.getElementById(id);
+    if (element) {
+      const offset = 120;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - offset;
       window.scrollTo({
         top: offsetPosition,
-        behavior: 'smooth'
+        behavior: 'smooth',
       });
-      
-      // Also scroll the main content area if it's scrollable
-      const mainContent = document.querySelector('main.flex-1.overflow-y-auto') as HTMLElement;
-      if (mainContent) {
-        const mainRect = mainContent.getBoundingClientRect();
-        const elementRect = element.getBoundingClientRect();
-        const relativeTop = elementRect.top - mainRect.top + mainContent.scrollTop - headerOffset;
-        mainContent.scrollTo({
-          top: Math.max(0, relativeTop),
-          behavior: 'smooth'
-        });
-      }
+      setActiveAnchor(id);
+    }
   };
     
   // Build a tree structure from headings (only H1 and H2)

@@ -117,8 +117,7 @@
     background: #a0aec0;
   }
 
-  /* TableOfContents button styles - match Navigation exactly */
-  /* Reset any conflicting styles from typography plugin or browser defaults */
+  /* TableOfContents button styles - simplified to match DCops */
   #table-of-contents nav button {
     background-color: transparent;
     border: none;
@@ -138,9 +137,7 @@
     transition-duration: 150ms;
   }
 
-  /* Active state - match left drawer exactly */
-  /* Use attribute selector for reliable matching */
-  #table-of-contents nav button[data-active="true"],
+  /* Active state - simplified to match DCops */
   #table-of-contents nav button[aria-current="location"] {
     background-color: #e8f0e9 !important;
     color: #2d4a2f !important;
@@ -148,8 +145,6 @@
     border-left: 2px solid #5a6c5d !important;
   }
 
-  /* Maintain green background on hover for active items */
-  #table-of-contents nav button[data-active="true"]:hover,
   #table-of-contents nav button[aria-current="location"]:hover {
     background-color: #e8f0e9 !important;
   }
