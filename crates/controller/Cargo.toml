@@ -52,7 +52,7 @@ paths = { path = "../paths" }
 # AWS Secrets Manager and Parameter Store - using official AWS Rust SDK
 # Match obsctl approach: use default features, aws-smithy-http-client will use rustls-aws-lc via feature unification
 # The rustls dependency with ring feature ensures aws-smithy-http-client uses ring
-aws-sdk-secretsmanager = "1.8"
+aws-sdk-secretsmanager = "1.94"
 aws-sdk-ssm = "1.8"  # Systems Manager (includes Parameter Store)
 aws-config = "1.8"
 aws-sdk-sts = "1.8"  # For IRSA role assumption
