@@ -353,7 +353,7 @@ def main():
     parser.add_argument(
         "--all-environments",
         action="store_true",
-        help="Create secrets in all environment namespaces (tilt, dev, stage, prod) plus flux-system and microscaler-system"
+        help="Create secrets in all environment namespaces (tilt, dev, stage, prod) plus flux-system and octopilot-system"
     )
     parser.add_argument(
         "--auth-type",
@@ -405,7 +405,7 @@ def main():
     
     if args.all_environments:
         # Create secrets in all environment namespaces
-        environment_namespaces = ["tilt", "dev", "stage", "prod", "microscaler-system"]
+        environment_namespaces = ["tilt", "dev", "stage", "prod", "octopilot-system"]
         namespaces.extend(environment_namespaces)
         # Remove duplicates while preserving order
         namespaces = list(dict.fromkeys(namespaces))
@@ -443,7 +443,7 @@ def main():
                     continue
             else:
                 log_warn(f"⚠️  Namespace {namespace} does not exist, skipping secret creation")
-                log_warn(f"   (flux-system and microscaler-system should be created by their respective installers)")
+                log_warn(f"   (flux-system and octopilot-system should be created by their respective installers)")
                 continue
         
         if args.auth_type == "auto":

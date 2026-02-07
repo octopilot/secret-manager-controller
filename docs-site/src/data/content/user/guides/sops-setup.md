@@ -167,7 +167,7 @@ python3 scripts/setup_sops_key.py --key-email your-email@example.com
 
 This will:
 1. Export the GPG private key
-2. Create a Kubernetes Secret `sops-gpg-key` in `microscaler-system` namespace
+2. Create a Kubernetes Secret `sops-gpg-key` in `octopilot-system` namespace
 3. Store the private key securely
 
 #### Manual Setup
@@ -179,7 +179,7 @@ gpg --armor --export-secret-keys your-email@example.com > /tmp/private-key.asc
 # Create Kubernetes Secret
 kubectl create secret generic sops-gpg-key \
   --from-file=private.key=/tmp/private-key.asc \
-  -n microscaler-system
+  -n octopilot-system
 
 # Clean up
 rm /tmp/private-key.asc
@@ -194,7 +194,7 @@ grep "AGE-SECRET-KEY" age-key.txt > /tmp/age-private-key.txt
 # Create Kubernetes Secret
 kubectl create secret generic sops-age-key \
   --from-file=private.key=/tmp/age-private-key.txt \
-  -n microscaler-system
+  -n octopilot-system
 
 # Clean up
 rm /tmp/age-private-key.txt
@@ -209,7 +209,7 @@ Reference the encryption keys in your SecretManagerConfig:
 ### GPG-Only Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -219,14 +219,14 @@ spec:
       enabled: true
       gpgSecretRef:
         name: sops-gpg-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 
 ### AGE-Only Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -236,7 +236,7 @@ spec:
       enabled: true
       ageSecretRef:
         name: sops-age-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 
@@ -245,7 +245,7 @@ spec:
 You can specify both for redundancy:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -255,11 +255,11 @@ spec:
       enabled: true
       gpgSecretRef:
         name: sops-gpg-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
       ageSecretRef:
         name: sops-age-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 
@@ -297,19 +297,19 @@ sops -d test.yaml
 Check controller logs:
 
 ```bash
-kubectl logs -n microscaler-system -l app=secret-manager-controller | grep -i sops
+kubectl logs -n octopilot-system -l app=secret-manager-controller | grep -i sops
 ```
 
 You should see successful decryption messages:
 ```
-✅ Loaded SOPS private key from secret 'microscaler-system/sops-gpg-key'
+✅ Loaded SOPS private key from secret 'octopilot-system/sops-gpg-key'
 🔑 SOPS file requires GPG key fingerprints: ABC12345DEF67890...
 ✅ SOPS decryption successful
 ```
 
 Or for AGE:
 ```
-✅ Loaded SOPS private key from secret 'microscaler-system/sops-age-key'
+✅ Loaded SOPS private key from secret 'octopilot-system/sops-age-key'
 ✅ SOPS decryption successful
 ```
 
@@ -364,7 +364,7 @@ SOPS private keys should be placed in the **same namespace** as the `SecretManag
 
 1. Verify GPG key matches the encryption key:
    ```bash
-   kubectl get secret sops-gpg-key -n microscaler-system -o jsonpath='{.data.private\.key}' | base64 -d | gpg --import
+   kubectl get secret sops-gpg-key -n octopilot-system -o jsonpath='{.data.private\.key}' | base64 -d | gpg --import
    ```
 2. Check key fingerprint matches `.sops.yaml`:
    ```bash
@@ -376,7 +376,7 @@ SOPS private keys should be placed in the **same namespace** as the `SecretManag
 
 1. Verify AGE key format:
    ```bash
-   kubectl get secret sops-age-key -n microscaler-system -o jsonpath='{.data.private\.key}' | base64 -d
+   kubectl get secret sops-age-key -n octopilot-system -o jsonpath='{.data.private\.key}' | base64 -d
    ```
    Should start with: `AGE-SECRET-KEY-1`
 2. Check public key matches `.sops.yaml`:
@@ -394,10 +394,10 @@ SOPS private keys should be placed in the **same namespace** as the `SecretManag
 1. Verify the secret exists:
    ```bash
    # For GPG
-   kubectl get secret sops-gpg-key -n microscaler-system
+   kubectl get secret sops-gpg-key -n octopilot-system
    
    # For AGE
-   kubectl get secret sops-age-key -n microscaler-system
+   kubectl get secret sops-age-key -n octopilot-system
    ```
 2. Check the `gpgSecretRef` or `ageSecretRef` in SecretManagerConfig
 3. Ensure the namespace matches the SecretManagerConfig namespace
@@ -413,7 +413,7 @@ SOPS private keys should be placed in the **same namespace** as the `SecretManag
 
 1. Verify the key is in ASCII-armored format:
    ```bash
-   kubectl get secret sops-gpg-key -n microscaler-system -o jsonpath='{.data.private\.key}' | base64 -d | head -1
+   kubectl get secret sops-gpg-key -n octopilot-system -o jsonpath='{.data.private\.key}' | base64 -d | head -1
    ```
    Should show: `-----BEGIN PGP PRIVATE KEY BLOCK-----`
 2. Re-export the key if needed:
@@ -425,7 +425,7 @@ SOPS private keys should be placed in the **same namespace** as the `SecretManag
 
 1. Verify the key format:
    ```bash
-   kubectl get secret sops-age-key -n microscaler-system -o jsonpath='{.data.private\.key}' | base64 -d | head -1
+   kubectl get secret sops-age-key -n octopilot-system -o jsonpath='{.data.private\.key}' | base64 -d | head -1
    ```
    Should start with: `AGE-SECRET-KEY-1`
 2. Regenerate the key if needed:

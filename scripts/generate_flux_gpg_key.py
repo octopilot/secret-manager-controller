@@ -3,7 +3,7 @@
 Generate a new GPG key for Flux SOPS encryption.
 
 This script:
-1. Generates a new GPG key pair for flux@microscaler.io
+1. Generates a new GPG key pair for flux@octopilot.io
 2. Exports the private key (for GitHub secret)
 3. Shows the key fingerprint (for .sops.yaml)
 4. Provides instructions for updating configuration
@@ -52,14 +52,14 @@ def check_gpg_installed():
 
 
 def generate_gpg_key():
-    """Generate a new GPG key for flux@microscaler.io."""
+    """Generate a new GPG key for flux@octopilot.io."""
     log_info("Generating GPG key for Flux SOPS...")
     
     # Create batch file for key generation
     batch_content = """Key-Type: RSA
 Key-Length: 4096
 Name-Real: Flux SOPS Key
-Name-Email: flux@microscaler.io
+Name-Email: flux@octopilot.io
 Expire-Date: 0
 %no-protection
 %commit
@@ -87,7 +87,7 @@ Expire-Date: 0
         
         # Get the key fingerprint
         result = run_command(
-            "gpg --list-keys --keyid-format LONG flux@microscaler.io",
+            "gpg --list-keys --keyid-format LONG flux@octopilot.io",
             check=True
         )
         
@@ -102,7 +102,7 @@ Expire-Date: 0
                     key_id = parts[1].split()[0]
                     # Get full fingerprint
                     fp_result = run_command(
-                        f"gpg --fingerprint --keyid-format LONG flux@microscaler.io",
+                        f"gpg --fingerprint --keyid-format LONG flux@octopilot.io",
                         check=True
                     )
                     for fp_line in fp_result.stdout.split('\n'):
@@ -115,7 +115,7 @@ Expire-Date: 0
         if not fingerprint:
             # Fallback: try to get it from key list
             result = run_command(
-                "gpg --list-keys --fingerprint --keyid-format LONG flux@microscaler.io",
+                "gpg --list-keys --fingerprint --keyid-format LONG flux@octopilot.io",
                 check=True
             )
             for line in result.stdout.split('\n'):
@@ -127,7 +127,7 @@ Expire-Date: 0
         
         if not fingerprint:
             log_error("Could not extract fingerprint. Please run manually:")
-            log_error("  gpg --list-keys --fingerprint --keyid-format LONG flux@microscaler.io")
+            log_error("  gpg --list-keys --fingerprint --keyid-format LONG flux@octopilot.io")
             sys.exit(1)
         
         return fingerprint
@@ -178,12 +178,12 @@ def main():
     
     # Check if key already exists
     result = run_command(
-        "gpg --list-keys flux@microscaler.io",
+        "gpg --list-keys flux@octopilot.io",
         check=False
     )
     
     if result.returncode == 0:
-        log_error("GPG key for flux@microscaler.io already exists!")
+        log_error("GPG key for flux@octopilot.io already exists!")
         log_info("Existing key:")
         print(result.stdout)
         response = input("\nDo you want to generate a new key anyway? (yes/no): ")

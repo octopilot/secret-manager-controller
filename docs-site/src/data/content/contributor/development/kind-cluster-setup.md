@@ -445,10 +445,10 @@ kubectl config current-context
 kubectl apply -k config/
 
 # Check deployments
-kubectl get deployments -n microscaler-system
+kubectl get deployments -n octopilot-system
 
 # View logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller -f
+kubectl logs -n octopilot-system -l app=secret-manager-controller -f
 ```
 
 ### Load Images
@@ -599,7 +599,7 @@ docker rm secret-manager-controller-registry 2>/dev/null || true
 | **Docker Registry** | Local image storage | Build/push images without external registry |
 | **FluxCD CRDs** | GitRepository support | Controller watches GitRepository CRs |
 | **ArgoCD CRDs** | Application support | Controller watches Application CRs |
-| **microscaler-system Namespace** | Controller namespace | Where controller runs |
+| **octopilot-system Namespace** | Controller namespace | Where controller runs |
 
 ### Network Architecture
 

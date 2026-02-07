@@ -29,7 +29,7 @@
 #
 # This example is for the dev-cf environment.
 
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: sam-activity-dev-cf-secrets

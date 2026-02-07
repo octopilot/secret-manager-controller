@@ -433,7 +433,7 @@ mod tests {
                 "name": "test-config",
                 "namespace": "default",
                 "uid": "12345",
-                "apiVersion": "secret-management.microscaler.io/v1beta1"
+                "apiVersion": "secret-management.octopilot.io/v1beta1"
             },
             "severity": "warning",
             "timestamp": "2024-01-01T00:00:00Z",

@@ -20,7 +20,7 @@ apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: my-secrets-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
 spec:
   url: https://github.com/your-org/your-secrets-repo
   interval: 5m
@@ -37,7 +37,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-secrets-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
 ```
 
 ### ArgoCD
@@ -124,7 +124,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: git-credentials
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 stringData:
   username: your-username
@@ -213,7 +213,7 @@ spec:
 **Solution:**
 1. Verify the GitRepository exists:
    ```bash
-   kubectl get gitrepository -n microscaler-system
+   kubectl get gitrepository -n octopilot-system
    ```
 2. Check the `sourceRef` name and namespace match
 3. Ensure FluxCD source-controller is running
@@ -229,7 +229,7 @@ spec:
    ```
 2. Verify GitRepository status:
    ```bash
-   kubectl describe gitrepository my-repo -n microscaler-system
+   kubectl describe gitrepository my-repo -n octopilot-system
    ```
 3. Check artifact directory exists:
    ```bash

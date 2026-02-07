@@ -159,7 +159,7 @@ The new feature provides...
 ## Usage
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 spec:
   # Configuration here
@@ -266,7 +266,7 @@ Code blocks support syntax highlighting for various languages:
 
 ```markdown
 \`\`\`yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 spec:
   sourceRef:
@@ -639,7 +639,7 @@ The example feature provides...
 ## Usage
 
 \`\`\`yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: example

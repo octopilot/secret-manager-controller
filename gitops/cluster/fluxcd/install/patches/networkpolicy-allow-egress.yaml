@@ -1,12 +1,12 @@
-# NetworkPolicy patch to allow ingress from microscaler-system namespace
+# NetworkPolicy patch to allow ingress from octopilot-system namespace
 # This patch modifies FluxCD's allow-egress NetworkPolicy to allow the
-# secret-manager-controller (running in microscaler-system namespace) to
+# secret-manager-controller (running in octopilot-system namespace) to
 # access the source-controller service (running in flux-system namespace).
 #
 # This is required because:
 # 1. The controller needs to download FluxCD artifacts via HTTP from source-controller
 # 2. FluxCD's default network policy only allows ingress from flux-system namespace
-# 3. The controller runs in microscaler-system namespace
+# 3. The controller runs in octopilot-system namespace
 #
 # Apply this patch using:
 #   kubectl patch networkpolicy allow-egress -n flux-system --type=strategic --patch-file=patches/networkpolicy-allow-egress.yaml
@@ -24,17 +24,17 @@ spec:
   - from:
     # Allow ingress from pods within flux-system namespace (default FluxCD behavior)
     - podSelector: {}
-    # Allow ingress from microscaler-system namespace (for secret-manager-controller)
+    # Allow ingress from octopilot-system namespace (for secret-manager-controller)
     - namespaceSelector:
         matchLabels:
-          name: microscaler-system
+          name: octopilot-system
     # Alternative selector using matchExpressions (more flexible)
     - namespaceSelector:
         matchExpressions:
         - key: name
           operator: In
           values:
-          - microscaler-system
+          - octopilot-system
     # Explicitly allow ports 80 (service port) and 9090 (container port)
     ports:
     - protocol: TCP

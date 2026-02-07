@@ -4,30 +4,30 @@ This directory contains Kustomize patches for modifying FluxCD-managed resources
 
 ## Purpose
 
-FluxCD installs resources in the `flux-system` namespace with default configurations that may not allow access from other namespaces. These patches modify FluxCD resources to enable the secret-manager-controller (running in `microscaler-system` namespace) to access FluxCD services.
+FluxCD installs resources in the `flux-system` namespace with default configurations that may not allow access from other namespaces. These patches modify FluxCD resources to enable the secret-manager-controller (running in `octopilot-system` namespace) to access FluxCD services.
 
 ## Patches
 
 ### `networkpolicy-allow-egress.yaml`
 
-Modifies FluxCD's `allow-egress` NetworkPolicy to allow ingress from the `microscaler-system` namespace.
+Modifies FluxCD's `allow-egress` NetworkPolicy to allow ingress from the `octopilot-system` namespace.
 
 **Why this is needed:**
 - The controller needs to download FluxCD artifacts via HTTP from `source-controller` service
 - FluxCD's default network policy only allows ingress from `flux-system` namespace
-- The controller runs in `microscaler-system` namespace
+- The controller runs in `octopilot-system` namespace
 - Without this patch, artifact downloads will timeout
 
 **What it does:**
-- Adds `namespaceSelector` to allow ingress from `microscaler-system` namespace
+- Adds `namespaceSelector` to allow ingress from `octopilot-system` namespace
 - Explicitly allows ports 80 (service port) and 9090 (container port)
 
 ### Namespace Label
 
-The `microscaler-system` namespace label is defined in `config/namespace.yaml` (DRY principle).
+The `octopilot-system` namespace label is defined in `config/namespace.yaml` (DRY principle).
 
 **Why this is needed:**
-- The NetworkPolicy patch uses `namespaceSelector.matchLabels.name: microscaler-system`
+- The NetworkPolicy patch uses `namespaceSelector.matchLabels.name: octopilot-system`
 - This label must exist on the namespace for the selector to match
 - The label is included in the main kustomization via `config/namespace.yaml`
 
@@ -72,7 +72,7 @@ kubectl patch networkpolicy allow-egress -n flux-system \
 kubectl get networkpolicy allow-egress -n flux-system -o yaml | grep -A 10 "ingress:"
 
 # Check namespace label
-kubectl get namespace microscaler-system -o jsonpath='{.metadata.labels.name}'
+kubectl get namespace octopilot-system -o jsonpath='{.metadata.labels.name}'
 ```
 
 ## When to Apply
@@ -102,18 +102,18 @@ Patches are included in the kustomization, so no separate patch application step
    ```bash
    kubectl get networkpolicy allow-egress -n flux-system -o yaml | grep -A 15 "ingress:"
    ```
-   Should show `namespaceSelector` with `name: microscaler-system`
+   Should show `namespaceSelector` with `name: octopilot-system`
 
 2. **Verify namespace label exists:**
    ```bash
-   kubectl get namespace microscaler-system -o jsonpath='{.metadata.labels.name}'
+   kubectl get namespace octopilot-system -o jsonpath='{.metadata.labels.name}'
    ```
-   Should output: `microscaler-system`
+   Should output: `octopilot-system`
 
 3. **Test connectivity from controller pod:**
    ```bash
-   CONTROLLER_POD=$(kubectl get pods -n microscaler-system -l app=secret-manager-controller -o jsonpath='{.items[0].metadata.name}')
-   kubectl exec -n microscaler-system $CONTROLLER_POD -- \
+   CONTROLLER_POD=$(kubectl get pods -n octopilot-system -l app=secret-manager-controller -o jsonpath='{.items[0].metadata.name}')
+   kubectl exec -n octopilot-system $CONTROLLER_POD -- \
      curl -v http://source-controller.flux-system.svc.cluster.local/gitrepository/tilt/gitrepository-tilt/<sha>.tar.gz
    ```
    Should return HTTP 200 OK
@@ -132,10 +132,10 @@ Consider adding this to your FluxCD upgrade procedures.
 
 ## Security Considerations
 
-These patches allow ingress from the `microscaler-system` namespace to FluxCD services. This is necessary for the controller to function, but consider:
+These patches allow ingress from the `octopilot-system` namespace to FluxCD services. This is necessary for the controller to function, but consider:
 
 - The NetworkPolicy still restricts access to specific ports (80, 9090)
-- Only pods in `microscaler-system` namespace can access FluxCD services
+- Only pods in `octopilot-system` namespace can access FluxCD services
 - The controller has RBAC permissions to access FluxCD resources
 
 If you need stricter security, consider:

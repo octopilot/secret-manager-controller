@@ -24,7 +24,7 @@ OpenTelemetry provides a standardized approach to observability:
 Configure OpenTelemetry in your `SecretManagerConfig`:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config

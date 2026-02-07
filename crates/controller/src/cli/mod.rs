@@ -203,7 +203,7 @@ enum Commands {
     /// Install the Secret Manager Controller to the cluster
     /// Similar to `flux install`, this command installs CRDs, RBAC, and deployment manifests
     Install {
-        /// Kubernetes namespace to install into (default: microscaler-system)
+        /// Kubernetes namespace to install into (default: octopilot-system)
         #[arg(short, long)]
         namespace: Option<String>,
 
@@ -218,7 +218,7 @@ enum Commands {
     /// Check the Secret Manager Controller installation
     /// Similar to `flux check`, this command verifies that the controller is properly installed and healthy
     Check {
-        /// Kubernetes namespace to check (default: microscaler-system)
+        /// Kubernetes namespace to check (default: octopilot-system)
         #[arg(short, long)]
         namespace: Option<String>,
 

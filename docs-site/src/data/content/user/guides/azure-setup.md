@@ -20,7 +20,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     azure.workload.identity/client-id: <client-id>
 ```
@@ -34,7 +34,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: azure-credentials
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 stringData:
   AZURE_CLIENT_ID: <client-id>
@@ -45,7 +45,7 @@ stringData:
 ## Configuration Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: azure-secrets

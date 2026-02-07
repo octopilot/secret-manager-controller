@@ -24,7 +24,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: secret-manager-controller-config
-  namespace: microscaler-system
+  namespace: octopilot-system
 data:
   metrics_port: "5000"
   log_level: "INFO"
@@ -129,7 +129,7 @@ Reference to the GitOps source (FluxCD GitRepository or ArgoCD Application).
 sourceRef:
   kind: GitRepository  # or "Application" for ArgoCD
   name: my-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
   gitCredentials:  # Optional - for ArgoCD private repos
     name: git-credentials
     namespace: my-namespace
@@ -389,7 +389,7 @@ Hot reload configuration for controller-level settings.
 hotReload:
   enabled: true  # Default: false
   configMapName: secret-manager-controller-config  # Default: "secret-manager-controller-config"
-  configMapNamespace: microscaler-system  # Optional (defaults to controller namespace)
+  configMapNamespace: octopilot-system  # Optional (defaults to controller namespace)
 ```
 
 **Fields:**
@@ -688,7 +688,7 @@ logging:
 hotReload:
   enabled: true
   configMapName: secret-manager-controller-config
-  configMapNamespace: microscaler-system
+  configMapNamespace: octopilot-system
 ```
 
 **Behavior:**
@@ -751,7 +751,7 @@ notifications:
 ### Minimal Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-secrets
@@ -771,7 +771,7 @@ spec:
 ### Full Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-secrets

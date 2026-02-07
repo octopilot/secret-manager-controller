@@ -7,13 +7,13 @@ Common issues, error messages, and solutions for the Secret Manager Controller.
 ### Check Pod Status
 
 ```bash
-kubectl get pods -n microscaler-system
+kubectl get pods -n octopilot-system
 ```
 
 ### Check Logs
 
 ```bash
-kubectl logs -n microscaler-system -l app=secret-manager-controller
+kubectl logs -n octopilot-system -l app=secret-manager-controller
 ```
 
 ### Common Causes
@@ -52,7 +52,7 @@ kubectl describe gitrepository <name> -n <namespace>
    ```
 3. **Verify RBAC**: Ensure the controller has permissions to read GitRepository resources
    ```bash
-   kubectl auth can-i get gitrepositories -n flux-system --as=system:serviceaccount:microscaler-system:secret-manager-controller
+   kubectl auth can-i get gitrepositories -n flux-system --as=system:serviceaccount:octopilot-system:secret-manager-controller
    ```
 4. **Check GitRepository status**: Ensure the GitRepository has successfully synced
    ```bash
@@ -104,7 +104,7 @@ kubectl get secret sops-gpg-key -n <namespace> -o jsonpath='{.data.private\.key}
 
 3. **Check secret permissions**: Ensure the controller ServiceAccount can read the secret
    ```bash
-   kubectl auth can-i get secret sops-gpg-key -n <namespace> --as=system:serviceaccount:microscaler-system:secret-manager-controller
+   kubectl auth can-i get secret sops-gpg-key -n <namespace> --as=system:serviceaccount:octopilot-system:secret-manager-controller
    ```
 
 ---
@@ -139,7 +139,7 @@ ERROR 401 Unauthorized: Access token is missing or invalid
 1. **Verify IAM role/credentials**: Check that the IAM role has the required permissions
 2. **Check IRSA setup** (if using EKS):
    ```bash
-   kubectl get serviceaccount secret-manager-controller -n microscaler-system -o yaml
+   kubectl get serviceaccount secret-manager-controller -n octopilot-system -o yaml
    ```
 3. **Verify region**: Ensure the region in your SecretManagerConfig matches your AWS credentials
 
@@ -147,7 +147,7 @@ ERROR 401 Unauthorized: Access token is missing or invalid
 
 1. **Verify Workload Identity** (if using GKE):
    ```bash
-   kubectl get serviceaccount secret-manager-controller -n microscaler-system -o yaml
+   kubectl get serviceaccount secret-manager-controller -n octopilot-system -o yaml
    ```
 2. **Check service account permissions**: Ensure the GCP service account has `roles/secretmanager.admin` or `roles/secretmanager.secretAccessor`
 3. **Verify project ID**: Ensure the project ID in your SecretManagerConfig is correct
@@ -177,7 +177,7 @@ WARN artifact integrity check failed, retrying
 kubectl get gitrepository <name> -n <namespace> -o yaml | grep -A 5 artifact
 
 # Check controller logs for artifact details
-kubectl logs -n microscaler-system -l app=secret-manager-controller | grep artifact
+kubectl logs -n octopilot-system -l app=secret-manager-controller | grep artifact
 ```
 
 ### Solutions
@@ -208,7 +208,7 @@ ERROR failed to create secret in cloud provider
 kubectl get secretmanagerconfig <name> -n <namespace> -o yaml
 
 # Check controller logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller | grep -i secret
+kubectl logs -n octopilot-system -l app=secret-manager-controller | grep -i secret
 ```
 
 ### Common Issues
@@ -287,7 +287,7 @@ INFO hot reload disabled for this workload
 kubectl get secretmanagerconfig <name> -n <namespace> -o yaml | grep -A 5 hotReload
 
 # Check controller logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller | grep -i reload
+kubectl logs -n octopilot-system -l app=secret-manager-controller | grep -i reload
 ```
 
 ### Solutions
@@ -366,10 +366,10 @@ spec:
 
 ```bash
 # Follow logs in real-time
-kubectl logs -f -n microscaler-system -l app=secret-manager-controller
+kubectl logs -f -n octopilot-system -l app=secret-manager-controller
 
 # Check logs for specific errors
-kubectl logs -n microscaler-system -l app=secret-manager-controller | grep -i error
+kubectl logs -n octopilot-system -l app=secret-manager-controller | grep -i error
 ```
 
 ### Verify SecretManagerConfig Status

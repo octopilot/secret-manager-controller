@@ -17,7 +17,7 @@ apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: my-secrets-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
 spec:
   url: https://github.com/your-org/your-secrets-repo
   interval: 5m
@@ -36,7 +36,7 @@ kubectl apply -f gitrepository.yaml
 Create a `SecretManagerConfig` resource that references your GitRepository:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
@@ -45,7 +45,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-secrets-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -119,7 +119,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: sops-gpg-key
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 data:
   private.key: <base64-encoded-gpg-private-key>
@@ -134,7 +134,7 @@ spec:
       enabled: true
       gpgSecretRef:
         name: sops-gpg-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 
@@ -145,7 +145,7 @@ spec:
 Check the controller logs:
 
 ```bash
-kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=100
+kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=100
 ```
 
 Common issues:

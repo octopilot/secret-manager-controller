@@ -591,7 +591,7 @@ def publish_pact_files(
                 cmd.extend([
                     "-v", f"{temp_path}:/pacts/{temp_dir_base}",
                     "-w", f"/pacts/{temp_dir_base}",
-                    "docker.io/microscaler/pact-cli:latest",
+                    "docker.io/octopilot/pact-cli:latest",
                     "publish", ".",
                     "--consumer-app-version", provider_version,
                     "--branch", branch,

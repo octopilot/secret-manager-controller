@@ -1,11 +1,11 @@
 #!/bin/bash
 # Build and publish the base image for Secret Manager Controller
 # This image contains all runtime dependencies (git, curl, gnupg, kustomize, sops)
-# and is published to ghcr.io/microscaler/secret-manager-controller-base-image
+# and is published to ghcr.io/octopilot/secret-manager-controller-base-image
 
 set -euo pipefail
 
-IMAGE_NAME="ghcr.io/microscaler/secret-manager-controller-base-image"
+IMAGE_NAME="ghcr.io/octopilot/secret-manager-controller-base-image"
 VERSION="${1:-latest}"
 DOCKERFILE="${2:-Dockerfile.base}"
 

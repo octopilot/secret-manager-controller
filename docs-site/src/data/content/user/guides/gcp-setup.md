@@ -19,7 +19,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     iam.gke.io/gcp-service-account: secret-manager@PROJECT_ID.iam.gserviceaccount.com
 ```
@@ -33,7 +33,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: gcp-credentials
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 stringData:
   GOOGLE_APPLICATION_CREDENTIALS_JSON: |
@@ -47,7 +47,7 @@ stringData:
 ## Configuration Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: gcp-secrets
@@ -134,7 +134,7 @@ If using Workload Identity, ensure the Kubernetes ServiceAccount is bound to the
 gcloud iam service-accounts add-iam-policy-binding \
   secret-manager@PROJECT_ID.iam.gserviceaccount.com \
   --role roles/iam.workloadIdentityUser \
-  --member "serviceAccount:PROJECT_ID.svc.id.goog[microscaler-system/secret-manager-controller]"
+  --member "serviceAccount:PROJECT_ID.svc.id.goog[octopilot-system/secret-manager-controller]"
 ```
 
 ### Verify Permissions

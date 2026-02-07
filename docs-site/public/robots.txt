@@ -2,7 +2,7 @@ User-agent: *
 Allow: /
 
 # Sitemap location
-Sitemap: https://secret-manager-controller.microscaler.io/sitemap.xml
+Sitemap: https://octopilot.github.io/secret-manager-controller/sitemap.xml
 
 # Disallow admin or private areas if any
 # Disallow: /admin/

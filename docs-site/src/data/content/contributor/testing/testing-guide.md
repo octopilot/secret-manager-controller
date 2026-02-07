@@ -377,7 +377,7 @@ RUST_BACKTRACE=1 cargo test --lib test_name
 RUST_LOG=debug cargo test --test integration_* -- --nocapture
 
 # View controller logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller -f
+kubectl logs -n octopilot-system -l app=secret-manager-controller -f
 
 # View mock server logs
 kubectl logs -n secret-manager-controller-pact-broker -l app=pact-infrastructure -f

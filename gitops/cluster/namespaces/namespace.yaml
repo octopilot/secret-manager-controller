@@ -1,7 +1,7 @@
 ---
 # Consolidated Namespace Definitions
 # All namespaces for ArgoCD and FluxCD environments
-# Note: microscaler-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
+# Note: octopilot-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
 # and is not managed by GitOps to ensure it's always available
 ---
 apiVersion: v1

@@ -7,7 +7,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/microscaler/secret-manager-controller.git
+    repoURL: https://github.com/octopilot/secret-manager-controller.git
     targetRevision: main
     path: deployment-configuration/profiles/tilt
   destination:

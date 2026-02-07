@@ -9,7 +9,7 @@ interface MetaTagsProps {
 }
 
 const MetaTags: Component<MetaTagsProps> = (props) => {
-  const baseUrl = () => props.baseUrl || 'https://secret-manager-controller.microscaler.io';
+  const baseUrl = () => props.baseUrl || 'https://octopilot.github.io/secret-manager-controller';
 
   const getPageMetadata = () => {
     // Landing page

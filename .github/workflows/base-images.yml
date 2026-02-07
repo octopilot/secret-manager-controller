@@ -38,7 +38,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  REGISTRY_ORG: microscaler
 
 jobs:
   build-base-images:
@@ -48,22 +47,21 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      REGISTRY_ORG: ${{ github.repository_owner }}
     
     strategy:
       matrix:
         image:
           - name: rust-builder-base-image
             dockerfile: dockerfiles/Dockerfile.base.rust-builder
-            ghcr_name: ghcr.io/microscaler/rust-builder-base-image
-            dockerhub_name: docker.io/microscaler/rust-builder-base-image
+            image_suffix: rust-builder-base-image
           - name: controller-base-image
             dockerfile: dockerfiles/Dockerfile.base.controller
-            ghcr_name: ghcr.io/microscaler/secret-manager-controller-base-image
-            dockerhub_name: docker.io/microscaler/secret-manager-controller-base-image
+            image_suffix: secret-manager-controller-base-image
           - name: pact-mock-server-base-image
             dockerfile: dockerfiles/Dockerfile.base.pact-mock-server
-            ghcr_name: ghcr.io/microscaler/pact-mock-server-base-image
-            dockerhub_name: docker.io/microscaler/pact-mock-server-base-image
+            image_suffix: pact-mock-server-base-image
     
     # Only build images that have changed or if manually triggered
     steps:
@@ -140,12 +138,12 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           push: true
           tags: |
-            ${{ matrix.image.ghcr_name }}:${{ steps.version.outputs.version }}
-            ${{ matrix.image.ghcr_name }}:latest
-            ${{ matrix.image.dockerhub_name }}:${{ steps.version.outputs.version }}
-            ${{ matrix.image.dockerhub_name }}:latest
-          cache-from: type=registry,ref=${{ matrix.image.ghcr_name }}:buildcache
-          cache-to: type=registry,ref=${{ matrix.image.ghcr_name }}:buildcache,mode=max
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_ORG }}/${{ matrix.image.image_suffix }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_ORG }}/${{ matrix.image.image_suffix }}:latest
+            docker.io/${{ env.REGISTRY_ORG }}/${{ matrix.image.image_suffix }}:${{ steps.version.outputs.version }}
+            docker.io/${{ env.REGISTRY_ORG }}/${{ matrix.image.image_suffix }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.REGISTRY_ORG }}/${{ matrix.image.image_suffix }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.REGISTRY_ORG }}/${{ matrix.image.image_suffix }}:buildcache,mode=max
           platforms: linux/amd64,linux/arm64
     
       - name: Build summary

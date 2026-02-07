@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 
-def get_controller_pod(namespace: str = "microscaler-system") -> str:
+def get_controller_pod(namespace: str = "octopilot-system") -> str:
     """Get the name of the controller pod."""
     result = subprocess.run(
         ["kubectl", "get", "pods", "-n", namespace, "-l", "app=secret-manager-controller", "-o", "jsonpath={.items[0].metadata.name}"],
@@ -204,8 +204,8 @@ Examples:
     )
     parser.add_argument(
         "--namespace",
-        default="microscaler-system",
-        help="Kubernetes namespace for controller pod (default: microscaler-system)"
+        default="octopilot-system",
+        help="Kubernetes namespace for controller pod (default: octopilot-system)"
     )
     parser.add_argument(
         "--test-files-dir",

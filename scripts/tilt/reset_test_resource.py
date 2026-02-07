@@ -125,7 +125,7 @@ Examples:
         # Wait for CRD to be established before applying resources
         # This prevents "no matches for kind" errors when resources are applied too quickly
         print("⏳ Waiting for CRD to be established...")
-        crd_name = "secretmanagerconfigs.secret-management.microscaler.io"
+        crd_name = "secretmanagerconfigs.secret-management.octopilot.io"
         max_attempts = 30  # Wait up to 1 minute
         crd_established = False
         

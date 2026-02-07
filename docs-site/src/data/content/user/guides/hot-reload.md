@@ -22,7 +22,7 @@ Hot reload enables applications to detect secret changes through:
 Enable hot reload in your `SecretManagerConfig`:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
@@ -37,7 +37,7 @@ spec:
 Configure hot reload at the controller level:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
@@ -45,7 +45,7 @@ spec:
   hotReload:
     enabled: true
     configMapName: secret-manager-controller-config
-    configMapNamespace: microscaler-system
+    configMapNamespace: octopilot-system
 ```
 
 **Fields:**

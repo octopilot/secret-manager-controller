@@ -125,7 +125,7 @@ def cleanup_unused_images():
     - Base images (rust:alpine, debian, etc.)
     - Pact broker images
     - Other dependencies we download
-    - Our published base images (docker.io/microscaler/*, ghcr.io/microscaler/*)
+    - Our published base images (docker.io/octopilot/*, ghcr.io/octopilot/*)
     This causes re-downloads and hits Docker rate limits.
     
     Tilt-specific images are handled separately by cleanup_old_tilt_images().
@@ -421,15 +421,15 @@ def cleanup_old_tilt_images():
         "kindest/node",
         "registry:",
         "registry/registry:",
-        "docker.io/microscaler/rust-builder-base-image",
-        "docker.io/microscaler/secret-manager-controller-base-image",
-        "docker.io/microscaler/pact-mock-server-base-image",
-        "ghcr.io/microscaler/rust-builder-base-image",
-        "ghcr.io/microscaler/secret-manager-controller-base-image",
-        "ghcr.io/microscaler/pact-mock-server-base-image",
-        "microscaler/rust-builder-base-image",
-        "microscaler/secret-manager-controller-base-image",
-        "microscaler/pact-mock-server-base-image",
+        "docker.io/octopilot/rust-builder-base-image",
+        "docker.io/octopilot/secret-manager-controller-base-image",
+        "docker.io/octopilot/pact-mock-server-base-image",
+        "ghcr.io/octopilot/rust-builder-base-image",
+        "ghcr.io/octopilot/secret-manager-controller-base-image",
+        "ghcr.io/octopilot/pact-mock-server-base-image",
+        "octopilot/rust-builder-base-image",
+        "octopilot/secret-manager-controller-base-image",
+        "octopilot/pact-mock-server-base-image",
     }
     
     # Get all images with tilt-* tags (all Tilt services)
@@ -482,15 +482,15 @@ def cleanup_old_tilt_images():
         
         # Also protect base images by repository name (regardless of tag)
         base_image_repos = [
-            "docker.io/microscaler/rust-builder-base-image",
-            "docker.io/microscaler/secret-manager-controller-base-image",
-            "docker.io/microscaler/pact-mock-server-base-image",
-            "ghcr.io/microscaler/rust-builder-base-image",
-            "ghcr.io/microscaler/secret-manager-controller-base-image",
-            "ghcr.io/microscaler/pact-mock-server-base-image",
-            "microscaler/rust-builder-base-image",
-            "microscaler/secret-manager-controller-base-image",
-            "microscaler/pact-mock-server-base-image",
+            "docker.io/octopilot/rust-builder-base-image",
+            "docker.io/octopilot/secret-manager-controller-base-image",
+            "docker.io/octopilot/pact-mock-server-base-image",
+            "ghcr.io/octopilot/rust-builder-base-image",
+            "ghcr.io/octopilot/secret-manager-controller-base-image",
+            "ghcr.io/octopilot/pact-mock-server-base-image",
+            "octopilot/rust-builder-base-image",
+            "octopilot/secret-manager-controller-base-image",
+            "octopilot/pact-mock-server-base-image",
         ]
         if repo in base_image_repos:
             is_protected = True

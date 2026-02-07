@@ -5,7 +5,7 @@ metadata:
   name: gitrepository-dev
   namespace: dev
 spec:
-  url: https://github.com/microscaler/secret-manager-controller.git
+  url: https://github.com/octopilot/secret-manager-controller.git
   ref:
     branch: main
   interval: 5m

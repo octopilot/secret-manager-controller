@@ -6,7 +6,7 @@ Complete reference for the `SecretManagerConfig` Custom Resource Definition.
 
 ### API Version
 
-`secret-management.microscaler.io/v1beta1`
+`secret-management.octopilot.io/v1beta1`
 
 ### Kind
 
@@ -15,7 +15,7 @@ Complete reference for the `SecretManagerConfig` Custom Resource Definition.
 ### Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
@@ -24,7 +24,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -35,7 +35,7 @@ spec:
       enabled: true
       gpgSecretRef:
         name: sops-gpg-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 
@@ -49,7 +49,7 @@ Reference to the GitOps source (GitRepository or Application).
 sourceRef:
   kind: GitRepository  # or "Application" for ArgoCD
   name: my-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
 ```
 
 | Field | Type | Description | Required | Default |
@@ -110,7 +110,7 @@ secrets:
     enabled: true
     gpgSecretRef:
       name: sops-gpg-key
-      namespace: microscaler-system
+      namespace: octopilot-system
       key: private.key
 ```
 
@@ -273,7 +273,7 @@ Hot reload configuration for controller-level settings.
 hotReload:
   enabled: false  # Default: false
   configMapName: secret-manager-controller-config
-  configMapNamespace: microscaler-system
+  configMapNamespace: octopilot-system
 ```
 
 | Field | Type | Description | Required | Default |

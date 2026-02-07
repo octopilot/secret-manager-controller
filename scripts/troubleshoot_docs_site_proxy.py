@@ -135,7 +135,7 @@ def check_connectivity(namespace: str, service_name: str, port: int) -> bool:
     
     # Try to exec into docs-site pod and test connection
     result = run_command(
-        ["kubectl", "get", "pods", "-n", "microscaler-system", "-l", "app=docs-site", "-o", "jsonpath={.items[0].metadata.name}"],
+        ["kubectl", "get", "pods", "-n", "octopilot-system", "-l", "app=docs-site", "-o", "jsonpath={.items[0].metadata.name}"],
         check=False
     )
     
@@ -151,7 +151,7 @@ def check_connectivity(namespace: str, service_name: str, port: int) -> bool:
     print(f"  Testing DNS resolution for {fqdn}")
     
     dns_result = run_command(
-        ["kubectl", "exec", "-n", "microscaler-system", pod_name, "--", "nslookup", fqdn],
+        ["kubectl", "exec", "-n", "octopilot-system", pod_name, "--", "nslookup", fqdn],
         check=False
     )
     
@@ -166,7 +166,7 @@ def check_connectivity(namespace: str, service_name: str, port: int) -> bool:
     print(f"  Testing HTTP connection to {url}")
     
     http_result = run_command(
-        ["kubectl", "exec", "-n", "microscaler-system", pod_name, "--", "wget", "-q", "-O-", "-T", "5", url],
+        ["kubectl", "exec", "-n", "octopilot-system", pod_name, "--", "wget", "-q", "-O-", "-T", "5", url],
         check=False
     )
     
@@ -183,7 +183,7 @@ def check_nginx_config(pod_name: str) -> bool:
     print(f"\n⚙️  Checking nginx configuration in {pod_name}")
     
     result = run_command(
-        ["kubectl", "exec", "-n", "microscaler-system", pod_name, "--", "cat", "/etc/nginx/conf.d/default.conf"],
+        ["kubectl", "exec", "-n", "octopilot-system", pod_name, "--", "cat", "/etc/nginx/conf.d/default.conf"],
         check=False
     )
     
@@ -236,7 +236,7 @@ def main():
     print("STEP 3: Check Docs-Site Pod")
     print("=" * 60)
     result = run_command(
-        ["kubectl", "get", "pods", "-n", "microscaler-system", "-l", "app=docs-site", "-o", "jsonpath={.items[0].metadata.name}"],
+        ["kubectl", "get", "pods", "-n", "octopilot-system", "-l", "app=docs-site", "-o", "jsonpath={.items[0].metadata.name}"],
         check=False
     )
     
@@ -268,8 +268,8 @@ def main():
         print("✅ All checks passed! The proxy should be working.")
         print("\nIf you're still seeing 502 errors:")
         print("  1. Rebuild the docs-site image: Tilt should auto-rebuild")
-        print("  2. Restart the docs-site pod: kubectl delete pod -n microscaler-system -l app=docs-site")
-        print("  3. Check nginx logs: kubectl logs -n microscaler-system -l app=docs-site")
+        print("  2. Restart the docs-site pod: kubectl delete pod -n octopilot-system -l app=docs-site")
+        print("  3. Check nginx logs: kubectl logs -n octopilot-system -l app=docs-site")
     else:
         print("❌ Issues found:")
         for issue in issues:
@@ -282,9 +282,9 @@ def main():
         print("     kubectl logs -n secret-manager-controller-pact-broker -l app=pact-infrastructure -c gcp-mock-server")
         print("  3. Rebuild docs-site image (Tilt should auto-rebuild on nginx config changes)")
         print("  4. Restart docs-site pod:")
-        print("     kubectl delete pod -n microscaler-system -l app=docs-site")
+        print("     kubectl delete pod -n octopilot-system -l app=docs-site")
         print("  5. Check nginx error logs:")
-        print("     kubectl logs -n microscaler-system -l app=docs-site")
+        print("     kubectl logs -n octopilot-system -l app=docs-site")
     
     return 0 if not issues else 1
 

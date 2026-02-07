@@ -5,7 +5,7 @@ Export GPG private key from local keyring and create Kubernetes secrets in all n
 This script:
 1. Reads the GPG key ID from .sops.yaml (the key used to encrypt SOPS files)
 2. Exports that private key from the local GPG keyring
-3. Creates Kubernetes secrets in all required namespaces (tilt, dev, stage, prod, microscaler-system)
+3. Creates Kubernetes secrets in all required namespaces (tilt, dev, stage, prod, octopilot-system)
 
 The key MUST be the same one used to encrypt the SOPS files (identified in .sops.yaml).
 """
@@ -152,7 +152,7 @@ def main():
     parser.add_argument(
         "--all-environments",
         action="store_true",
-        help="Create secrets in all environment namespaces (tilt, dev, stage, prod, microscaler-system)",
+        help="Create secrets in all environment namespaces (tilt, dev, stage, prod, octopilot-system)",
     )
     parser.add_argument(
         "--dry-run",
@@ -185,10 +185,10 @@ def main():
     if args.namespace:
         namespaces = [args.namespace]
     elif args.all_environments:
-        namespaces = ["tilt", "dev", "stage", "prod", "microscaler-system"]
+        namespaces = ["tilt", "dev", "stage", "prod", "octopilot-system"]
     else:
         # Default: all environments
-        namespaces = ["tilt", "dev", "stage", "prod", "microscaler-system"]
+        namespaces = ["tilt", "dev", "stage", "prod", "octopilot-system"]
 
     if args.dry_run:
         print("🔍 DRY RUN - Would create secrets:")

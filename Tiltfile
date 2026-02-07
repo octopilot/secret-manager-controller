@@ -211,7 +211,7 @@ local_resource(
 # ====================
 # Export GPG private key from local keyring (using .sops.yaml key ID) and create Kubernetes secrets
 # This allows the controller to decrypt SOPS-encrypted files
-# Creates secrets in all environment namespaces (tilt, dev, stage, prod, microscaler-system)
+# Creates secrets in all environment namespaces (tilt, dev, stage, prod, octopilot-system)
 # Optional - only runs if .sops.yaml exists and GPG key is available locally
 
 local_resource(
@@ -228,7 +228,7 @@ local_resource(
 # ====================
 # Deploy to Kubernetes
 # ====================
-# Note: microscaler-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
+# Note: octopilot-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
 # and is not managed by Tilt to ensure it's always available
 
 # Note: CRD generation and application is now handled by build-all-binaries
@@ -520,7 +520,7 @@ local_resource(
 # Using top-level kustomization.yaml as entrypoint
 # This includes namespaces and all environment configurations
 # Note: allow_duplicates=True is safe - Kubernetes handles idempotent applies gracefully
-# Note: microscaler-system namespace is created by Kind cluster setup, not by GitOps
+# Note: octopilot-system namespace is created by Kind cluster setup, not by GitOps
 # Kubernetes handles idempotent applies gracefully, so duplicates are safe
 # CRITICAL: Must wait for build-all-binaries to ensure CRD is applied before SecretManagerConfig resources
 # We use a local_resource to apply gitops resources after CRD is ready

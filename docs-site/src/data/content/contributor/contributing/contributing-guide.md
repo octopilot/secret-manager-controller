@@ -6,7 +6,7 @@ Thank you for your interest in contributing to the Secret Manager Controller! Th
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/microscaler/secret-manager-controller.git
+   git clone https://github.com/octopilot/secret-manager-controller.git
    cd secret-manager-controller
    ```
 

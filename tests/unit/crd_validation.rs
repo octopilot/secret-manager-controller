@@ -14,7 +14,7 @@ use controller::crd::{
 #[test]
 fn test_gcp_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -23,7 +23,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: gcp
     gcp:
@@ -97,7 +97,7 @@ spec:
 #[test]
 fn test_gcp_provider_without_type_field() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -106,7 +106,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -131,7 +131,7 @@ spec:
 #[test]
 fn test_gcp_provider_without_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -140,7 +140,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -166,7 +166,7 @@ spec:
 #[test]
 fn test_aws_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -175,7 +175,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: aws
     aws:
@@ -208,7 +208,7 @@ spec:
 #[test]
 fn test_aws_provider_with_configs() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -217,7 +217,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     aws:
       region: us-east-1
@@ -240,7 +240,7 @@ spec:
 #[test]
 fn test_azure_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -249,7 +249,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: azure
     azure:
@@ -283,7 +283,7 @@ spec:
 #[test]
 fn test_azure_provider_with_configs() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -292,7 +292,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     azure:
       vaultName: my-vault
@@ -319,7 +319,7 @@ spec:
 #[test]
 fn test_argocd_application_source() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd
@@ -349,7 +349,7 @@ spec:
 #[test]
 fn test_minimal_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-minimal
@@ -357,7 +357,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -372,7 +372,7 @@ spec:
     // SourceRef kind defaults to "GitRepository"
     assert_eq!(config.spec.source_ref.kind, "GitRepository");
     assert_eq!(config.spec.source_ref.name, "my-repo");
-    assert_eq!(config.spec.source_ref.namespace, "microscaler-system");
+    assert_eq!(config.spec.source_ref.namespace, "octopilot-system");
 
     // Secrets config minimal
     assert_eq!(config.spec.secrets.environment, "dev");
@@ -400,7 +400,7 @@ spec:
 #[test]
 fn test_otel_otlp_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-otel-otlp
@@ -408,7 +408,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -447,7 +447,7 @@ spec:
 #[test]
 fn test_otel_datadog_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-otel-datadog
@@ -455,7 +455,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -497,7 +497,7 @@ spec:
 #[test]
 fn test_gcp_parameter_manager_store() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp-param-manager
@@ -505,7 +505,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -529,7 +529,7 @@ spec:
 #[test]
 fn test_secrets_config_all_fields() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-secrets-all
@@ -537,7 +537,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -567,7 +567,7 @@ spec:
 #[test]
 fn test_suspended_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-suspended
@@ -575,7 +575,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -598,7 +598,7 @@ spec:
 fn test_all_providers_with_type_field() {
     // GCP
     let gcp_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -606,7 +606,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: gcp
     gcp:
@@ -622,7 +622,7 @@ spec:
 
     // AWS
     let aws_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -630,7 +630,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: aws
     aws:
@@ -645,7 +645,7 @@ spec:
 
     // Azure
     let azure_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -653,7 +653,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: azure
     azure:
@@ -672,7 +672,7 @@ spec:
 #[test]
 fn test_configs_disabled() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-configs-disabled
@@ -680,7 +680,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -701,7 +701,7 @@ spec:
 #[test]
 fn test_interval_formats() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-intervals
@@ -709,7 +709,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -730,7 +730,7 @@ spec:
 #[test]
 fn test_fluxcd_notifications() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-fluxcd-notifications
@@ -739,7 +739,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -771,7 +771,7 @@ spec:
 #[test]
 fn test_fluxcd_notifications_without_namespace() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-fluxcd-notifications
@@ -780,7 +780,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -806,7 +806,7 @@ spec:
 #[test]
 fn test_argocd_notifications() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd-notifications
@@ -853,7 +853,7 @@ spec:
 #[test]
 fn test_both_notifications_configured() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-both-notifications
@@ -862,7 +862,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -900,7 +900,7 @@ spec:
 #[test]
 fn test_notifications_optional() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-no-notifications
@@ -908,7 +908,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -927,7 +927,7 @@ spec:
 #[test]
 fn test_fluxcd_notifications_with_gitrepository() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-fluxcd-gitrepo
@@ -936,7 +936,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -960,7 +960,7 @@ spec:
 #[test]
 fn test_argocd_notifications_with_application() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd-app

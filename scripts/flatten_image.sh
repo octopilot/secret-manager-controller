@@ -10,7 +10,7 @@ TARGET_IMAGE="${2:-}"
 
 if [[ -z "${SOURCE_IMAGE}" || -z "${TARGET_IMAGE}" ]]; then
     echo "Usage: $0 <source-image> <target-image>"
-    echo "Example: $0 ghcr.io/microscaler/secret-manager-controller-base-image:latest ghcr.io/microscaler/secret-manager-controller-base-image:latest-flat"
+    echo "Example: $0 ghcr.io/octopilot/secret-manager-controller-base-image:latest ghcr.io/octopilot/secret-manager-controller-base-image:latest-flat"
     exit 1
 fi
 

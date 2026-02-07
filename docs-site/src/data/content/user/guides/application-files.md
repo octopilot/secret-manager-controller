@@ -344,7 +344,7 @@ cat age-key.txt | grep "AGE-SECRET-KEY" > /tmp/age-private-key.txt
 # Create Kubernetes Secret
 kubectl create secret generic sops-age-key \
   --from-file=private.key=/tmp/age-private-key.txt \
-  -n microscaler-system
+  -n octopilot-system
 
 # Clean up
 rm /tmp/age-private-key.txt
@@ -359,7 +359,7 @@ spec:
       enabled: true
       ageSecretRef:
         name: sops-age-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 

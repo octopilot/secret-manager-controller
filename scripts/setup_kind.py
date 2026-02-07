@@ -291,30 +291,30 @@ def configure_containerd_registry():
         log_info(f"✅ Configured registry mirror on {node} (endpoint: {registry_endpoint})")
 
 
-def create_microscaler_system_namespace():
-    """Create microscaler-system namespace with proper labels.
+def create_octopilot_system_namespace():
+    """Create octopilot-system namespace with proper labels.
     
     Creates the namespace at cluster startup so it's not managed by Tilt or GitOps.
     This ensures the namespace is always available and has the correct labels for
     FluxCD NetworkPolicy namespaceSelector matching.
     """
-    log_info("Creating microscaler-system namespace...")
+    log_info("Creating octopilot-system namespace...")
     
     # Check if namespace already exists
     result = run_command(
-        ["kubectl", "get", "namespace", "microscaler-system"],
+        ["kubectl", "get", "namespace", "octopilot-system"],
         check=False,
         capture_output=True
     )
     if result.returncode == 0:
-        log_info("microscaler-system namespace already exists")
+        log_info("octopilot-system namespace already exists")
         # Update labels if needed (idempotent)
         namespace_yaml = """apiVersion: v1
 kind: Namespace
 metadata:
-  name: microscaler-system
+  name: octopilot-system
   labels:
-    name: microscaler-system
+    name: octopilot-system
     app: secret-manager-controller
     environment: system
     managed-by: kind-setup
@@ -330,9 +330,9 @@ metadata:
     namespace_yaml = """apiVersion: v1
 kind: Namespace
 metadata:
-  name: microscaler-system
+  name: octopilot-system
   labels:
-    name: microscaler-system
+    name: octopilot-system
     app: secret-manager-controller
     environment: system
     managed-by: kind-setup
@@ -345,12 +345,12 @@ metadata:
     )
     
     if result.returncode == 0:
-        log_info("✅ microscaler-system namespace created successfully")
+        log_info("✅ octopilot-system namespace created successfully")
     else:
         log_warn(f"Failed to create namespace: {result.stderr}")
         # Try simple create as fallback
         run_command(
-            ["kubectl", "create", "namespace", "microscaler-system"],
+            ["kubectl", "create", "namespace", "octopilot-system"],
             check=False,
         )
 
@@ -611,7 +611,7 @@ def install_secret_manager_crd():
     
     # Wait for CRD to be established
     log_info("Waiting for CRD to be established...")
-    crd_name = "secretmanagerconfigs.secret-management.microscaler.io"
+    crd_name = "secretmanagerconfigs.secret-management.octopilot.io"
     max_attempts = 30  # Wait up to 1 minute
     
     for i in range(max_attempts):
@@ -812,9 +812,9 @@ def setup_kind_cluster():
     log_info("Configuring containerd on nodes to use local registry...")
     configure_containerd_registry()
     
-    # Create microscaler-system namespace (created at cluster startup, not managed by Tilt/GitOps)
+    # Create octopilot-system namespace (created at cluster startup, not managed by Tilt/GitOps)
     # This ensures the namespace is always available with proper labels
-    create_microscaler_system_namespace()
+    create_octopilot_system_namespace()
     
     # Pre-load required images into Kind cluster
     # This avoids network issues when pulling from Docker Hub

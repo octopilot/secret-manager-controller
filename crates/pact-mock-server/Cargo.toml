@@ -6,7 +6,7 @@ resolver = "2"
 authors = ["Microscaler <info@microscaler.io>"]
 description = "Unified Pact Mock Server for GCP, AWS, and Azure Secret Manager APIs"
 license = "BSL-1.1"
-repository = "https://github.com/microscaler/secret-manager-controller"
+repository = "https://github.com/octopilot/secret-manager-controller"
 keywords = ["kubernetes", "pact", "testing", "mock-server", "gcp", "aws", "azure"]
 categories = ["development-tools", "testing"]
 

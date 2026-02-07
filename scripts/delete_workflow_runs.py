@@ -45,7 +45,7 @@ except ImportError:
 
 # GitHub API base URL
 GITHUB_API_BASE = "https://api.github.com"
-REPO = "microscaler/secret-manager-controller"
+REPO = "octopilot/secret-manager-controller"
 
 
 def get_github_token(token: Optional[str] = None) -> str:

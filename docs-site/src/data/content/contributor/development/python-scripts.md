@@ -30,7 +30,7 @@ python3 scripts/setup_kind.py
 4. Connects registry to Kind network
 5. Configures containerd on nodes to use local registry as mirror
 6. Installs GitOps components (FluxCD, ArgoCD CRDs)
-7. Creates `microscaler-system` namespace
+7. Creates `octopilot-system` namespace
 
 **Key Features**:
 - **Polling for Readiness**: Uses polling loops instead of fixed `sleep()` calls

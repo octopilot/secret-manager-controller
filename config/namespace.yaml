@@ -1,5 +1,5 @@
-# Note: microscaler-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
+# Note: octopilot-system namespace is created by Kind cluster setup (scripts/setup_kind.py)
 # and is not managed by Tilt to ensure it's always available
 # The namespace is created with proper labels for FluxCD NetworkPolicy namespaceSelector matching
-# See: scripts/setup_kind.py create_microscaler_system_namespace() function
+# See: scripts/setup_kind.py create_octopilot_system_namespace() function
 

@@ -103,7 +103,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/SecretManagerRole
 ```
@@ -117,7 +117,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: aws-credentials
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: your-access-key-id
@@ -128,7 +128,7 @@ stringData:
 Reference in your SecretManagerConfig:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: aws-secrets
@@ -138,7 +138,7 @@ spec:
   credentials:
     secretRef:
       name: aws-credentials
-      namespace: microscaler-system
+      namespace: octopilot-system
   secrets:
     - name: database-password
       key: /myapp/database/password
@@ -147,7 +147,7 @@ spec:
 ## Configuration Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: production-secrets

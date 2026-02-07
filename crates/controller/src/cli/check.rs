@@ -13,7 +13,7 @@ use kube::{api::Api, Client};
 
 /// Check the Secret Manager Controller installation
 pub async fn check_command(client: Client, namespace: Option<String>, pre: bool) -> Result<()> {
-    let ns = namespace.as_deref().unwrap_or("microscaler-system");
+    let ns = namespace.as_deref().unwrap_or("octopilot-system");
 
     if pre {
         return check_prerequisites(client).await;
@@ -159,7 +159,7 @@ async fn check_crds(client: Client) -> Result<()> {
     let api: Api<CustomResourceDefinition> = Api::all(client);
 
     // Check SecretManagerConfig CRD
-    let crd_name = "secretmanagerconfigs.secret-management.microscaler.io";
+    let crd_name = "secretmanagerconfigs.secret-management.octopilot.io";
     match api.get(crd_name).await {
         Ok(crd) => {
             // Check CRD version

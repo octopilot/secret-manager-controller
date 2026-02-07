@@ -44,7 +44,7 @@ def main():
     )
     parser.add_argument(
         "--namespace",
-        default="microscaler-system",
+        default="octopilot-system",
         help="Kubernetes namespace for controller",
     )
     parser.add_argument(

@@ -130,7 +130,7 @@ pub async fn reconcile_command(
     let patch = json!({
         "metadata": {
             "annotations": {
-                "secret-management.microscaler.io/reconcile": timestamp.to_string()
+                "secret-management.octopilot.io/reconcile": timestamp.to_string()
             }
         }
     });
@@ -147,7 +147,7 @@ pub async fn reconcile_command(
 
     println!("✅ Reconciliation triggered successfully");
     println!("   Resource: {ns}/{name}");
-    println!("   Annotation: secret-management.microscaler.io/reconcile={timestamp}");
+    println!("   Annotation: secret-management.octopilot.io/reconcile={timestamp}");
     println!("\nThe controller will reconcile this resource shortly.");
 
     Ok(())

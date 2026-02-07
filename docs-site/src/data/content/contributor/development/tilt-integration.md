@@ -123,7 +123,7 @@ Tilt detects changes and:
 View controller logs in Tilt UI or:
 
 ```bash
-kubectl logs -n microscaler-system -l app=secret-manager-controller -f
+kubectl logs -n octopilot-system -l app=secret-manager-controller -f
 ```
 
 ### 4. Test Changes
@@ -206,7 +206,7 @@ cargo test
 
 **View logs:**
 ```bash
-kubectl logs -n microscaler-system -l app=secret-manager-controller
+kubectl logs -n octopilot-system -l app=secret-manager-controller
 ```
 
 ### Live Updates Not Working
@@ -219,7 +219,7 @@ kubectl logs -n microscaler-system -l app=secret-manager-controller
 **Manual sync:**
 ```bash
 kubectl cp target/x86_64-unknown-linux-musl/debug/secret-manager-controller \
-  microscaler-system/secret-manager-controller-xxx:/app/secret-manager-controller
+  octopilot-system/secret-manager-controller-xxx:/app/secret-manager-controller
 ```
 
 ### Build Failures

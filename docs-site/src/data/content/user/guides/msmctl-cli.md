@@ -82,7 +82,7 @@ msmctl reconcile secretmanagerconfig myapp-dev-secrets --namespace mysystem --fo
 ```
 
 **How it works:**
-- **Normal mode**: Updates the `secret-management.microscaler.io/reconcile` annotation with a timestamp. The controller watches for annotation changes and triggers reconciliation. This is a Kubernetes-native approach that doesn't require HTTP endpoints.
+- **Normal mode**: Updates the `secret-management.octopilot.io/reconcile` annotation with a timestamp. The controller watches for annotation changes and triggers reconciliation. This is a Kubernetes-native approach that doesn't require HTTP endpoints.
 - **Force mode (`--force`)**: 
   1. Deletes the SecretManagerConfig resource
   2. Waits for GitOps (Flux/ArgoCD) to recreate it (up to 5 minutes)
@@ -111,7 +111,7 @@ msmctl reconcile secretmanagerconfig myapp-dev-secrets --namespace mysystem --fo
    Timestamp: 1702567890
 
 📊 Watching reconciliation logs...
-   (Use 'kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)
+   (Use 'kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=50 -f' to see detailed logs)
 ```
 
 ### `msmctl list`
@@ -225,7 +225,7 @@ msmctl suspend smc test-sops-config
 ```
 
 **What it does:**
-- Sets the `secret-management.microscaler.io/suspend` annotation to `"true"`
+- Sets the `secret-management.octopilot.io/suspend` annotation to `"true"`
 - Controller will skip reconciliation for this resource
 - Manual reconciliation via `msmctl reconcile` will also be blocked
 
@@ -260,7 +260,7 @@ msmctl resume smc test-sops-config
 ```
 
 **What it does:**
-- Removes the `secret-management.microscaler.io/suspend` annotation
+- Removes the `secret-management.octopilot.io/suspend` annotation
 - Controller will resume normal reconciliation
 
 ### `msmctl suspend-git-pulls`
@@ -289,7 +289,7 @@ msmctl suspend-git-pulls smc test-sops-config
 ```
 
 **What it does:**
-- Sets the `secret-management.microscaler.io/suspend-git-pulls` annotation to `"true"`
+- Sets the `secret-management.octopilot.io/suspend-git-pulls` annotation to `"true"`
 - Controller will stop checking for updates from the Git repository
 - Existing secrets will continue to be reconciled, but new changes from Git will be ignored
 
@@ -324,7 +324,7 @@ msmctl resume-git-pulls smc test-sops-config
 ```
 
 **What it does:**
-- Removes the `secret-management.microscaler.io/suspend-git-pulls` annotation
+- Removes the `secret-management.octopilot.io/suspend-git-pulls` annotation
 - Controller will resume checking for updates from the Git repository
 
 ### `msmctl install`
@@ -337,7 +337,7 @@ msmctl install [--namespace <namespace>] [--export]
 ```
 
 **Options:**
-- `--namespace, -n`: Namespace to install the controller in (default: `microscaler-system`)
+- `--namespace, -n`: Namespace to install the controller in (default: `octopilot-system`)
 - `--export`: Export manifests instead of applying them
 
 **Examples:**
@@ -354,7 +354,7 @@ msmctl install --export
 
 **What it installs:**
 - CRD: `SecretManagerConfig` Custom Resource Definition
-- Namespace: `microscaler-system` (or specified namespace)
+- Namespace: `octopilot-system` (or specified namespace)
 - ServiceAccount, Role, RoleBinding: RBAC resources
 - Deployment: Controller deployment
 
@@ -415,7 +415,7 @@ kind: ClusterRole
 metadata:
   name: msmctl-user
 rules:
-- apiGroups: ["secret-management.microscaler.io"]
+- apiGroups: ["secret-management.octopilot.io"]
   resources: ["secretmanagerconfigs"]
   verbs: ["get", "list", "watch", "update", "patch", "delete"]
 ```

@@ -233,7 +233,7 @@ jobs:
           # Verify flux CLI is installed (--client flag avoids cluster connection)
           flux version --client
 
-      - name: Setup Kind cluster (includes registry and microscaler-system namespace)
+      - name: Setup Kind cluster (includes registry and controller namespace)
         env:
           NON_INTERACTIVE: "1"
         run: |
@@ -242,11 +242,11 @@ jobs:
           # - Sets up local Docker registry
           # - Connects registry to cluster network
           # - Configures containerd to use local registry
-          # - Creates microscaler-system namespace
+          # - Creates controller system namespace (see config/namespace.yaml and scripts/setup_kind.py)
           # - Installs FluxCD (via install_gitops_components -> install_fluxcd.py)
           # - Installs ArgoCD CRDs (via install_gitops_components -> install_argocd.py)
           # NON_INTERACTIVE=1 ensures it uses existing cluster if present (no prompts)
-          # Note: Flux CLI must be installed before this step
+          # Note: Flux CLI must be installed before this step; namespace is defined in scripts/setup_kind.py
           python3 scripts/setup_kind.py
 
       # Note: FluxCD and ArgoCD are now installed by setup_kind.py

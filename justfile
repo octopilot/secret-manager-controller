@@ -167,7 +167,7 @@ validate: fmt-check lint check test-unit
 deploy:
     @echo "🚀 Deploying to Kubernetes..."
     @kubectl apply -k config/
-    @echo "✅ Deployed to microscaler-system namespace"
+    @echo "✅ Deployed to octopilot-system namespace"
 
 # Deploy CRD only
 deploy-crd:
@@ -196,17 +196,17 @@ status:
 # Show controller logs
 logs:
     @echo "📜 Controller logs..."
-    @kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=100 -f
+    @kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=100 -f
 
 # Show controller logs (all containers)
 logs-all:
     @echo "📜 Controller logs (all containers)..."
-    @kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=100 -f --all-containers=true
+    @kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=100 -f --all-containers=true
 
 # Port forward to controller metrics
 port-forward:
     @echo "🔌 Port forwarding to controller metrics (5000)..."
-    @kubectl port-forward -n microscaler-system svc/secret-manager-controller-metrics 5000:5000
+    @kubectl port-forward -n octopilot-system svc/secret-manager-controller-metrics 5000:5000
 
 # ============================================================================
 # Dependencies & Tools
