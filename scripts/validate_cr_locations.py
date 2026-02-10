@@ -9,7 +9,7 @@ import yaml
 # Pattern definitions from CRD
 GCP_LOCATION_PATTERN = re.compile(r"^[a-z]+-[a-z]+[0-9]+$")
 AWS_REGION_PATTERN = re.compile(
-    r"^[a-z]{2}-[a-z]+-[0-9]+$|^[a-z]{2}-gov-[a-z]+-[0-9]+$|^[a-z]{2}-iso-[a-z]+-[0-9]+$|^cn-[a-z]+-[0-9]+$|^local$"
+    r"^([a-z]{2}-[a-z]+-[0-9]+|[a-z]{2}-gov-[a-z]+-[0-9]+|[a-z]{2}-iso-[a-z]+-[0-9]+|cn-[a-z]+-[0-9]+|local)$"
 )
 AZURE_LOCATION_PATTERN = re.compile(r"^[a-z]+[0-9]*$")
 
