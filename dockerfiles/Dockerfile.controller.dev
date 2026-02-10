@@ -2,9 +2,11 @@
 # Binary is cross-compiled on host (Apple Silicon -> x86_64 Linux) and copied in
 # Standard development Dockerfile pattern
 # Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
+# Pass build-arg REGISTRY_ORG (default: octopilot) to pull base image from ghcr.io.
 
+ARG REGISTRY_ORG=octopilot
 ARG TARGETPLATFORM=linux/amd64
-FROM docker.io/octopilot/secret-manager-controller-base-image:latest
+FROM ghcr.io/${REGISTRY_ORG}/secret-manager-controller-base-image:latest
 
 # Base image already has:
 # - git, curl, gnupg, ca-certificates

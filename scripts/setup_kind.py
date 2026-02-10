@@ -543,7 +543,7 @@ def preload_required_images():
     """Pre-load required Docker images into Kind cluster.
     
     This function loads images that are needed by init containers and other
-    infrastructure components, avoiding network issues when pulling from Docker Hub.
+    infrastructure components, avoiding network issues when pulling from external registries.
     """
     log_info("Pre-loading required images into Kind cluster...")
     
@@ -558,7 +558,7 @@ def preload_required_images():
         result = run_command(f"docker images --format '{{{{.Repository}}}}:{{{{.Tag}}}}' {image}", check=False)
         if image not in result.stdout:
             # Pull image first
-            log_info(f"    Pulling {image} from Docker Hub...")
+            log_info(f"    Pulling {image}...")
             pull_result = run_command(f"docker pull {image}", check=False)
             if pull_result.returncode != 0:
                 log_warn(f"    Failed to pull {image}: {pull_result.stderr}")
@@ -817,7 +817,7 @@ def setup_kind_cluster():
     create_octopilot_system_namespace()
     
     # Pre-load required images into Kind cluster
-    # This avoids network issues when pulling from Docker Hub
+    # This avoids network issues when pulling images at runtime
     preload_required_images()
     
     # Create PVCs (created at cluster startup, not managed by Tilt)

@@ -14,6 +14,7 @@ env:
   RUST_BACKTRACE: 1
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  REGISTRY_ORG: ${{ github.repository_owner }}
   TTL_REGISTRY: ttl.sh
 
 jobs:
@@ -590,10 +591,12 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: dockerfiles/Dockerfile.controller
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REGISTRY_ORG=${{ env.REGISTRY_ORG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64

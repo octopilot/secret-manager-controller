@@ -125,7 +125,7 @@ def cleanup_unused_images():
     - Base images (rust:alpine, debian, etc.)
     - Pact broker images
     - Other dependencies we download
-    - Our published base images (docker.io/octopilot/*, ghcr.io/octopilot/*)
+    - Our published base images (ghcr.io/<org>/*)
     This causes re-downloads and hits Docker rate limits.
     
     Tilt-specific images are handled separately by cleanup_old_tilt_images().
@@ -421,9 +421,6 @@ def cleanup_old_tilt_images():
         "kindest/node",
         "registry:",
         "registry/registry:",
-        "docker.io/octopilot/rust-builder-base-image",
-        "docker.io/octopilot/secret-manager-controller-base-image",
-        "docker.io/octopilot/pact-mock-server-base-image",
         "ghcr.io/octopilot/rust-builder-base-image",
         "ghcr.io/octopilot/secret-manager-controller-base-image",
         "ghcr.io/octopilot/pact-mock-server-base-image",
@@ -482,9 +479,6 @@ def cleanup_old_tilt_images():
         
         # Also protect base images by repository name (regardless of tag)
         base_image_repos = [
-            "docker.io/octopilot/rust-builder-base-image",
-            "docker.io/octopilot/secret-manager-controller-base-image",
-            "docker.io/octopilot/pact-mock-server-base-image",
             "ghcr.io/octopilot/rust-builder-base-image",
             "ghcr.io/octopilot/secret-manager-controller-base-image",
             "ghcr.io/octopilot/pact-mock-server-base-image",

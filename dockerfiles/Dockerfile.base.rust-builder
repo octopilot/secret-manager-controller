@@ -48,7 +48,7 @@ ENV RUST_BACKTRACE=1
 COPY Cargo.toml Cargo.lock* ./
 COPY crates/controller/Cargo.toml ./crates/controller/
 COPY crates/pact-mock-server/Cargo.toml ./crates/pact-mock-server/
-COPY crates/gcp-api-paths/Cargo.toml ./crates/gcp-api-paths/
+COPY crates/paths/Cargo.toml ./crates/paths/
 
 # Fetch all dependencies (downloads but doesn't compile)
 # This pre-populates ~/.cargo/registry and ~/.cargo/git with all dependency sources

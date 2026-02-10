@@ -1,8 +1,10 @@
 # Dockerfile for Axum Pact Mock Server (Rust/Axum)
 # Uses shared base image with all common setup
 # Binaries are cross-compiled on host and copied in (matches controller pattern)
+# Pass build-arg REGISTRY_ORG (default: octopilot) to pull base image from ghcr.io.
 
-FROM docker.io/octopilot/pact-mock-server-base-image:latest
+ARG REGISTRY_ORG=octopilot
+FROM ghcr.io/${REGISTRY_ORG}/pact-mock-server-base-image:latest
 
 # Base image already has:
 # - Non-root user (pact)

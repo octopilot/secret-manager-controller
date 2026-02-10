@@ -140,7 +140,7 @@ nodes:
 
 The setup script automatically configures a local Docker registry for development. This is essential for local development because:
 
-1. **No External Registry Needed**: Build images locally without pushing to Docker Hub or other registries
+1. **No External Registry Needed**: Build images locally without pushing to ghcr.io or other registries
 2. **Fast Iteration**: Push images instantly without network delays
 3. **CI/CD Compatibility**: Same workflow works in CI/CD (GitHub Actions uses local registry)
 4. **Tilt Integration**: Tilt automatically pushes images to local registry
@@ -155,7 +155,7 @@ The setup script automatically configures a local Docker registry for developmen
 ### Why We Need a Local Registry
 
 **Without Local Registry**:
-- Would need to push images to external registry (Docker Hub, etc.)
+- Would need to push images to an external registry (e.g. ghcr.io)
 - Requires authentication and network access
 - Slower iteration (push/pull over network)
 - CI/CD complexity (managing registry credentials)
