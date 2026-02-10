@@ -8,6 +8,7 @@ This is more efficient than building each binary separately.
 
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -82,7 +83,11 @@ def main():
     build_env["BUILD_GIT_HASH"] = build_git_hash
     
     # Build all binaries in one go using workspace
-    print("🔨 Building workspace binaries (debug mode)...")
+    # Add strip flags to reduce binary size (debug builds are still large)
+    print("🔨 Building workspace binaries (debug mode with size optimization)...")
+    
+    # Add RUSTFLAGS for stripping debug symbols (reduces binary size)
+    build_env["RUSTFLAGS"] = "-C link-arg=-s"
     
     if os_name == "Darwin":
         # macOS: Use cargo zigbuild (like microservices)
@@ -125,7 +130,7 @@ def main():
             print("❌ Build failed", file=sys.stderr)
             sys.exit(1)
     
-    # Verify binaries exist
+    # Verify binaries exist and define binary list
     target_dir = Path(f"target/{target}/debug")
     binaries = [
         "secret-manager-controller",
@@ -136,7 +141,36 @@ def main():
         "azure-mock-server",
         "webhook",
         "manager",
+        "postgres-manager",
     ]
+    
+    # Strip binaries to further reduce size
+    # Note: For cross-compiled binaries (Linux from macOS), the macOS strip tool can't process them
+    # RUSTFLAGS="-C link-arg=-s" already strips during build, so manual strip is optional
+    # Only attempt manual strip for native builds (not cross-compiled)
+    os_name = platform.system()
+    is_cross_compile = target != f"{arch}-unknown-{os_name.lower()}-{('gnu' if os_name == 'Linux' else 'darwin')}"
+    
+    if not is_cross_compile:
+        print("📦 Stripping binaries to reduce size...")
+        strip_cmd = shutil.which("strip")
+        if strip_cmd:
+            for binary in binaries:
+                binary_path = target_dir / binary
+                if binary_path.exists():
+                    result = subprocess.run(
+                        [strip_cmd, str(binary_path)],
+                        check=False,
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        print(f"  ✅ Stripped {binary}")
+                    # Silently ignore errors (binary may already be stripped or incompatible)
+        else:
+            print("  ⚠️  strip command not found, skipping (binaries already optimized with RUSTFLAGS)")
+    else:
+        print("📦 Skipping manual strip (cross-compiled binaries - RUSTFLAGS already handles stripping)")
     
     print("🔍 Verifying binaries were built...")
     all_exist = True
@@ -232,7 +266,9 @@ def main():
         print(f"   kubectl apply -f {crd_output_path}", file=sys.stderr)
         return
     
-    # Apply CRD with validation first, fallback to --validate=false if needed
+    # Apply/update CRD (idempotent - updates if changed, no-op if same)
+    # Note: CRD may already be installed from cluster setup (setup_kind.py)
+    # This ensures we have the latest version if the code has changed
     apply_result = run_command(
         f"kubectl apply -f {crd_output_path}",
         check=False,
@@ -257,6 +293,29 @@ def main():
             print("✅ CRD applied (with --validate=false)")
     else:
         print("✅ CRD applied successfully")
+    
+    # Wait for CRD to be established before continuing
+    # This prevents "no matches for kind" errors when resources are applied too quickly
+    print("⏳ Waiting for CRD to be established...")
+    crd_name = "secretmanagerconfigs.secret-management.octopilot.io"
+    max_attempts = 30  # Wait up to 1 minute
+    
+    for i in range(max_attempts):
+        wait_result = run_command(
+            f"kubectl wait --for=condition=established crd {crd_name} --timeout=2s",
+            check=False,
+            capture_output=True
+        )
+        
+        if wait_result.returncode == 0:
+            print("✅ CRD is established and ready")
+            break
+        
+        if i < max_attempts - 1:
+            time.sleep(2)
+    else:
+        print("⚠️  Warning: CRD not established after 60 seconds, but continuing anyway", file=sys.stderr)
+        print("   Resources may fail to apply if CRD is not ready", file=sys.stderr)
 
 
 if __name__ == "__main__":

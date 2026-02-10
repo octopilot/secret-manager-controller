@@ -5,7 +5,7 @@ metadata:
 rules:
 # Watch SecretManagerConfig resources in all namespaces
 - apiGroups:
-  - secret-management.microscaler.io
+  - secret-management.octopilot.io
   resources:
   - secretmanagerconfigs
   verbs:
@@ -13,7 +13,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - secret-management.microscaler.io
+  - secret-management.octopilot.io
   resources:
   - secretmanagerconfigs/status
   verbs:

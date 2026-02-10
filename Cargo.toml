@@ -65,7 +65,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Integration and contract tests for secret-manager-controller"
-repository = "https://github.com/microscaler/secret-manager-controller"
+repository = "https://github.com/octopilot/secret-manager-controller"
 keywords = ["kubernetes", "testing", "integration-tests", "pact"]
 categories = ["development-tools", "testing"]
 

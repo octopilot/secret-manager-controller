@@ -12,7 +12,7 @@
 //! - PORT: Port to listen on (default: 1234)
 
 use axum::{
-    extract::{Path, Request, State},
+    extract::{Path, Query, Request, State},
     http::{Method, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
@@ -20,6 +20,7 @@ use axum::{
 };
 // Use std::time for timestamp generation instead of chrono
 // base64 encoding is handled by the secret store
+use futures::future;
 use pact_mock_server::prelude::*;
 use paths::gcp::routes;
 use paths::prelude::{GcpOperation, PathBuilder};
@@ -70,6 +71,8 @@ struct CreateSecretRequest {
     #[serde(rename = "secretId")]
     secret_id: String,
     replication: Replication,
+    #[serde(default)]
+    labels: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -329,79 +332,178 @@ async fn handle_colon_routes(State(app_state): State<GcpAppState>, request: Requ
             .unwrap_or("unknown")
             .to_string();
 
-        if let Some(body_json) = body_value {
-            if let Ok(body) = serde_json::from_value::<AddVersionRequest>(body_json) {
-                info!("  ADD VERSION: project={}, secret={}", project, secret);
-                info!(
-                    "  📍 Request path: POST /v1/projects/{}/secrets/{}:addVersion",
-                    project, secret
-                );
+        // Log request details for debugging
+        info!(
+            provider = "gcp",
+            project = project,
+            secret = secret,
+            operation = "add_version",
+            path = path,
+            method = "POST",
+            "📥 addVersion request: project={}, secret={}, path={}",
+            project,
+            secret,
+            path
+        );
+        if let Some(ref body_json) = body_value {
+            // Log that body is present but NOT the actual payload data
+            let has_payload = body_json.get("payload").is_some();
+            info!(
+                provider = "gcp",
+                project = project,
+                secret = secret,
+                operation = "add_version",
+                has_payload = has_payload,
+                "📦 Request body present: has_payload={}",
+                has_payload
+            );
+        } else {
+            warn!(
+                provider = "gcp",
+                project = project,
+                secret = secret,
+                operation = "add_version",
+                "⚠️  No request body provided for addVersion"
+            );
+        }
 
-                // Validate secret size (GCP limit: 64KB)
-                if let Err(size_error) = validate_gcp_secret_size(&body.payload.data) {
-                    warn!("  Secret size validation failed: {}", size_error);
+        if let Some(body_json) = body_value {
+            match serde_json::from_value::<AddVersionRequest>(body_json.clone()) {
+                Ok(body) => {
+                    info!(
+                        provider = "gcp",
+                        project = project,
+                        secret = secret,
+                        operation = "add_version",
+                        "ADD VERSION: project={}, secret={}",
+                        project,
+                        secret
+                    );
+                    info!(
+                        provider = "gcp",
+                        project = project,
+                        secret = secret,
+                        operation = "add_version",
+                        method = "POST",
+                        "📍 Request path: POST /v1/projects/{}/secrets/{}:addVersion",
+                        project,
+                        secret
+                    );
+
+                    // Validate secret size (GCP limit: 64KB)
+                    if let Err(size_error) = validate_gcp_secret_size(&body.payload.data) {
+                        warn!("  Secret size validation failed: {}", size_error);
+                        return gcp_error_response(
+                            StatusCode::BAD_REQUEST,
+                            size_error,
+                            Some("INVALID_ARGUMENT"),
+                        );
+                    }
+
+                    // Add a new version with the payload data
+                    let version_data = json!({
+                        "payload": {
+                            "data": body.payload.data
+                        }
+                    });
+
+                    let version_id = match app_state
+                        .secrets
+                        .add_version(
+                            &project,
+                            &secret,
+                            version_data,
+                            None, // Auto-generate version ID (sequential for GCP)
+                        )
+                        .await
+                    {
+                        Ok(id) => id,
+                        Err(e) => {
+                            warn!(
+                                provider = "gcp",
+                                project = project,
+                                secret = secret,
+                                operation = "add_version",
+                                error = %e,
+                                "Failed to add version: {}",
+                                e
+                            );
+                            // Check if error is about missing environment/location
+                            let error_msg = e.to_string();
+                            let status_code = if error_msg.contains("NULL")
+                                || error_msg.contains("empty")
+                                || error_msg.contains("does not exist")
+                            {
+                                StatusCode::BAD_REQUEST
+                            } else {
+                                StatusCode::INTERNAL_SERVER_ERROR
+                            };
+                            return gcp_error_response(
+                                status_code,
+                                format!("Failed to add version: {}", e),
+                                Some(if status_code == StatusCode::BAD_REQUEST {
+                                    "INVALID_ARGUMENT"
+                                } else {
+                                    "INTERNAL"
+                                }),
+                            )
+                            .into_response();
+                        }
+                    };
+
+                    // Get the version to include timestamp
+                    let version = app_state
+                        .secrets
+                        .get_version(&project, &secret, &version_id)
+                        .await;
+                    let create_time = version
+                        .as_ref()
+                        .map(|v| format_timestamp_rfc3339(v.created_at));
+
+                    let response = SecretResponse {
+                        name: PathBuilder::new()
+                            .gcp_operation(GcpOperation::GetVersion)
+                            .project(&project)
+                            .secret(&secret)
+                            .version(&version_id)
+                            .build_response_name()
+                            .unwrap_or_else(|_| {
+                                format!(
+                                    "projects/{}/secrets/{}/versions/{}",
+                                    project, secret, version_id
+                                )
+                            }),
+                        payload: Some(body.payload),
+                        replication: None,
+                        create_time,
+                        labels: None,
+                    };
+
+                    info!("  Added version {} to mock secret: {}", version_id, secret);
+                    return Json(response).into_response();
+                }
+                Err(e) => {
+                    warn!("  ⚠️  Failed to parse AddVersionRequest: {}", e);
+                    warn!(
+                        "  📦 Body was: {}",
+                        serde_json::to_string(&body_json)
+                            .unwrap_or_else(|_| "invalid json".to_string())
+                    );
                     return gcp_error_response(
                         StatusCode::BAD_REQUEST,
-                        size_error,
+                        format!("Invalid request body for secret version: {}", e),
                         Some("INVALID_ARGUMENT"),
                     );
                 }
-
-                // Add a new version with the payload data
-                let version_data = json!({
-                    "payload": {
-                        "data": body.payload.data
-                    }
-                });
-
-                let version_id = app_state
-                    .secrets
-                    .add_version(
-                        &project,
-                        &secret,
-                        version_data,
-                        None, // Auto-generate version ID (sequential for GCP)
-                    )
-                    .await;
-
-                // Get the version to include timestamp
-                let version = app_state
-                    .secrets
-                    .get_version(&project, &secret, &version_id)
-                    .await;
-                let create_time = version
-                    .as_ref()
-                    .map(|v| format_timestamp_rfc3339(v.created_at));
-
-                let response = SecretResponse {
-                    name: PathBuilder::new()
-                        .gcp_operation(GcpOperation::GetVersion)
-                        .project(&project)
-                        .secret(&secret)
-                        .version(&version_id)
-                        .build_response_name()
-                        .unwrap_or_else(|_| {
-                            format!(
-                                "projects/{}/secrets/{}/versions/{}",
-                                project, secret, version_id
-                            )
-                        }),
-                    payload: Some(body.payload),
-                    replication: None,
-                    create_time,
-                    labels: None,
-                };
-
-                info!("  Added version {} to mock secret: {}", version_id, secret);
-                return Json(response).into_response();
             }
+        } else {
+            warn!("  ⚠️  No request body provided for addVersion operation");
+            return gcp_error_response(
+                StatusCode::BAD_REQUEST,
+                "Missing request body for secret version".to_string(),
+                Some("INVALID_ARGUMENT"),
+            );
         }
-
-        return gcp_error_response(
-            StatusCode::BAD_REQUEST,
-            "Invalid request body for secret version".to_string(),
-            Some("INVALID_ARGUMENT"),
-        );
     }
 
     // Handle POST request to path ending with :disable (secret or version)
@@ -785,21 +887,107 @@ async fn create_secret(
     State(app_state): State<GcpAppState>,
     Path(project): Path<String>,
     Json(body): Json<CreateSecretRequest>,
-) -> Json<SecretResponse> {
+) -> Response {
     info!(
-        "  CREATE secret: project={}, secret_id={}",
-        project, body.secret_id
+        provider = "gcp",
+        project = project,
+        secret_id = body.secret_id,
+        operation = "create_secret",
+        "CREATE secret: project={}, secret_id={}",
+        project,
+        body.secret_id
     );
 
-    // Store the secret metadata (replication config)
+    // Validate that labels are provided with environment and location
+    let labels = body.labels.as_ref();
+    let environment = labels
+        .and_then(|l| l.get("environment"))
+        .map(|s| s.as_str());
+    let location = labels.and_then(|l| l.get("location")).map(|s| s.as_str());
+
+    if environment.is_none() || environment.unwrap_or("").is_empty() {
+        warn!(
+            provider = "gcp",
+            project = project,
+            secret_id = body.secret_id,
+            operation = "create_secret",
+            "Validation failed: missing or empty environment label"
+        );
+        return gcp_error_response(
+            StatusCode::BAD_REQUEST,
+            "Missing required label: 'environment'. Secrets must include labels with 'environment' and 'location' keys.".to_string(),
+            Some("INVALID_ARGUMENT"),
+        )
+        .into_response();
+    }
+
+    if location.is_none() || location.unwrap_or("").is_empty() {
+        warn!(
+            provider = "gcp",
+            project = project,
+            secret_id = body.secret_id,
+            operation = "create_secret",
+            "Validation failed: missing or empty location label"
+        );
+        return gcp_error_response(
+            StatusCode::BAD_REQUEST,
+            "Missing required label: 'location'. Secrets must include labels with 'environment' and 'location' keys.".to_string(),
+            Some("INVALID_ARGUMENT"),
+        )
+        .into_response();
+    }
+
+    // Store the secret metadata (replication config and labels)
     // The secret will be created when the first version is added
     let metadata = json!({
-        "replication": body.replication
+        "replication": body.replication,
+        "labels": labels
     });
-    app_state
+
+    // Extract location from replication config if available
+    // GCP automatic replication doesn't specify a location (replicated to all regions)
+    // For user-managed replication, location would be in replicas, but we only support automatic
+    // For automatic replication, location should be NULL (not "automatic")
+    // We'll store NULL in the database for automatic replication
+    let location: Option<String> = if body.replication.automatic.is_some() {
+        None // Automatic replication = no specific location
+    } else {
+        Some("unknown".to_string())
+    };
+
+    info!(
+        provider = "gcp",
+        project = project,
+        secret_id = body.secret_id,
+        operation = "create_secret",
+        location = location.as_ref().map(|s| s.as_str()).unwrap_or("NULL"),
+        "Creating secret with metadata: project={}, secret={}, location={:?}",
+        project,
+        body.secret_id,
+        location
+    );
+
+    if let Err(e) = app_state
         .secrets
         .update_metadata(&project, &body.secret_id, metadata)
-        .await;
+        .await
+    {
+        warn!(
+            provider = "gcp",
+            project = project,
+            secret_id = body.secret_id,
+            operation = "create_secret",
+            error = %e,
+            "Failed to update metadata: {}",
+            e
+        );
+        return gcp_error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to update metadata: {}", e),
+            Some("INTERNAL"),
+        )
+        .into_response();
+    }
 
     let response = SecretResponse {
         name: PathBuilder::new()
@@ -815,7 +1003,7 @@ async fn create_secret(
     };
 
     info!("  Created mock secret and stored: {}", body.secret_id);
-    Json(response)
+    Json(response).into_response()
 }
 
 /// GET secret metadata
@@ -904,62 +1092,197 @@ async fn delete_secret(
     }
 }
 
+/// Query parameters for filtering secrets
+#[derive(Debug, serde::Deserialize)]
+pub struct ListSecretsQuery {
+    /// Filter by environment (e.g., "dev", "prod", "pact")
+    pub environment: Option<String>,
+    /// Filter by location (e.g., "us-central1", "global")
+    pub location: Option<String>,
+}
+
 /// GET list of secrets
 /// Path: /v1/projects/{project}/secrets
+/// Query parameters: ?environment=dev&location=us-central1
 async fn list_secrets(
     State(app_state): State<GcpAppState>,
     Path(project): Path<String>,
+    Query(params): Query<ListSecretsQuery>,
 ) -> Response {
-    info!("  GET secrets list: project={}", project);
+    info!(
+        "  GET secrets list: project={}, environment={:?}, location={:?}",
+        project, params.environment, params.location
+    );
 
-    // Get all secrets for this project
-    let secret_names = app_state.secrets.list_all_secrets(&project).await;
+    // Get secrets for this project with database-level filtering
+    // This queries the database directly with WHERE clauses instead of loading all secrets
+    let secret_names = app_state
+        .secrets
+        .list_secrets_filtered(
+            &project,
+            params.environment.as_deref(),
+            params.location.as_deref(),
+        )
+        .await;
 
-    let secret_list: Vec<SecretResponse> = secret_names
+    // Process filtered secrets concurrently using futures
+    // Note: Filtering is already done at database level, so we just need to build responses
+    let secret_futures: Vec<_> = secret_names
         .iter()
-        .filter_map(|secret_name| {
-            // Get metadata for each secret
-            let metadata = app_state.secrets.get_metadata(&project, secret_name);
-            let rt = tokio::runtime::Handle::current();
-            let metadata = rt.block_on(metadata)?;
+        .map(|secret_name| {
+            let project = project.clone();
+            let secret_name = secret_name.clone();
+            let secrets = app_state.secrets.clone();
+            async move {
+                // Get metadata for each secret
+                let metadata = match secrets.get_metadata(&project, &secret_name).await {
+                    Some(m) => m,
+                    None => return None, // Skip secrets without metadata
+                };
 
-            // Extract replication from metadata
-            let replication = metadata
-                .get("replication")
-                .and_then(|r| serde_json::from_value(r.clone()).ok())
-                .unwrap_or_else(|| Replication {
-                    automatic: Some(json!({})),
-                });
+                // Extract replication from metadata
+                let replication = metadata
+                    .get("replication")
+                    .and_then(|r| serde_json::from_value(r.clone()).ok())
+                    .unwrap_or_else(|| Replication {
+                        automatic: Some(json!({})),
+                    });
 
-            // Get create time from first version (if exists)
-            let versions = app_state.secrets.list_versions(&project, secret_name);
-            let create_time = rt
-                .block_on(versions)
-                .and_then(|v| v.first().cloned())
-                .map(|v| format_timestamp_rfc3339(v.created_at));
+                // Get create time from first version (if exists)
+                let create_time = secrets
+                    .list_versions(&project, &secret_name)
+                    .await
+                    .and_then(|v| v.first().cloned())
+                    .map(|v| format_timestamp_rfc3339(v.created_at));
 
-            // Extract labels from metadata if present
-            let labels = metadata.get("labels").cloned();
+                // Extract labels from metadata if present
+                let labels = metadata.get("labels").cloned();
 
-            Some(SecretResponse {
-                name: PathBuilder::new()
-                    .gcp_operation(GcpOperation::GetSecret)
-                    .project(&project)
-                    .secret(secret_name)
-                    .build_response_name()
-                    .unwrap_or_else(|_| format!("projects/{}/secrets/{}", project, secret_name)),
-                payload: None,
-                replication: Some(replication),
-                create_time,
-                labels,
-            })
+                Some(SecretResponse {
+                    name: PathBuilder::new()
+                        .gcp_operation(GcpOperation::GetSecret)
+                        .project(&project)
+                        .secret(&secret_name)
+                        .build_response_name()
+                        .unwrap_or_else(|_| {
+                            format!("projects/{}/secrets/{}", project, secret_name)
+                        }),
+                    payload: None,
+                    replication: Some(replication),
+                    create_time,
+                    labels,
+                })
+            }
         })
+        .collect();
+
+    // Await all futures concurrently
+    let secret_results: Vec<_> = future::join_all(secret_futures).await;
+
+    // Filter out None values and collect successful results
+    let secret_list: Vec<SecretResponse> = secret_results
+        .into_iter()
+        .filter_map(|result| result)
         .collect();
 
     Json(ListSecretsResponse {
         secrets: secret_list,
         total_size: None, // GCP API doesn't always include this
     })
+    .into_response()
+}
+
+/// GET list of all projects that have secrets
+/// Custom endpoint: /v1/projects
+/// Returns a list of project IDs that have secrets stored
+async fn list_projects(State(app_state): State<GcpAppState>) -> Response {
+    info!("  GET projects list");
+
+    // Get all projects that have secrets
+    let projects = app_state.secrets.list_all_projects().await;
+
+    Json(json!({
+        "projects": projects
+    }))
+    .into_response()
+}
+
+/// GET unique environments for secrets
+/// Custom endpoint: /v1/projects/{project}/secrets/environments?location={location}
+/// CRITICAL: Location is required - different locations can have different environments
+async fn list_secret_environments(
+    State(app_state): State<GcpAppState>,
+    Path(project): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let location = params.get("location").map(|s| s.as_str());
+    info!(
+        "  GET secret environments: project={}, location={:?}",
+        project, location
+    );
+
+    let environments = app_state
+        .secrets
+        .list_environments(&project, location, "secrets")
+        .await;
+
+    Json(json!({
+        "environments": environments
+    }))
+    .into_response()
+}
+
+/// GET unique locations for secrets
+/// Custom endpoint: /v1/projects/{project}/secrets/locations
+async fn list_secret_locations(
+    State(app_state): State<GcpAppState>,
+    Path(project): Path<String>,
+) -> Response {
+    info!("  GET secret locations: project={}", project);
+
+    let locations = app_state.secrets.list_locations(&project, "secrets").await;
+
+    Json(json!({
+        "locations": locations
+    }))
+    .into_response()
+}
+
+/// GET unique environments for parameters
+/// Custom endpoint: /v1/projects/{project}/locations/{location}/parameters/environments
+async fn list_parameter_environments(
+    State(app_state): State<GcpAppState>,
+    Path((project, location)): Path<(String, String)>,
+) -> Response {
+    info!(
+        "  GET parameter environments: project={}, location={}",
+        project, location
+    );
+
+    let environments = app_state
+        .parameters
+        .list_environments(&project, &location)
+        .await;
+
+    Json(json!({
+        "environments": environments
+    }))
+    .into_response()
+}
+
+/// GET unique locations for parameters
+/// Custom endpoint: /v1/projects/{project}/parameters/locations
+async fn list_parameter_locations(
+    State(app_state): State<GcpAppState>,
+    Path(project): Path<String>,
+) -> Response {
+    info!("  GET parameter locations: project={}", project);
+
+    let locations = app_state.parameters.list_locations(&project).await;
+
+    Json(json!({
+        "locations": locations
+    }))
     .into_response()
 }
 
@@ -1022,10 +1345,19 @@ async fn patch_secret(
     }
 
     // Save updated metadata
-    app_state
+    if let Err(e) = app_state
         .secrets
         .update_metadata(&project, &secret, updated_metadata.clone())
-        .await;
+        .await
+    {
+        warn!("Failed to update metadata: {}", e);
+        return gcp_error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to update metadata: {}", e),
+            Some("INTERNAL"),
+        )
+        .into_response();
+    }
 
     // Get replication for response
     let replication = updated_metadata
@@ -1399,22 +1731,88 @@ async fn get_parameter(
     }
 }
 
+/// Query parameters for filtering parameters
+#[derive(Debug, serde::Deserialize, Clone)]
+pub struct ListParametersQuery {
+    /// Filter by environment (e.g., "dev", "prod", "pact")
+    pub environment: Option<String>,
+    /// Filter by location (e.g., "us-central1", "global")
+    pub location: Option<String>,
+}
+
 /// LIST parameters
 /// Path: /v1/projects/{project}/locations/{location}/parameters
+/// Query parameters: ?environment=dev&location=us-central1
 async fn list_parameters(
     State(app_state): State<GcpAppState>,
     Path((project, location)): Path<(String, String)>,
+    Query(params): Query<ListParametersQuery>,
 ) -> Response {
     info!(
-        "  LIST parameters: project={}, location={}",
-        project, location
+        "  LIST parameters: project={}, location={}, environment={:?}",
+        project, location, params.environment
     );
 
-    // Note: The mock server doesn't currently track all parameters in a location
-    // For now, return an empty list. In a real implementation, we'd need to track
-    // all parameters by location.
+    // Get parameters for this project and location with database-level filtering
+    // This queries the database directly with WHERE clauses instead of loading all parameters
+    let parameter_names = app_state
+        .parameters
+        .list_parameters_filtered(&project, &location, params.environment.as_deref())
+        .await;
+
+    // Process filtered parameters concurrently using futures
+    // Note: Filtering is already done at database level, so we just need to build responses
+    let parameter_futures: Vec<_> = parameter_names
+        .iter()
+        .map(|parameter_name| {
+            let project = project.clone();
+            let location = location.clone();
+            let parameter_name = parameter_name.clone();
+            let parameters = app_state.parameters.clone();
+            async move {
+                // Get metadata for each parameter
+                let metadata = match parameters
+                    .get_metadata(&project, &location, &parameter_name)
+                    .await
+                {
+                    Some(m) => m,
+                    None => return None, // Skip parameters without metadata
+                };
+
+                // Get create time from first version (if exists)
+                let create_time = parameters
+                    .list_versions(&project, &location, &parameter_name)
+                    .await
+                    .and_then(|v| v.first().cloned())
+                    .map(|v| format_timestamp_rfc3339(v.created_at));
+
+                Some(ParameterResponse {
+                    name: format!(
+                        "projects/{}/locations/{}/parameters/{}",
+                        project, location, parameter_name
+                    ),
+                    format: metadata
+                        .get("format")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    payload: None,
+                    create_time,
+                })
+            }
+        })
+        .collect();
+
+    // Await all futures concurrently
+    let parameter_results: Vec<_> = future::join_all(parameter_futures).await;
+
+    // Filter out None values and collect successful results
+    let parameter_list: Vec<ParameterResponse> = parameter_results
+        .into_iter()
+        .filter_map(|result| result)
+        .collect();
+
     Json(json!({
-        "parameters": [],
+        "parameters": parameter_list,
         "nextPageToken": serde_json::Value::Null
     }))
     .into_response()
@@ -1530,7 +1928,7 @@ async fn update_parameter_version(
             let enabled = state == "ENABLED";
 
             // Update version state in store
-            if let Some(version_data) = app_state
+            if let Some(_version_data) = app_state
                 .parameters
                 .get_version(&project, &location, &parameter, &version)
                 .await
@@ -1775,7 +2173,7 @@ async fn main() {
     let contracts_state = AppState::new(contracts);
     let app_state = GcpAppState {
         contracts: contracts_state.contracts,
-        secrets: GcpSecretStore::new(),
+        secrets: GcpSecretStore::new().await,
         parameters: GcpParameterStore::new(),
     };
 
@@ -1784,6 +2182,27 @@ async fn main() {
         // Health check endpoints
         .route("/", get(health_check))
         .route("/health", get(health_check))
+        // Custom endpoint to list all projects (for UI)
+        .route("/v1/projects", get(list_projects))
+        // Custom endpoints for filter values (must come before parameterized routes to avoid conflicts)
+        // These use explicit string paths since they're custom endpoints not in the GCP API spec
+        // Note: Using {project} format to match existing route patterns
+        .route(
+            "/v1/projects/{project}/secrets/environments",
+            get(list_secret_environments),
+        )
+        .route(
+            "/v1/projects/{project}/secrets/locations",
+            get(list_secret_locations),
+        )
+        .route(
+            "/v1/projects/{project}/locations/{location}/parameters/environments",
+            get(list_parameter_environments),
+        )
+        .route(
+            "/v1/projects/{project}/parameters/locations",
+            get(list_parameter_locations),
+        )
         // GCP Secret Manager API endpoints
         // Using route constants from paths::gcp::routes for type safety
         // POST /v1/projects/{project}/secrets - Create a new secret
@@ -1798,11 +2217,39 @@ async fn main() {
         // GET /v1/projects/{project}/secrets/{secret} - Get secret metadata
         // PATCH /v1/projects/{project}/secrets/{secret} - Update secret metadata
         // DELETE /v1/projects/{project}/secrets/{secret} - Delete secret
+        // POST /v1/projects/{project}/secrets/{secret}:addVersion - Add version (must come before SECRET route)
+        // POST /v1/projects/{project}/secrets/{secret}:enable - Enable secret (must come before SECRET route)
+        // POST /v1/projects/{project}/secrets/{secret}:disable - Disable secret (must come before SECRET route)
+        // These routes with colons must be handled by the fallback handler, but we need to ensure
+        // they're not matched by the SECRET route first. The fallback will catch them.
+        // GET /v1/projects/{project}/secrets/{secret} - Get secret metadata
+        // PATCH /v1/projects/{project}/secrets/{secret} - Update secret metadata
+        // DELETE /v1/projects/{project}/secrets/{secret} - Delete secret
+        // Note: POST is allowed here so colon routes (:addVersion, :enable, :disable)
+        // don't get 405 Method Not Allowed. We check for colons and delegate to colon handler.
         .route(
             routes::secret_manager::SECRET,
             delete(delete_secret)
                 .get(get_secret_metadata)
-                .patch(patch_secret),
+                .patch(patch_secret)
+                .post(
+                    |State(app_state): State<GcpAppState>, request: Request| async move {
+                        // Check if this is a colon route (addVersion, enable, disable)
+                        // Extract path before moving request
+                        let path = request.uri().path().to_string();
+                        if path.contains(':') {
+                            // Delegate to colon route handler
+                            handle_colon_routes(State(app_state), request).await
+                        } else {
+                            // Not a colon route, return 405 for POST on non-colon paths
+                            gcp_error_response(
+                                StatusCode::METHOD_NOT_ALLOWED,
+                                format!("POST method not allowed for path: {}", path),
+                                Some("METHOD_NOT_ALLOWED"),
+                            )
+                        }
+                    },
+                ),
         )
         // GCP Parameter Manager API endpoints
         // Using route constants from paths::gcp::routes for type safety

@@ -7,7 +7,7 @@ Complete guide to configuring the Secret Manager Controller.
 The `SecretManagerConfig` CRD is the main configuration resource. Here's the complete spec:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -17,7 +17,7 @@ spec:
   sourceRef:
     kind: GitRepository  # or Application for ArgoCD
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   
   # Provider configuration (required)
   provider:
@@ -38,7 +38,7 @@ spec:
       enabled: true
       gpgSecretRef:
         name: sops-gpg-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
   
   # Config store configuration (optional)
@@ -72,7 +72,7 @@ The `sourceRef` field references your GitOps source. It supports:
 sourceRef:
   kind: GitRepository
   name: my-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
 ```
 
 ### ArgoCD Application
@@ -145,7 +145,7 @@ secrets:
     enabled: true
     gpgSecretRef:
       name: sops-gpg-key
-      namespace: microscaler-system
+      namespace: octopilot-system
       key: private.key
 ```
 
@@ -156,7 +156,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: sops-gpg-key
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 data:
   private.key: <base64-encoded-gpg-private-key>

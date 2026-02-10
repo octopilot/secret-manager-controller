@@ -1,6 +1,6 @@
 # Base image for Pact Mock Servers (GCP, AWS, Azure, Webhook)
 # All pact mock servers share this base image since they're all Rust/Axum statically linked binaries
-# This base image is built once and published to ghcr.io/microscaler/pact-mock-server-base-image
+# This base image is built once and published to ghcr.io/octopilot/pact-mock-server-base-image
 # The individual mock server Dockerfiles then just copy their specific binaries onto this base
 
 ARG TARGETPLATFORM=linux/amd64

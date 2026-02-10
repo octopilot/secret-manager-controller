@@ -3,6 +3,8 @@
 //! Provides the core in-memory secret store with versioning support.
 //! This is shared across all provider-specific implementations.
 
+use crate::secrets::common::store_trait::SecretStoreBackend;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -52,6 +54,14 @@ pub struct SecretEntry {
 #[derive(Clone, Debug)]
 pub struct SecretStore {
     store: Arc<RwLock<HashMap<String, SecretEntry>>>,
+}
+
+/// Get a reference to the internal store for version ID generation
+impl SecretStore {
+    /// Get a read-only snapshot of the store for version ID generation
+    pub async fn snapshot(&self) -> HashMap<String, SecretEntry> {
+        self.store.read().await.clone()
+    }
 }
 
 impl SecretStore {
@@ -283,6 +293,105 @@ impl SecretStore {
     pub async fn list_all_keys(&self) -> Vec<String> {
         let store = self.store.read().await;
         store.keys().cloned().collect()
+    }
+}
+
+#[async_trait::async_trait]
+impl SecretStoreBackend for SecretStore {
+    async fn add_version<F>(
+        &self,
+        key: String,
+        version_data: Value,
+        version_id: Option<String>,
+        version_id_generator: F,
+    ) -> Result<String>
+    where
+        F: FnOnce(&HashMap<String, SecretEntry>, &str) -> String + Send + 'static,
+    {
+        // Clone the store snapshot to avoid holding the guard across await
+        let snapshot = self.snapshot().await;
+        let new_version_id = version_id.unwrap_or_else(|| version_id_generator(&snapshot, &key));
+
+        // Now add the version directly
+        let mut store = self.store.write().await;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let version = SecretVersion {
+            version_id: new_version_id.clone(),
+            data: version_data,
+            enabled: true,
+            created_at: timestamp,
+        };
+
+        let entry = store.entry(key.clone()).or_insert_with(|| SecretEntry {
+            versions: Vec::new(),
+            disabled: false,
+            metadata: json!({}),
+        });
+
+        entry.versions.push(version);
+        info!("  Added version {} to secret: {}", new_version_id, key);
+        Ok(new_version_id)
+    }
+
+    async fn update_metadata(&self, key: String, metadata: Value) -> Result<()> {
+        self.update_metadata(key, metadata).await;
+        Ok(())
+    }
+
+    async fn get_latest(&self, key: &str) -> Option<SecretVersion> {
+        self.get_latest(key).await
+    }
+
+    async fn get_version(&self, key: &str, version_id: &str) -> Option<SecretVersion> {
+        self.get_version(key, version_id).await
+    }
+
+    async fn list_versions(&self, key: &str) -> Option<Vec<SecretVersion>> {
+        self.list_versions(key).await
+    }
+
+    async fn get_metadata(&self, key: &str) -> Option<Value> {
+        self.get_metadata(key).await
+    }
+
+    async fn disable_secret(&self, key: &str) -> bool {
+        self.disable_secret(key).await
+    }
+
+    async fn enable_secret(&self, key: &str) -> bool {
+        self.enable_secret(key).await
+    }
+
+    async fn disable_version(&self, key: &str, version_id: &str) -> bool {
+        self.disable_version(key, version_id).await
+    }
+
+    async fn enable_version(&self, key: &str, version_id: &str) -> bool {
+        self.enable_version(key, version_id).await
+    }
+
+    async fn delete_secret(&self, key: &str) -> bool {
+        self.delete_secret(key).await
+    }
+
+    async fn delete_version(&self, key: &str, version_id: &str) -> bool {
+        self.delete_version(key, version_id).await
+    }
+
+    async fn exists(&self, key: &str) -> bool {
+        self.exists(key).await
+    }
+
+    async fn is_enabled(&self, key: &str) -> bool {
+        self.is_enabled(key).await
+    }
+
+    async fn list_all_keys(&self) -> Vec<String> {
+        self.list_all_keys().await
     }
 }
 

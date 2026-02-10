@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: docs-site
-  namespace: microscaler-system
+  namespace: octopilot-system
   labels:
     app: docs-site
 spec:
@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
       - name: docs-site
-        image: docs-site:latest
-        imagePullPolicy: IfNotPresent
+        image: docs-site
+        imagePullPolicy: Never
         ports:
         - containerPort: 80
           name: http

@@ -41,7 +41,7 @@ The documentation site now includes full-text search powered by **MiniSearch**, 
 The search index is built at build time:
 
 ```bash
-npm run build:search-index
+yarn build:search-index
 ```
 
 This script:
@@ -82,7 +82,7 @@ Search is integrated into `App.tsx`:
 The search index is automatically rebuilt when you run:
 
 ```bash
-npm run build
+yarn build
 ```
 
 The build process runs `build:search-index` before building the site.
@@ -90,7 +90,7 @@ The build process runs `build:search-index` before building the site.
 To manually rebuild the index:
 
 ```bash
-npm run build:search-index
+yarn build:search-index
 ```
 
 ## Customization
@@ -112,7 +112,7 @@ Search modal styling is in `SearchModal.tsx` using Tailwind CSS classes. Colors 
 ### Search Not Working
 
 1. **Check Index Exists**: Verify `src/data/search-index.json` exists
-2. **Rebuild Index**: Run `npm run build:search-index`
+2. **Rebuild Index**: Run `yarn build:search-index`
 3. **Check Console**: Look for errors in browser console
 
 ### No Results Found
@@ -123,7 +123,7 @@ Search modal styling is in `SearchModal.tsx` using Tailwind CSS classes. Colors 
 
 ### Index Not Updating
 
-- Make sure you run `npm run build:search-index` after adding new pages
+- Make sure you run `yarn build:search-index` after adding new pages
 - Check that new pages are added to `sections.ts`
 - Verify markdown files are in the correct location
 

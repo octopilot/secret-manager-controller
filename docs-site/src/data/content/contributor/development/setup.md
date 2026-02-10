@@ -42,7 +42,7 @@ This script checks for Docker, Tilt, and Just, and can install missing tools aut
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/microscaler/secret-manager-controller.git
+git clone https://github.com/octopilot/secret-manager-controller.git
 cd secret-manager-controller
 ```
 
@@ -83,7 +83,7 @@ If you plan to work on the documentation site:
 
 ```bash
 cd docs-site
-npm install
+yarn install
 ```
 
 **Node.js Version:** 18+ required
@@ -261,7 +261,7 @@ cargo build --target x86_64-unknown-linux-musl --release
 docker build -t secret-manager-controller:dev -f dockerfiles/Dockerfile.controller .
 
 # Restart controller
-kubectl rollout restart deployment/secret-manager-controller -n microscaler-system
+kubectl rollout restart deployment/secret-manager-controller -n octopilot-system
 ```
 
 ## Project Structure
@@ -328,7 +328,7 @@ tilt up
 
 # Or manually
 # Rebuild, redeploy, check logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller -f
+kubectl logs -n octopilot-system -l app=secret-manager-controller -f
 ```
 
 ### 4. Run Integration Tests
@@ -347,10 +347,10 @@ cargo test --test integration
 
 ```bash
 # Controller logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller -f
+kubectl logs -n octopilot-system -l app=secret-manager-controller -f
 
 # With previous logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller --previous
+kubectl logs -n octopilot-system -l app=secret-manager-controller --previous
 ```
 
 ### Enable Debug Logging
@@ -371,7 +371,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: secret-manager-controller-config
-  namespace: microscaler-system
+  namespace: octopilot-system
 data:
   RUST_LOG: debug
 ```

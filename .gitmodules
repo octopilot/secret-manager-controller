@@ -1,3 +1,3 @@
 [submodule "docs"]
 	path = docs
-	url = git@github.com:microscaler/secret-manager-controller-docs.git
+	url = git@github.com:octopilot/secret-manager-controller-docs.git

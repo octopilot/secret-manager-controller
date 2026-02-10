@@ -166,11 +166,11 @@ spec:
 **SecretManagerConfig:**
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
-  namespace: microscaler-system
+  namespace: octopilot-system
 spec:
   sourceRef:
     kind: GitRepository
@@ -521,11 +521,11 @@ spec:
 
 **SecretManagerConfig:**
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
-  namespace: microscaler-system
+  namespace: octopilot-system
 spec:
   sourceRef:
     kind: GitRepository

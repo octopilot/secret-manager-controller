@@ -8,7 +8,8 @@ fn test_provider_config_deserialize_with_type_field() {
     let json_with_type = r#"{
         "type": "gcp",
         "gcp": {
-            "projectId": "test-project"
+            "projectId": "test-project",
+            "location": "us-central1"
         }
     }"#;
     
@@ -18,6 +19,7 @@ fn test_provider_config_deserialize_with_type_field() {
     match config {
         ProviderConfig::Gcp(gcp_config) => {
             assert_eq!(gcp_config.project_id, "test-project");
+            assert_eq!(gcp_config.location, "us-central1");
         }
         _ => panic!("Expected Gcp config"),
     }
@@ -28,7 +30,8 @@ fn test_provider_config_deserialize_without_type_field() {
     // Test deserialization without type field (also valid)
     let json_without_type = r#"{
         "gcp": {
-            "projectId": "test-project"
+            "projectId": "test-project",
+            "location": "us-central1"
         }
     }"#;
     
@@ -38,6 +41,7 @@ fn test_provider_config_deserialize_without_type_field() {
     match config {
         ProviderConfig::Gcp(gcp_config) => {
             assert_eq!(gcp_config.project_id, "test-project");
+            assert_eq!(gcp_config.location, "us-central1");
         }
         _ => panic!("Expected Gcp config"),
     }
@@ -68,7 +72,8 @@ fn test_provider_config_deserialize_azure_with_type() {
     let json = r#"{
         "type": "azure",
         "azure": {
-            "vaultName": "test-vault"
+            "vaultName": "test-vault",
+            "location": "eastus"
         }
     }"#;
     
@@ -78,6 +83,7 @@ fn test_provider_config_deserialize_azure_with_type() {
     match config {
         ProviderConfig::Azure(azure_config) => {
             assert_eq!(azure_config.vault_name, "test-vault");
+            assert_eq!(azure_config.location, "eastus");
         }
         _ => panic!("Expected Azure config"),
     }

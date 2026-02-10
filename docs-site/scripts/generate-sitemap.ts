@@ -2,11 +2,12 @@ import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { userSections, contributorSections } from '../src/data/sections.js';
+import { DOCS_BASE_URL } from '../src/data/site-config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const BASE_URL = process.env.DOCS_BASE_URL || 'https://secret-manager-controller.microscaler.io';
+const BASE_URL = process.env.DOCS_BASE_URL || DOCS_BASE_URL;
 const OUTPUT_DIR = join(__dirname, '../public');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'sitemap.xml');
 

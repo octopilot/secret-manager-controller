@@ -41,6 +41,10 @@ async function buildSearchIndex() {
   // Process user documentation
   for (const section of userSections) {
     for (const page of section.pages) {
+      // Skip pages without files (e.g., special component pages like secrets-viewer)
+      if (!page.file || page.file.trim() === '') {
+        continue;
+      }
       const filePath = join(__dirname, '../src/data/content/user', page.file);
       try {
         const content = readFileSync(filePath, 'utf-8');
@@ -65,6 +69,10 @@ async function buildSearchIndex() {
   // Process contributor documentation
   for (const section of contributorSections) {
     for (const page of section.pages) {
+      // Skip pages without files (e.g., special component pages)
+      if (!page.file || page.file.trim() === '') {
+        continue;
+      }
       const filePath = join(__dirname, '../src/data/content/contributor', page.file);
       try {
         const content = readFileSync(filePath, 'utf-8');

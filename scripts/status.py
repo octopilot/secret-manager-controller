@@ -34,7 +34,7 @@ def main():
     
     print("📦 Controller Pods:")
     pods_output = run_kubectl_command(
-        "kubectl get pods -n microscaler-system -l app=secret-manager-controller 2>/dev/null",
+        "kubectl get pods -n octopilot-system -l app=secret-manager-controller 2>/dev/null",
         "No pods found"
     )
     print(pods_output)
@@ -51,12 +51,12 @@ def main():
     print("🔧 CRD Status:")
     # Try both possible CRD names (old and new)
     crd_output = run_kubectl_command(
-        "kubectl get crd secretmanagerconfigs.secret-management.microscaler.io 2>/dev/null",
+        "kubectl get crd secretmanagerconfigs.secret-management.octopilot.io 2>/dev/null",
         ""
     )
     if not crd_output or crd_output == "" or "not found" in crd_output.lower():
         crd_output = run_kubectl_command(
-            "kubectl get crd secretmanagerconfigs.secretmanager.microscaler.io 2>/dev/null",
+            "kubectl get crd secretmanagerconfigs.secret-management.octopilot.io 2>/dev/null",
             "CRD not found"
         )
     print(crd_output)

@@ -6,7 +6,7 @@
 # Only apply when you need to test without cloud accounts.
 #
 # Usage:
-#   kubectl patch deployment secret-manager-controller -n microscaler-system --patch-file config/deployment/pact-env-patch.yaml
+#   kubectl patch deployment secret-manager-controller -n octopilot-system --patch-file config/deployment/pact-env-patch.yaml
 #
 # Or add to kustomization.yaml overlay:
 #   patches:
@@ -19,7 +19,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
 spec:
   template:
     spec:

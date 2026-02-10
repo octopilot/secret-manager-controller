@@ -35,6 +35,28 @@ pub async fn process_kustomize_secrets(
         ProviderConfig::Azure(_) => "azure",
     };
 
+    // Extract environment and location from config
+    let environment = &config.spec.secrets.environment;
+    // For GCP, location is required in the config (enforced by CRD validation)
+    // "automatic" is not a valid GCP location - automatic replication means no specific location (NULL in DB)
+    // If location is empty string, treat it as automatic replication (NULL in DB)
+    let location = match &config.spec.provider {
+        ProviderConfig::Gcp(gcp_config) => {
+            // Location is required, but if it's empty string, treat as automatic replication
+            let loc = gcp_config.location.clone();
+            if loc.is_empty() || loc == "automatic" {
+                "".to_string() // Empty means automatic replication (NULL in DB)
+            } else {
+                loc
+            }
+        }
+        ProviderConfig::Aws(aws_config) => aws_config.region.clone(),
+        ProviderConfig::Azure(azure_config) => {
+            // Location is required in the config (enforced by CRD validation)
+            azure_config.location.clone()
+        }
+    };
+
     let publish_span = info_span!(
         "secrets.publish",
         provider = provider_name,
@@ -52,7 +74,10 @@ pub async fn process_kustomize_secrets(
             key.as_str(),
             config.spec.secrets.suffix.as_deref(),
         );
-        match provider.create_or_update_secret(&secret_name, value).await {
+        match provider
+            .create_or_update_secret(&secret_name, value, environment, &location)
+            .await
+        {
             Ok(was_updated) => {
                 count += 1;
                 observability::metrics::increment_secrets_published_total(provider_name, 1);

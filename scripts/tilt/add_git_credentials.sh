@@ -14,22 +14,28 @@ fi
 echo "🔐 Adding git credentials to SOPS-encrypted .env file"
 echo ""
 echo "Choose authentication method:"
-echo "1) HTTPS (username + token/password)"
+echo "1) HTTPS (token-based)"
 echo "2) SSH (private key)"
 read -p "Enter choice [1 or 2]: " choice
 
 case $choice in
     1)
-        read -p "Enter Git username: " username
-        read -sp "Enter Git token/password: " password
+        echo "Choose token type:"
+        echo "1) GitHub token (GITHUB_TOKEN)"
+        echo "2) Generic Git token (GIT_TOKEN)"
+        read -p "Enter choice [1 or 2]: " token_type
+        
+        read -sp "Enter Git token: " token
         echo ""
         
         # Use sops to edit the encrypted file
-        # Add the credentials as new lines
-        sops --set "[\"GIT_USERNAME\"] \"$username\"" "$ENV_FILE"
-        sops --set "[\"GIT_TOKEN\"] \"$password\"" "$ENV_FILE"
-        
-        echo "✅ Added HTTPS git credentials to $ENV_FILE"
+        if [ "$token_type" = "1" ]; then
+            sops --set "[\"GITHUB_TOKEN\"] \"$token\"" "$ENV_FILE"
+            echo "✅ Added GitHub token to $ENV_FILE"
+        else
+            sops --set "[\"GIT_TOKEN\"] \"$token\"" "$ENV_FILE"
+            echo "✅ Added Git token to $ENV_FILE"
+        fi
         ;;
     2)
         echo "Paste your SSH private key (press Enter, then paste, then Ctrl+D on empty line):"

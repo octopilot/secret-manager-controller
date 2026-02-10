@@ -239,6 +239,7 @@ pub fn create_gcp_test_config(
             },
             provider: ProviderConfig::Gcp(GcpConfig {
                 project_id: project_id.to_string(),
+                location: "us-central1".to_string(),
                 auth: None,
             }),
             secrets: SecretsConfig {
@@ -333,6 +334,7 @@ pub fn create_azure_test_config(
             },
             provider: ProviderConfig::Azure(AzureConfig {
                 vault_name: vault_name.to_string(),
+                location: "eastus".to_string(),
                 auth: None,
             }),
             secrets: SecretsConfig {

@@ -397,14 +397,14 @@ patches:
 ### Option 2: kubectl patch
 
 ```bash
-kubectl patch deployment secret-manager-controller -n microscaler-system \
+kubectl patch deployment secret-manager-controller -n octopilot-system \
   --patch-file config/deployment/pact-env-patch.yaml
 ```
 
 ### Option 3: Environment Variables
 
 ```bash
-kubectl set env deployment/secret-manager-controller -n microscaler-system \
+kubectl set env deployment/secret-manager-controller -n octopilot-system \
   PACT_MODE=true \
   GCP_SECRET_MANAGER_ENDPOINT=http://gcp-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234 \
   AWS_SECRETS_MANAGER_ENDPOINT=http://aws-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234 \

@@ -48,7 +48,7 @@ docs-site/
 
 ```bash
 cd docs-site
-npm install
+yarn install
 ```
 
 ### Development Server
@@ -56,7 +56,7 @@ npm install
 Start the development server with hot module replacement:
 
 ```bash
-npm run dev
+yarn dev
 ```
 
 The site will be available at `http://localhost:3002` (port configured in `vite.config.ts`).
@@ -71,7 +71,7 @@ The site will be available at `http://localhost:3002` (port configured in `vite.
 Build the site for production:
 
 ```bash
-npm run build
+yarn build
 ```
 
 Output is written to `dist/` directory.
@@ -86,7 +86,7 @@ Output is written to `dist/` directory.
 Preview the production build locally:
 
 ```bash
-npm run preview
+yarn preview
 ```
 
 ---
@@ -159,7 +159,7 @@ The new feature provides...
 ## Usage
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 spec:
   # Configuration here
@@ -176,7 +176,7 @@ graph TB
 
 ### Step 4: Test Locally
 
-1. Start the development server: `npm run dev`
+1. Start the development server: `yarn dev`
 2. Navigate to the new page in the browser
 3. Verify content renders correctly
 4. Check navigation appears correctly
@@ -266,7 +266,7 @@ Code blocks support syntax highlighting for various languages:
 
 ```markdown
 \`\`\`yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 spec:
   sourceRef:
@@ -444,16 +444,16 @@ The site uses `marked` with GitHub Flavored Markdown (GFM) enabled:
 
 ```bash
 # Install dependencies
-npm install
+yarn install
 
 # Start dev server
-npm run dev
+yarn dev
 
 # Build for production
-npm run build
+yarn build
 
 # Preview production build
-npm run preview
+yarn preview
 ```
 
 ### Docker Build
@@ -533,17 +533,17 @@ k8s_resource(
 1. Check Tailwind classes are correct
 2. Verify `index.css` custom styles are applied
 3. Clear browser cache
-4. Rebuild: `npm run build`
+4. Rebuild: `yarn build`
 
 ### Build Errors
 
-**Symptoms:** `npm run build` fails.
+**Symptoms:** `yarn build` fails.
 
 **Solutions:**
-1. Check TypeScript errors: `npm run build` shows errors
+1. Check TypeScript errors: `yarn build` shows errors
 2. Verify all imports are correct
 3. Check file paths in `sections.ts` match actual files
-4. Ensure all dependencies are installed: `npm install`
+4. Ensure all dependencies are installed: `yarn install`
 
 ---
 
@@ -603,7 +603,7 @@ This ensures:
 1. **Create Markdown File**: Add new `.md` file in appropriate directory
 2. **Update Navigation**: Add page to `sections.ts`
 3. **Write Content**: Write markdown content with examples
-4. **Test Locally**: Run `npm run dev` and verify
+4. **Test Locally**: Run `yarn dev` and verify
 5. **Commit**: Commit with conventional commit message
 
 ### Updating Existing Pages
@@ -614,8 +614,8 @@ This ensures:
 
 ### Reviewing Changes
 
-1. **Build Locally**: Run `npm run build` to check for errors
-2. **Preview Build**: Run `npm run preview` to see production build
+1. **Build Locally**: Run `yarn build` to check for errors
+2. **Preview Build**: Run `yarn preview` to see production build
 3. **Check Navigation**: Verify navigation still works correctly
 4. **Test Links**: Check all internal links work
 
@@ -639,7 +639,7 @@ The example feature provides...
 ## Usage
 
 \`\`\`yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: example

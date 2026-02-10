@@ -16,17 +16,17 @@ This guide will help you install the Secret Manager Controller in your Kubernete
 1. **Apply the CRD:**
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/microscaler/secret-manager-controller/main/config/crd/secretmanagerconfig.yaml
+kubectl apply -f https://raw.githubusercontent.com/octopilot/secret-manager-controller/main/config/crd/secretmanagerconfig.yaml
 ```
 
 2. **Apply the controller manifests:**
 
 ```bash
-kubectl apply -k https://github.com/microscaler/secret-manager-controller/config/
+kubectl apply -k https://github.com/octopilot/secret-manager-controller/config/
 ```
 
 This will create:
-- The `microscaler-system` namespace
+- The `octopilot-system` namespace
 - ServiceAccount, Role, and RoleBinding for the controller
 - Deployment for the controller
 
@@ -34,7 +34,7 @@ This will create:
 
 ```bash
 # Add the Helm repository
-helm repo add secret-manager-controller https://microscaler.github.io/secret-manager-controller
+helm repo add secret-manager-controller https://octopilot.github.io/secret-manager-controller
 helm repo update
 
 # Install the controller
@@ -46,7 +46,7 @@ helm install secret-manager-controller secret-manager-controller/secret-manager-
 Check that the controller is running:
 
 ```bash
-kubectl get pods -n microscaler-system
+kubectl get pods -n octopilot-system
 ```
 
 You should see the `secret-manager-controller` pod in `Running` state:
@@ -59,7 +59,7 @@ secret-manager-controller-xxxxxxxxxx-xxx  1/1     Running   0          1m
 Check the controller logs:
 
 ```bash
-kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=50
+kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=50
 ```
 
 ## Cloud Provider Setup

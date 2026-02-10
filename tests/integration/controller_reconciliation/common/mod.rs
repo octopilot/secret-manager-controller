@@ -304,6 +304,7 @@ pub fn create_gcp_reconciliation_config(
             },
             provider: ProviderConfig::Gcp(GcpConfig {
                 project_id: project.to_string(),
+                location: "us-central1".to_string(),
                 auth: None,
             }),
             configs: None,
@@ -410,6 +411,7 @@ pub fn create_azure_reconciliation_config(
             },
             provider: ProviderConfig::Azure(AzureConfig {
                 vault_name: vault_name.to_string(),
+                location: "eastus".to_string(),
                 auth: None,
             }),
             configs: None,

@@ -205,7 +205,11 @@ async fn test_azure_provider_create_secret_with_pact() {
             .header("content-type", "application/json")
             .query_param("api-version", "2025-07-01")
             .json_body(json!({
-                "value": "test-secret-value"
+                "value": "test-secret-value",
+                "tags": {
+                    "environment": "test",
+                    "location": "eastus"
+                }
             }));
         i.response
             .status(200)
@@ -237,6 +241,7 @@ async fn test_azure_provider_create_secret_with_pact() {
     // Create Azure provider instance
     let config = AzureConfig {
         vault_name: "test-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None, // Use default (Managed Identity) - won't matter for Pact
     };
 
@@ -251,7 +256,7 @@ async fn test_azure_provider_create_secret_with_pact() {
 
     // Call the actual provider method
     let result = provider
-        .create_or_update_secret("test-secret-name", "test-secret-value")
+        .create_or_update_secret("test-secret-name", "test-secret-value", "test", "eastus")
         .await;
 
     // Verify it succeeded
@@ -304,7 +309,11 @@ async fn test_azure_provider_update_secret_with_pact() {
             .header("content-type", "application/json")
             .query_param("api-version", "2025-07-01")
             .json_body(json!({
-                "value": "new-secret-value"
+                "value": "new-secret-value",
+                "tags": {
+                    "environment": "test",
+                    "location": "eastus"
+                }
             }));
         i.response
             .status(200)
@@ -334,6 +343,7 @@ async fn test_azure_provider_update_secret_with_pact() {
 
     let config = AzureConfig {
         vault_name: "test-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     };
 
@@ -347,7 +357,7 @@ async fn test_azure_provider_update_secret_with_pact() {
 
     // Call the actual provider method - should update since value changed
     let result = provider
-        .create_or_update_secret("test-secret-name", "new-secret-value")
+        .create_or_update_secret("test-secret-name", "new-secret-value", "test", "eastus")
         .await;
 
     assert!(result.is_ok());
@@ -402,6 +412,7 @@ async fn test_azure_provider_no_change_with_pact() {
 
     let config = AzureConfig {
         vault_name: "test-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     };
 
@@ -415,7 +426,7 @@ async fn test_azure_provider_no_change_with_pact() {
 
     // Call the actual provider method - should return false (no change)
     let result = provider
-        .create_or_update_secret("test-secret-name", "test-secret-value")
+        .create_or_update_secret("test-secret-name", "test-secret-value", "test", "eastus")
         .await;
 
     assert!(result.is_ok());

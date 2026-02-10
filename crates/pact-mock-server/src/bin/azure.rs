@@ -42,6 +42,8 @@ struct AzureAppState {
 #[derive(serde::Deserialize)]
 struct SetSecretRequest {
     value: String,
+    #[serde(default)]
+    tags: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Format Unix timestamp to Azure API format (Unix timestamp as integer)
@@ -237,25 +239,39 @@ async fn list_all_secrets(State(app_state): State<AzureAppState>) -> Response {
     // Get all secret names
     let all_keys = app_state.secrets.list_all_secrets().await;
 
-    let secret_list: Vec<serde_json::Value> = all_keys
+    // Process all secrets concurrently using futures
+    let secret_futures: Vec<_> = all_keys
         .iter()
-        .filter_map(|secret_name| {
-            // Get latest version for metadata
-            let latest_version = app_state.secrets.get_latest(secret_name);
-            // Use tokio::runtime::Handle to run async in sync context
-            let rt = tokio::runtime::Handle::current();
-            let version = rt.block_on(latest_version)?;
-
-            Some(json!({
-                "id": format!("https://test-vault.vault.azure.net/secrets/{}", secret_name),
-                "attributes": {
-                    "enabled": version.enabled,
-                    "created": format_timestamp_azure(version.created_at),
-                    "updated": format_timestamp_azure(version.created_at),
-                    "recoveryLevel": "Recoverable+Purgeable"
+        .map(|secret_name| {
+            let secret_name = secret_name.clone();
+            let secrets = app_state.secrets.clone();
+            async move {
+                // Get latest version for metadata
+                if let Some(version) = secrets.get_latest(&secret_name).await {
+                    Some(json!({
+                        "id": format!("https://test-vault.vault.azure.net/secrets/{}", secret_name),
+                        "attributes": {
+                            "enabled": version.enabled,
+                            "created": format_timestamp_azure(version.created_at),
+                            "updated": format_timestamp_azure(version.created_at),
+                            "recoveryLevel": "Recoverable+Purgeable"
+                        }
+                    }))
+                } else {
+                    None
                 }
-            }))
+            }
         })
+        .collect();
+
+    // Await all futures concurrently
+    use futures::future;
+    let secret_results: Vec<_> = future::join_all(secret_futures).await;
+
+    // Filter out None values and collect successful results
+    let secret_list: Vec<serde_json::Value> = secret_results
+        .into_iter()
+        .filter_map(|result| result)
         .collect();
 
     Json(json!({
@@ -274,14 +290,25 @@ async fn set_secret(
     Json(body): Json<SetSecretRequest>,
 ) -> Response {
     info!(
-        "  PUT secret: name={}, value_length={}",
+        provider = "azure",
+        secret_name = name,
+        operation = "set_secret",
+        value_length = body.value.len(),
+        "PUT secret: name={}, value_length={}",
         name,
         body.value.len()
     );
 
     // Validate secret size (Azure limit: 25KB)
     if let Err(size_error) = validate_azure_secret_size(&body.value) {
-        warn!("  Secret size validation failed: {}", size_error);
+        warn!(
+            provider = "azure",
+            secret_name = name,
+            operation = "set_secret",
+            error = %size_error,
+            "Secret size validation failed: {}",
+            size_error
+        );
         return azure_error_response(
             StatusCode::BAD_REQUEST,
             azure_error_codes::BAD_PARAMETER,
@@ -289,11 +316,94 @@ async fn set_secret(
         );
     }
 
+    // Validate tags - environment and location are required
+    let tags = body.tags.as_ref();
+    let environment = tags.and_then(|t| t.get("environment")).map(|s| s.as_str());
+    let location = tags.and_then(|t| t.get("location")).map(|s| s.as_str());
+
+    if environment.is_none() || environment.unwrap_or("").is_empty() {
+        warn!(
+            provider = "azure",
+            secret_name = name,
+            operation = "set_secret",
+            "Validation failed: missing or empty environment tag"
+        );
+        return azure_error_response(
+            StatusCode::BAD_REQUEST,
+            azure_error_codes::BAD_PARAMETER,
+            "Missing required tag: 'environment'. Secrets must include tags with 'environment' and 'location' keys.".to_string(),
+        )
+        .into_response();
+    }
+
+    if location.is_none() || location.unwrap_or("").is_empty() {
+        warn!(
+            provider = "azure",
+            secret_name = name,
+            operation = "set_secret",
+            "Validation failed: missing or empty location tag"
+        );
+        return azure_error_response(
+            StatusCode::BAD_REQUEST,
+            azure_error_codes::BAD_PARAMETER,
+            "Missing required tag: 'location'. Secrets must include tags with 'environment' and 'location' keys.".to_string(),
+        )
+        .into_response();
+    }
+
+    // Store metadata with tags before creating version
+    if let Some(tags) = &body.tags {
+        let metadata = serde_json::json!({
+            "tags": tags
+        });
+        if let Err(e) = app_state.secrets.update_metadata(&name, metadata).await {
+            warn!(
+                provider = "azure",
+                secret_name = name,
+                operation = "set_secret",
+                error = %e,
+                "Failed to update metadata: {}",
+                e
+            );
+            // Continue anyway - metadata update failure shouldn't block secret creation
+        }
+    }
+
     // Create new version
-    let version_id = app_state
+    let version_id = match app_state
         .secrets
         .set_secret(&name, body.value.clone())
-        .await;
+        .await
+    {
+        Ok(id) => {
+            info!(
+                provider = "azure",
+                secret_name = name,
+                operation = "set_secret",
+                version_id = id,
+                "Successfully set secret: name={}, version={}",
+                name,
+                id
+            );
+            id
+        }
+        Err(e) => {
+            warn!(
+                provider = "azure",
+                secret_name = name,
+                operation = "set_secret",
+                error = %e,
+                "Failed to set secret: {}",
+                e
+            );
+            return azure_error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                azure_error_codes::INTERNAL_ERROR,
+                format!("Failed to set secret: {}", e),
+            )
+            .into_response();
+        }
+    };
 
     // Get the version to include timestamp
     let version = app_state.secrets.get_version(&name, &version_id).await;
@@ -341,10 +451,23 @@ async fn update_secret(
     Path(name): Path<String>,
     Json(body): Json<UpdateSecretRequest>,
 ) -> Response {
-    info!("  PATCH secret: name={}", name);
+    info!(
+        provider = "azure",
+        secret_name = name,
+        operation = "update_secret",
+        "PATCH secret: name={}",
+        name
+    );
 
     // Check if secret exists
     if !app_state.secrets.exists(&name).await {
+        warn!(
+            provider = "azure",
+            secret_name = name,
+            operation = "update_secret",
+            "Secret not found: {}",
+            name
+        );
         return azure_error_response(
             StatusCode::NOT_FOUND,
             azure_error_codes::SECRET_NOT_FOUND,
@@ -356,11 +479,29 @@ async fn update_secret(
     if let Some(attributes) = body.attributes {
         if let Some(enabled) = attributes.enabled {
             if enabled {
-                app_state.secrets.enable_secret(&name).await;
-                info!("  Enabled secret: {}", name);
+                let result = app_state.secrets.enable_secret(&name).await;
+                info!(
+                    provider = "azure",
+                    secret_name = name,
+                    operation = "update_secret",
+                    action = "enable",
+                    success = result,
+                    "Enabled secret: name={}, success={}",
+                    name,
+                    result
+                );
             } else {
-                app_state.secrets.disable_secret(&name).await;
-                info!("  Disabled secret: {}", name);
+                let result = app_state.secrets.disable_secret(&name).await;
+                info!(
+                    provider = "azure",
+                    secret_name = name,
+                    operation = "update_secret",
+                    action = "disable",
+                    success = result,
+                    "Disabled secret: name={}, success={}",
+                    name,
+                    result
+                );
             }
         }
     }
@@ -555,10 +696,22 @@ async fn restore_secret(
     if let Some(versions) = backup_json.get("versions").and_then(|v| v.as_array()) {
         if let Some(last_version) = versions.last() {
             if let Some(value) = last_version.get("value").and_then(|v| v.as_str()) {
-                let version_id = app_state
+                let version_id = match app_state
                     .secrets
                     .set_secret(secret_name, value.to_string())
-                    .await;
+                    .await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        warn!("Failed to restore secret: {}", e);
+                        return azure_error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            azure_error_codes::INTERNAL_ERROR,
+                            format!("Failed to restore secret: {}", e),
+                        )
+                        .into_response();
+                    }
+                };
                 let version = app_state
                     .secrets
                     .get_version(secret_name, &version_id)
@@ -769,16 +922,30 @@ async fn main() {
     let contracts_state = AppState::new(contracts);
     let app_state = AzureAppState {
         contracts: contracts_state.contracts,
-        secrets: AzureSecretStore::new(),
+        secrets: AzureSecretStore::new().await,
     };
 
     // Build router with Azure Key Vault API endpoints
     // Note: GET uses trailing slash, PUT does not
     // All paths are defined in paths::azure::key_vault
+    // Custom filter endpoints
+    async fn list_environments(State(app_state): State<AzureAppState>) -> Response {
+        let environments = app_state.secrets.list_environments("secrets").await;
+        Json(json!({ "environments": environments })).into_response()
+    }
+
+    async fn list_locations(State(app_state): State<AzureAppState>) -> Response {
+        let locations = app_state.secrets.list_locations("secrets").await;
+        Json(json!({ "locations": locations })).into_response()
+    }
+
     let app = Router::new()
         // Health check endpoints
         .route("/", get(health_check))
         .route("/health", get(health_check))
+        // Custom filter endpoints (must come before other routes)
+        .route("/secrets/environments", get(list_environments))
+        .route("/secrets/locations", get(list_locations))
         // Azure Key Vault Secrets API endpoints
         // Using route constants from paths::azure::routes for type safety
         // GET /secrets - List all secrets

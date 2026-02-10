@@ -79,7 +79,7 @@ mod tests {
             &client,
             git_repo_name,
             namespace,
-            "https://github.com/microscaler/secret-manager-controller.git",
+            "https://github.com/octopilot/secret-manager-controller.git",
             "main",
             &format!("deployment-configuration/profiles/{}", profile),
         )
@@ -209,7 +209,7 @@ mod tests {
             &client,
             git_repo_name,
             namespace,
-            "https://github.com/microscaler/secret-manager-controller.git",
+            "https://github.com/octopilot/secret-manager-controller.git",
             "main",
             &format!("deployment-configuration/profiles/{}", profile),
         )
@@ -341,7 +341,7 @@ mod tests {
             &client,
             git_repo_name,
             namespace,
-            "https://github.com/microscaler/secret-manager-controller.git",
+            "https://github.com/octopilot/secret-manager-controller.git",
             "main",
             &format!("deployment-configuration/profiles/{}", profile),
         )
@@ -462,7 +462,7 @@ mod tests {
             &client,
             git_repo_name,
             namespace,
-            "https://github.com/microscaler/secret-manager-controller.git",
+            "https://github.com/octopilot/secret-manager-controller.git",
             "main",
             &format!("deployment-configuration/profiles/{}", profile),
         )
@@ -591,7 +591,7 @@ mod tests {
             &client,
             app_name,
             namespace,
-            "https://github.com/microscaler/secret-manager-controller.git",
+            "https://github.com/octopilot/secret-manager-controller.git",
             "main",
             &format!("deployment-configuration/profiles/{}", profile),
         )

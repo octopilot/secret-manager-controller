@@ -1,0 +1,277 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: secret-manager-controller-pact-broker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      serviceAccountName: pact-manager  # ServiceAccount for postgres-manager sidecar to watch ConfigMap
+      # Use init containers to:
+      # 1. Create data directory with proper permissions (using PriceWhisperer approach)
+      # 2. Process ConfigMap and create sentinel file (migrations ready)
+      # 3. Wait for sentinel file (safety check)
+      initContainers:
+        - name: create-dirs
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              # Create PostgreSQL data directory
+              mkdir -p /var/lib/postgresql/data
+              chmod -R 755 /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+        - name: prepare-migrations
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Processing ConfigMap and preparing migrations..."
+              CONFIGMAP_PATH="/migrations-configmap"
+              SENTINEL_FILE="/shared/migrations-ready.flag"
+              MIGRATIONS_DIR="/shared/postgres-migrations"
+              
+              # Create shared directory structure
+              mkdir -p /shared
+              mkdir -p "$MIGRATIONS_DIR/gcp" "$MIGRATIONS_DIR/aws" "$MIGRATIONS_DIR/azure"
+              
+              # Process ConfigMap files (flattened keys like "gcp_001_create_schema.sql")
+              MIGRATION_COUNT=0
+              if [ -d "$CONFIGMAP_PATH" ]; then
+                for file in "$CONFIGMAP_PATH"/*.sql; do
+                  if [ -f "$file" ]; then
+                    filename=$(basename "$file")
+                    # Parse key format: "schema_filename.sql"
+                    if echo "$filename" | grep -q '_'; then
+                      schema=$(echo "$filename" | cut -d'_' -f1)
+                      rest=$(echo "$filename" | cut -d'_' -f2-)
+                      if [ "$schema" = "gcp" ] || [ "$schema" = "aws" ] || [ "$schema" = "azure" ]; then
+                        dest="$MIGRATIONS_DIR/$schema/$rest"
+                        cp "$file" "$dest"
+                        MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
+                        echo "  Copied: $filename -> $schema/$rest"
+                      fi
+                    fi
+                  fi
+                done
+              fi
+              
+              # Create sentinel file
+              if [ $MIGRATION_COUNT -gt 0 ]; then
+                echo "migrations-ready-$MIGRATION_COUNT" > "$SENTINEL_FILE"
+                echo "✅ Created sentinel file: $SENTINEL_FILE ($MIGRATION_COUNT migrations ready)"
+              else
+                echo "migrations-ready-empty" > "$SENTINEL_FILE"
+                echo "⚠️  No migrations found, but created sentinel file anyway"
+              fi
+          volumeMounts:
+            - name: migrations-configmap
+              mountPath: /migrations-configmap
+              readOnly: true
+            - name: shared-data
+              mountPath: /shared
+        - name: wait-for-migrations
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for migrations to be ready..."
+              SENTINEL_FILE="/shared/migrations-ready.flag"
+              MAX_WAIT=10
+              ELAPSED=0
+              
+              while [ $ELAPSED -lt $MAX_WAIT ]; do
+                if [ -f "$SENTINEL_FILE" ]; then
+                  echo "✅ Migrations are ready! Sentinel file found."
+                  cat "$SENTINEL_FILE"
+                  exit 0
+                fi
+                echo "  Waiting for sentinel file... (${ELAPSED}s/${MAX_WAIT}s)"
+                sleep 1
+                ELAPSED=$((ELAPSED + 1))
+              done
+              
+              echo "⚠️  Warning: Sentinel file not found after ${MAX_WAIT}s, but continuing..."
+              exit 0
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+      containers:
+        - name: postgres
+          # Use standard PostgreSQL 15 image (much smaller than custom 17-duckdb image)
+          # PostgreSQL 15 is fully compatible with all SQL migrations
+          image: postgres:15.15-trixie
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: "pact"
+            - name: POSTGRES_PASSWORD
+              value: "pact"
+            - name: POSTGRES_DB
+              value: "postgres"
+            # Configure authentication: use password authentication instead of trust
+            # This prevents the "trust" authentication warning
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "md5"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          # Let PostgreSQL image handle security context (it runs as postgres user)
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  PGPASSWORD=pact pg_isready -U pact -d postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  PGPASSWORD=pact pg_isready -U pact -d postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+        # PostgreSQL migration manager sidecar
+        # Watches ConfigMap for migration files and runs them when postgres is ready
+        # Note: Tilt will automatically substitute 'postgres-manager' with 'localhost:5000/postgres-manager:tilt-{hash}'
+        # The image name must match the custom_build name in Tiltfile for Tilt to substitute it
+        - name: postgres-manager
+          image: postgres-manager
+          imagePullPolicy: IfNotPresent
+          command:
+            - /app/postgres-manager
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://pact:pact@localhost:5432/pact_mock_servers"
+            - name: NAMESPACE
+              value: "secret-manager-controller-pact-broker"
+            - name: CONFIGMAP_NAME
+              value: "postgres-migrations"
+            - name: CONFIGMAP_PATH
+              value: "/migrations-configmap"
+            - name: MIGRATIONS_READY_SENTINEL_PATH
+              value: "/shared/migrations-ready.flag"
+            - name: POSTGRES_HOST
+              value: "localhost"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: RUST_LOG
+              value: "info"
+            - name: HEALTH_PORT
+              value: "1239"
+          volumeMounts:
+            - name: migrations-configmap
+              mountPath: /migrations-configmap
+              readOnly: true
+            - name: shared-data
+              mountPath: /shared
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 200m
+          startupProbe:
+            httpGet:
+              path: /liveness
+              port: 1239
+            # Startup probe allows up to 2 minutes for postgres-manager to start
+            # Health server starts immediately, but needs a moment to bind and accept connections
+            # Then migrations can take 30-60 seconds
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 60  # 60 * 2s = 2 minutes max startup time
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: 1239
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 1239
+            # Readiness probe checks if migrations are applied
+            # This starts after startup probe succeeds, so migrations should be done
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: migrations-configmap
+          configMap:
+            name: postgres-migrations
+        - name: shared-data
+          emptyDir: {}
+        - name: init-scripts
+          configMap:
+            name: postgres-init
+

@@ -226,7 +226,7 @@ fn create_reconcile_fn(
             .metadata
             .annotations
             .as_ref()
-            .and_then(|ann| ann.get("secret-management.microscaler.io/reconcile"))
+            .and_then(|ann| ann.get("secret-management.octopilot.io/reconcile"))
             .is_some();
 
         // Check if this is a periodic reconciliation (requeue-triggered)

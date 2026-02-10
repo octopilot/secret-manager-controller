@@ -86,6 +86,10 @@ pub struct Reconciler {
     // Backoff state per resource (identified by namespace/name)
     // Moved to error_policy() layer to prevent blocking watch/timer paths
     pub backoff_states: Arc<Mutex<HashMap<String, BackoffState>>>,
+    // Git operation locks per resource (identified by namespace/name)
+    // Ensures only one git operation (clone/fetch) per resource at a time
+    // Uses AsyncMutex to serialize git operations without blocking the entire controller
+    pub git_operation_locks: Arc<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
 }
 
 impl std::fmt::Debug for Reconciler {
@@ -122,6 +126,19 @@ impl Reconciler {
             sops_private_key: Arc::new(AsyncMutex::new(sops_private_key)),
             sops_capability_ready,
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
+            git_operation_locks: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    /// Get or create a git operation lock for a resource
+    /// This ensures only one git operation (clone/fetch) per resource at a time
+    /// Returns a guard that will be released when dropped
+    pub fn get_git_operation_lock(&self, namespace: &str, name: &str) -> Arc<AsyncMutex<()>> {
+        let resource_key = format!("{}/{}", namespace, name);
+        let mut locks = self.git_operation_locks.lock().unwrap();
+        locks
+            .entry(resource_key)
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
     }
 }

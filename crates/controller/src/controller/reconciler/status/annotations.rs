@@ -24,7 +24,7 @@ pub async fn clear_manual_trigger_annotation(
     let patch = serde_json::json!({
         "metadata": {
             "annotations": {
-                "secret-management.microscaler.io/reconcile": serde_json::Value::Null
+                "secret-management.octopilot.io/reconcile": serde_json::Value::Null
             }
         }
     });
@@ -61,7 +61,7 @@ pub async fn clear_parsing_error_count(
     let patch = serde_json::json!({
         "metadata": {
             "annotations": {
-                "secret-management.microscaler.io/parsing-error-count": serde_json::Value::Null
+                "secret-management.octopilot.io/parsing-error-count": serde_json::Value::Null
             }
         }
     });
@@ -99,7 +99,7 @@ pub async fn increment_parsing_error_count(
     let patch = serde_json::json!({
         "metadata": {
             "annotations": {
-                "secret-management.microscaler.io/parsing-error-count": new_count.to_string()
+                "secret-management.octopilot.io/parsing-error-count": new_count.to_string()
             }
         }
     });
@@ -127,7 +127,7 @@ pub fn get_parsing_error_count(config: &SecretManagerConfig) -> u32 {
         .metadata
         .annotations
         .as_ref()
-        .and_then(|ann| ann.get("secret-management.microscaler.io/parsing-error-count"))
+        .and_then(|ann| ann.get("secret-management.octopilot.io/parsing-error-count"))
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(0)
 }

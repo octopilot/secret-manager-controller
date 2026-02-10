@@ -37,10 +37,47 @@ impl JsonSchema for ProviderConfig {
         let azure_schema = AzureConfig::json_schema(gen);
 
         // Convert schemas to JSON values for inclusion in the parent schema
-        let gcp_json = serde_json::to_value(&gcp_schema).unwrap_or_else(|_| serde_json::json!({}));
-        let aws_json = serde_json::to_value(&aws_schema).unwrap_or_else(|_| serde_json::json!({}));
-        let azure_json =
+        let mut gcp_json =
+            serde_json::to_value(&gcp_schema).unwrap_or_else(|_| serde_json::json!({}));
+        let mut aws_json =
+            serde_json::to_value(&aws_schema).unwrap_or_else(|_| serde_json::json!({}));
+        let mut azure_json =
             serde_json::to_value(&azure_schema).unwrap_or_else(|_| serde_json::json!({}));
+
+        // Manually add pattern validation to location/region fields
+        // This is done by modifying the schema JSON after generation
+        // GCP location pattern: [continent]-[direction][number] (e.g., us-central1)
+        if let Some(props) = gcp_json
+            .get_mut("properties")
+            .and_then(|p| p.as_object_mut())
+        {
+            if let Some(location) = props.get_mut("location").and_then(|l| l.as_object_mut()) {
+                location.insert(
+                    "pattern".to_string(),
+                    serde_json::json!("^[a-z]+-[a-z]+[0-9]+$"),
+                );
+            }
+        }
+
+        // AWS region pattern: supports standard, gov, iso, china, and local formats
+        if let Some(props) = aws_json
+            .get_mut("properties")
+            .and_then(|p| p.as_object_mut())
+        {
+            if let Some(region) = props.get_mut("region").and_then(|r| r.as_object_mut()) {
+                region.insert("pattern".to_string(), serde_json::json!("^[a-z]{2}-[a-z]+-[0-9]+$|^[a-z]{2}-gov-[a-z]+-[0-9]+$|^[a-z]{2}-iso-[a-z]+-[0-9]+$|^cn-[a-z]+-[0-9]+$|^local$"));
+            }
+        }
+
+        // Azure location pattern: [direction][region][number] (e.g., eastus, westus2)
+        if let Some(props) = azure_json
+            .get_mut("properties")
+            .and_then(|p| p.as_object_mut())
+        {
+            if let Some(location) = props.get_mut("location").and_then(|l| l.as_object_mut()) {
+                location.insert("pattern".to_string(), serde_json::json!("^[a-z]+[0-9]*$"));
+            }
+        }
 
         // Create schema that allows "type" field for compatibility
         // The "type" field is ignored during deserialization but allowed in YAML
@@ -147,6 +184,11 @@ impl<'de> serde::Deserialize<'de> for ProviderConfig {
 pub struct GcpConfig {
     /// GCP project ID for Secret Manager
     pub project_id: String,
+    /// GCP location/region for Secret Manager (e.g., "us-central1", "europe-west1")
+    /// Required: Must be specified for all GCP configurations
+    /// Format: [continent]-[direction][number] (e.g., us-central1, europe-west1)
+    /// See: https://cloud.google.com/about/locations
+    pub location: String,
     /// GCP authentication configuration. If not specified, defaults to Workload Identity (recommended).
     #[serde(default)]
     pub auth: Option<GcpAuthConfig>,
@@ -156,7 +198,9 @@ pub struct GcpConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AwsConfig {
-    /// AWS region for Secrets Manager (e.g., "us-east-1", "eu-west-1")
+    /// AWS region for Secrets Manager (e.g., "us-east-1", "eu-west-1", "us-gov-west-1", "cn-north-1")
+    /// Format: [a-z]{2}-[a-z]+-[0-9]+ (standard) or [a-z]{2}-gov-[a-z]+-[0-9]+ (gov) or cn-[a-z]+-[0-9]+ (China)
+    /// See: https://docs.aws.amazon.com/general/latest/gr/rande.html
     pub region: String,
     /// AWS authentication configuration. If not specified, defaults to IRSA (IAM Roles for Service Accounts) - recommended.
     #[serde(default)]
@@ -169,6 +213,11 @@ pub struct AwsConfig {
 pub struct AzureConfig {
     /// Azure Key Vault name
     pub vault_name: String,
+    /// Azure location/region for Key Vault (e.g., "eastus", "westus2", "southeastasia")
+    /// Required: Must be specified for all Azure configurations
+    /// Format: [direction][region][number] (e.g., eastus, westus2)
+    /// See: https://azure.microsoft.com/en-us/explore/global-infrastructure/geographies/
+    pub location: String,
     /// Azure authentication configuration. If not specified, defaults to Workload Identity (recommended).
     #[serde(default)]
     pub auth: Option<AzureAuthConfig>,

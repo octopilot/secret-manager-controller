@@ -5,9 +5,14 @@
 //! - Staging labels (AWSCURRENT, AWSPREVIOUS)
 //! - Secret key format: secret name (no path prefix)
 
-use super::common::{SecretStore, SecretVersion};
+use super::common::{
+    db_store::DbSecretStore, SecretStore, SecretStoreBackend, SecretStoreEnum, SecretVersion,
+};
+use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// AWS staging labels
 pub const AWS_CURRENT: &str = "AWSCURRENT";
@@ -16,17 +21,52 @@ pub const AWS_PREVIOUS: &str = "AWSPREVIOUS";
 /// AWS-specific secret store wrapper
 #[derive(Clone, Debug)]
 pub struct AwsSecretStore {
-    store: SecretStore,
+    store: Arc<SecretStoreEnum>,
     /// Maps staging labels to version IDs for each secret
     /// Key: secret name, Value: HashMap of label -> version_id
-    staging_labels: std::sync::Arc<tokio::sync::RwLock<HashMap<String, HashMap<String, String>>>>,
+    /// Note: For database store, staging labels are stored in aws.staging_labels table
+    staging_labels: Arc<RwLock<HashMap<String, HashMap<String, String>>>>,
 }
 
 impl AwsSecretStore {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
+        // Check if DATABASE_URL is set - if so, use database store
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            tracing::info!(
+                provider = "aws",
+                store_type = "database",
+                "Initializing AWS secret store with database backend"
+            );
+            if let Ok(db_store) = DbSecretStore::new(&database_url, "aws").await {
+                tracing::info!(
+                    provider = "aws",
+                    store_type = "database",
+                    schema = "aws",
+                    "✅ AWS secret store initialized with database backend"
+                );
+                return Self {
+                    store: Arc::new(SecretStoreEnum::Database(db_store)),
+                    staging_labels: Arc::new(RwLock::new(HashMap::new())),
+                };
+            }
+            // If database connection fails, fall back to in-memory store
+            tracing::warn!(
+                provider = "aws",
+                store_type = "in_memory",
+                "Failed to connect to database, falling back to in-memory store"
+            );
+        } else {
+            tracing::info!(
+                provider = "aws",
+                store_type = "in_memory",
+                "DATABASE_URL not set, using in-memory store"
+            );
+        }
+
+        // Fallback to in-memory store
         Self {
-            store: SecretStore::new(),
-            staging_labels: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            store: Arc::new(SecretStoreEnum::InMemory(SecretStore::new())),
+            staging_labels: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -47,7 +87,7 @@ impl AwsSecretStore {
         secret_name: &str,
         version_data: Value,
         version_id: Option<String>,
-    ) -> String {
+    ) -> Result<String> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -72,9 +112,9 @@ impl AwsSecretStore {
                 secret_name.to_string(),
                 version_data,
                 Some(new_version_id.clone()),
-                |_, _| new_version_id.clone(), // Not used since we provide version_id
+                move |_, _| new_version_id.clone(), // Not used since we provide version_id
             )
-            .await;
+            .await?;
 
         // Update staging labels
         let mut labels = self.staging_labels.write().await;
@@ -90,7 +130,7 @@ impl AwsSecretStore {
         // Set new version as AWSCURRENT
         secret_labels.insert(AWS_CURRENT.to_string(), version_id.clone());
 
-        version_id
+        Ok(version_id)
     }
 
     /// Get version by staging label
@@ -246,10 +286,128 @@ impl AwsSecretStore {
     pub async fn is_deleted(&self, secret_name: &str) -> bool {
         !self.store.is_enabled(secret_name).await
     }
-}
 
-impl Default for AwsSecretStore {
-    fn default() -> Self {
-        Self::new()
+    /// List unique environments for secrets using database function
+    /// Returns empty vec if database is not available
+    pub async fn list_environments(&self, resource_type: &str) -> Vec<String> {
+        // Try to get DATABASE_URL from environment
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+                use sea_orm::ConnectionTrait;
+                let function_name = if resource_type == "secrets" {
+                    "aws.get_secret_environments"
+                } else {
+                    "aws.get_parameter_environments"
+                };
+
+                let stmt = sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Postgres,
+                    format!("SELECT * FROM {}()", function_name),
+                );
+
+                if let Ok(rows) = db.query_all(stmt).await {
+                    return rows
+                        .into_iter()
+                        .filter_map(|row| {
+                            // Get the environment column value by column name
+                            row.try_get::<Option<String>>("", "environment")
+                                .or_else(|_| row.try_get::<String>("", "environment").map(Some))
+                                .ok()
+                                .flatten()
+                        })
+                        .collect();
+                }
+            }
+        }
+        vec![]
+    }
+
+    /// List unique locations for secrets using database function
+    /// Returns empty vec if database is not available
+    pub async fn list_locations(&self, resource_type: &str) -> Vec<String> {
+        // Try to get DATABASE_URL from environment
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+                use sea_orm::ConnectionTrait;
+                let function_name = if resource_type == "secrets" {
+                    "aws.get_secret_locations"
+                } else {
+                    "aws.get_parameter_locations"
+                };
+
+                let stmt = sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Postgres,
+                    format!("SELECT * FROM {}()", function_name),
+                );
+
+                if let Ok(rows) = db.query_all(stmt).await {
+                    return rows
+                        .into_iter()
+                        .filter_map(|row| {
+                            // Get the location column value by column name
+                            row.try_get::<Option<String>>("", "location")
+                                .or_else(|_| row.try_get::<String>("", "location").map(Some))
+                                .ok()
+                                .flatten()
+                        })
+                        .collect();
+                }
+            }
+        }
+        vec![]
+    }
+
+    /// List all projects/accounts that have secrets
+    /// AWS doesn't have projects like GCP, but we can extract account IDs from ARNs
+    /// Returns empty vec if database is not available
+    pub async fn list_all_projects(&self) -> Vec<String> {
+        // Try to use database function first
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+                use sea_orm::ConnectionTrait;
+                let stmt = sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Postgres,
+                    "SELECT DISTINCT (metadata->>'ARN')::text as arn FROM aws.secrets WHERE metadata->>'ARN' IS NOT NULL".to_string(),
+                );
+
+                if let Ok(rows) = db.query_all(stmt).await {
+                    let mut accounts = std::collections::HashSet::new();
+                    for row in rows {
+                        if let Ok(Some(arn)) = row.try_get::<Option<String>>("", "arn") {
+                            // Extract account ID from ARN: arn:aws:secretsmanager:region:account-id:secret:name
+                            let parts: Vec<&str> = arn.split(':').collect();
+                            if parts.len() >= 5 {
+                                accounts.insert(parts[4].to_string());
+                            }
+                        }
+                    }
+                    let mut account_list: Vec<String> = accounts.into_iter().collect();
+                    account_list.sort();
+                    if !account_list.is_empty() {
+                        return account_list;
+                    }
+                }
+            }
+        }
+
+        // Fallback to in-memory store - extract from metadata
+        let all_keys = self.store.list_all_keys().await;
+        let mut accounts = std::collections::HashSet::new();
+        for key in all_keys {
+            if let Some(metadata) = self.store.get_metadata(&key).await {
+                if let Some(arn) = metadata.get("ARN").and_then(|v| v.as_str()) {
+                    // Extract account ID from ARN
+                    let parts: Vec<&str> = arn.split(':').collect();
+                    if parts.len() >= 5 {
+                        accounts.insert(parts[4].to_string());
+                    }
+                }
+            }
+        }
+        let mut account_list: Vec<String> = accounts.into_iter().collect();
+        account_list.sort();
+        account_list
     }
 }
+
+// Note: Cannot implement Default for async new() - use AwsSecretStore::new().await instead

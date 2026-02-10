@@ -6,7 +6,7 @@ Complete reference for the `SecretManagerConfig` Custom Resource Definition.
 
 ### API Version
 
-`secret-management.microscaler.io/v1beta1`
+`secret-management.octopilot.io/v1beta1`
 
 ### Kind
 
@@ -15,7 +15,7 @@ Complete reference for the `SecretManagerConfig` Custom Resource Definition.
 ### Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-service-secrets
@@ -24,7 +24,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
@@ -35,7 +35,7 @@ spec:
       enabled: true
       gpgSecretRef:
         name: sops-gpg-key
-        namespace: microscaler-system
+        namespace: octopilot-system
         key: private.key
 ```
 
@@ -49,13 +49,14 @@ Reference to the GitOps source (GitRepository or Application).
 sourceRef:
   kind: GitRepository  # or "Application" for ArgoCD
   name: my-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
 ```
 
-**Fields:**
-- `kind` (string, required): `"GitRepository"` or `"Application"`
-- `name` (string, required): Name of the GitRepository or Application resource
-- `namespace` (string, required): Namespace where the resource exists
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `kind` | string | GitOps source type: `"GitRepository"` (FluxCD) or `"Application"` (ArgoCD) | ✓ | - |
+| `name` | string | Name of the GitRepository or Application resource | ✓ | - |
+| `namespace` | string | Namespace where the GitRepository or Application exists | ✓ | - |
 
 ### provider (required)
 
@@ -69,8 +70,9 @@ provider:
     projectId: my-gcp-project
 ```
 
-**Fields:**
-- `projectId` (string, required): GCP project ID
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `projectId` | string | GCP project ID where secrets will be stored | ✓ | - |
 
 #### AWS Configuration
 
@@ -80,8 +82,9 @@ provider:
     region: us-east-1
 ```
 
-**Fields:**
-- `region` (string, required): AWS region (e.g., `us-east-1`, `eu-west-1`)
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `region` | string | AWS region where secrets will be stored (e.g., `us-east-1`, `eu-west-1`) | ✓ | - |
 
 #### Azure Configuration
 
@@ -91,8 +94,9 @@ provider:
     vaultUrl: https://my-vault.vault.azure.net/
 ```
 
-**Fields:**
-- `vaultUrl` (string, required): Azure Key Vault URL
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `vaultUrl` | string | Azure Key Vault URL (format: `https://<vault-name>.vault.azure.net/`) | ✓ | - |
 
 ### secrets (required)
 
@@ -106,19 +110,20 @@ secrets:
     enabled: true
     gpgSecretRef:
       name: sops-gpg-key
-      namespace: microscaler-system
+      namespace: octopilot-system
       key: private.key
 ```
 
-**Fields:**
-- `environment` (string, required): Environment name (e.g., `dev`, `staging`, `prod`)
-- `kustomizePath` (string, required): Path to Kustomize overlay in Git repository
-- `sops` (object, optional): SOPS decryption configuration
-  - `enabled` (boolean): Enable SOPS decryption (default: `false`)
-  - `gpgSecretRef` (object): Reference to GPG key Kubernetes Secret
-    - `name` (string): Secret name
-    - `namespace` (string): Secret namespace
-    - `key` (string): Key in secret containing GPG private key (default: `private.key`)
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `environment` | string | Environment name (e.g., `dev`, `staging`, `prod`) | ✓ | - |
+| `kustomizePath` | string | Path to Kustomize overlay in Git repository | ✓ | - |
+| `sops` | object | SOPS decryption configuration | ✗ | `enabled: false` |
+| `sops.enabled` | boolean | Enable SOPS decryption | ✗ | `false` |
+| `sops.gpgSecretRef` | object | Reference to GPG key Kubernetes Secret | ✗ | - |
+| `sops.gpgSecretRef.name` | string | Name of the Kubernetes Secret containing the GPG key | ✗ | - |
+| `sops.gpgSecretRef.namespace` | string | Namespace where the GPG key secret exists | ✗ | - |
+| `sops.gpgSecretRef.key` | string | Key in secret containing GPG private key | ✗ | `private.key` |
 
 ### configs (optional)
 
@@ -132,11 +137,12 @@ configs:
   store: SecretManager  # GCP: SecretManager or ParameterManager
 ```
 
-**Fields:**
-- `enabled` (boolean, default: `false`): Enable config store sync
-- `parameterPath` (string, optional, AWS only): Parameter Store path prefix
-- `appConfigEndpoint` (string, optional, Azure only): App Configuration endpoint
-- `store` (string, optional, GCP only): Store type - `SecretManager` or `ParameterManager`
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `enabled` | boolean | Enable config store sync for `application.properties` files | ✗ | `false` |
+| `parameterPath` | string | Parameter Store path prefix (AWS only) | ✗ | - |
+| `appConfigEndpoint` | string | App Configuration endpoint URL (Azure only) | ✗ | - |
+| `store` | string | Store type: `SecretManager` or `ParameterManager` (GCP only) | ✗ | `SecretManager` |
 
 ### otel (optional)
 
@@ -149,10 +155,11 @@ otel:
   serviceName: secret-manager-controller
 ```
 
-**Fields:**
-- `exporter` (string): Exporter type - `"otlp"` or `"datadog"` (default: `"otlp"`)
-- `endpoint` (string): Exporter endpoint URL
-- `serviceName` (string): Service name for tracing (default: `"secret-manager-controller"`)
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `exporter` | string | Exporter type: `"otlp"` or `"datadog"` | ✗ | `"otlp"` |
+| `endpoint` | string | Exporter endpoint URL (e.g., `http://otel-collector:4317`) | ✗ | - |
+| `serviceName` | string | Service name for tracing | ✗ | `"secret-manager-controller"` |
 
 ### gitRepositoryPullInterval (optional)
 
@@ -162,9 +169,13 @@ How often to check for updates from Git.
 gitRepositoryPullInterval: 5m  # Default: 5m, minimum: 1m
 ```
 
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `gitRepositoryPullInterval` | string | How often to check for updates from Git (Kubernetes duration format) | ✗ | `"5m"` |
+
 **Format:** Kubernetes duration string (e.g., `"1m"`, `"5m"`, `"1h"`)
 
-**Recommendation:** 5 minutes or greater to avoid Git API rate limits.
+**Recommendation:** 5 minutes or greater to avoid Git API rate limits. Minimum: `1m`.
 
 ### reconcileInterval (optional)
 
@@ -173,6 +184,10 @@ How often to reconcile secrets between Git and cloud provider.
 ```yaml
 reconcileInterval: 1m  # Default: 1m
 ```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `reconcileInterval` | string | How often to reconcile secrets between Git and cloud provider (Kubernetes duration format) | ✗ | `"1m"` |
 
 **Format:** Kubernetes duration string (e.g., `"30s"`, `"1m"`, `"5m"`)
 
@@ -183,6 +198,10 @@ Enable diff discovery to detect tampering.
 ```yaml
 diffDiscovery: true  # Default: false
 ```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `diffDiscovery` | boolean | Enable diff discovery to detect tampering between Git and cloud provider | ✗ | `false` |
 
 When enabled, logs warnings when differences are found between Git (source of truth) and cloud provider.
 
@@ -202,17 +221,19 @@ logging:
   diffDiscovery: WARN
 ```
 
-**Log Levels:** `ERROR`, `WARN`, `INFO`, `DEBUG`
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `logging` | object | Fine-grained logging configuration | ✗ | See defaults below |
+| `logging.reconciliation` | string | Log level for reconciliation events | ✗ | `INFO` |
+| `logging.secrets` | string | Log level for secret operations | ✗ | `INFO` |
+| `logging.properties` | string | Log level for properties file operations | ✗ | `INFO` |
+| `logging.provider` | string | Log level for provider operations | ✗ | `DEBUG` |
+| `logging.sops` | string | Log level for SOPS decryption | ✗ | `DEBUG` |
+| `logging.git` | string | Log level for Git operations | ✗ | `INFO` |
+| `logging.kustomize` | string | Log level for Kustomize operations | ✗ | `INFO` |
+| `logging.diffDiscovery` | string | Log level for diff discovery | ✗ | `WARN` |
 
-**Defaults:**
-- `reconciliation`: `INFO`
-- `secrets`: `INFO`
-- `properties`: `INFO`
-- `provider`: `DEBUG`
-- `sops`: `DEBUG`
-- `git`: `INFO`
-- `kustomize`: `INFO`
-- `diffDiscovery`: `WARN`
+**Log Levels:** `ERROR`, `WARN`, `INFO`, `DEBUG`
 
 ### notifications (optional)
 
@@ -231,16 +252,18 @@ notifications:
         trigger: drift-detected
 ```
 
-**Fields:**
-- `fluxcd` (object, optional): FluxCD notification configuration
-  - `providerRef` (object): FluxCD Provider reference
-    - `name` (string): Provider name
-    - `namespace` (string, optional): Provider namespace
-- `argocd` (object, optional): ArgoCD notification configuration
-  - `subscriptions` (array): List of notification subscriptions
-    - `service` (string): Notification service (e.g., `slack`, `email`, `webhook`)
-    - `channel` (string): Notification channel
-    - `trigger` (string): Trigger name
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `notifications` | object | Notification configuration for drift detection alerts | ✗ | - |
+| `notifications.fluxcd` | object | FluxCD notification configuration | ✗ | - |
+| `notifications.fluxcd.providerRef` | object | FluxCD Provider reference | ✗ | - |
+| `notifications.fluxcd.providerRef.name` | string | Name of the FluxCD Provider | ✗ | - |
+| `notifications.fluxcd.providerRef.namespace` | string | Namespace where the Provider exists | ✗ | - |
+| `notifications.argocd` | object | ArgoCD notification configuration | ✗ | - |
+| `notifications.argocd.subscriptions` | array | List of notification subscriptions | ✗ | - |
+| `notifications.argocd.subscriptions[].service` | string | Notification service: `slack`, `email`, `webhook` | ✗ | - |
+| `notifications.argocd.subscriptions[].channel` | string | Notification channel (e.g., `#secrets-alerts`) | ✗ | - |
+| `notifications.argocd.subscriptions[].trigger` | string | Trigger name (e.g., `drift-detected`) | ✗ | - |
 
 ### hotReload (optional)
 
@@ -250,13 +273,15 @@ Hot reload configuration for controller-level settings.
 hotReload:
   enabled: false  # Default: false
   configMapName: secret-manager-controller-config
-  configMapNamespace: microscaler-system
+  configMapNamespace: octopilot-system
 ```
 
-**Fields:**
-- `enabled` (boolean, default: `false`): Enable hot-reload
-- `configMapName` (string, default: `"secret-manager-controller-config"`): ConfigMap to watch
-- `configMapNamespace` (string, optional): ConfigMap namespace (defaults to controller namespace)
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `hotReload` | object | Hot reload configuration for controller-level settings | ✗ | - |
+| `hotReload.enabled` | boolean | Enable hot-reload functionality | ✗ | `false` |
+| `hotReload.configMapName` | string | Name of the ConfigMap to watch for changes | ✗ | `"secret-manager-controller-config"` |
+| `hotReload.configMapNamespace` | string | Namespace where the ConfigMap exists (defaults to controller namespace) | ✗ | - |
 
 ## Status Fields
 

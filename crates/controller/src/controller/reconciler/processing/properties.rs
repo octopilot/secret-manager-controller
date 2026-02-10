@@ -28,6 +28,28 @@ pub async fn store_properties(
         return Ok((0, std::collections::HashMap::new()));
     }
 
+    // Extract environment and location from config
+    let environment = &config.spec.secrets.environment;
+    // For GCP, location is required in the config (enforced by CRD validation)
+    // "automatic" is not a valid GCP location - automatic replication means no specific location (NULL in DB)
+    // If location is empty string, treat it as automatic replication (NULL in DB)
+    let location = match &config.spec.provider {
+        ProviderConfig::Gcp(gcp_config) => {
+            // Location is required, but if it's empty string, treat as automatic replication
+            let loc = gcp_config.location.clone();
+            if loc.is_empty() || loc == "automatic" {
+                "".to_string() // Empty means automatic replication (NULL in DB)
+            } else {
+                loc
+            }
+        }
+        ProviderConfig::Aws(aws_config) => aws_config.region.clone(),
+        ProviderConfig::Azure(azure_config) => {
+            // Location is required in the config (enforced by CRD validation)
+            azure_config.location.clone()
+        }
+    };
+
     // Initialize synced_properties map from existing status (preserve state across reconciliations)
     let mut synced_properties = config
         .status
@@ -164,7 +186,10 @@ pub async fn store_properties(
                             key.as_str(),
                             config.spec.secrets.suffix.as_deref(),
                         );
-                        match provider.create_or_update_secret(&config_name, &value).await {
+                        match provider
+                            .create_or_update_secret(&config_name, &value, environment, &location)
+                            .await
+                        {
                             Ok(was_updated) => {
                                 config_count += 1;
 
@@ -321,7 +346,7 @@ pub async fn store_properties(
             config.spec.secrets.suffix.as_deref(),
         );
         match provider
-            .create_or_update_secret(&secret_name, &properties_json)
+            .create_or_update_secret(&secret_name, &properties_json, environment, &location)
             .await
         {
             Ok(was_updated) => {

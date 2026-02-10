@@ -216,6 +216,10 @@ async fn test_gcp_provider_create_secret_with_pact() {
                 "secretId": "test-secret-name",
                 "replication": {
                     "automatic": {}
+                },
+                "labels": {
+                    "environment": "test",
+                    "location": "us-central1"
                 }
             }));
         i.response
@@ -272,7 +276,7 @@ async fn test_gcp_provider_create_secret_with_pact() {
         .expect("Failed to create GCP REST provider");
 
     let result = provider
-        .create_or_update_secret("test-secret-name", secret_value)
+        .create_or_update_secret("test-secret-name", secret_value, "test", "us-central1")
         .await;
 
     assert!(
@@ -361,7 +365,7 @@ async fn test_gcp_provider_update_secret_with_pact() {
         .expect("Failed to create GCP REST provider");
 
     let result = provider
-        .create_or_update_secret("test-secret-name", new_value)
+        .create_or_update_secret("test-secret-name", new_value, "test", "us-central1")
         .await;
 
     assert!(result.is_ok(), "Failed to update secret: {:?}", result);
@@ -417,7 +421,7 @@ async fn test_gcp_provider_no_change_with_pact() {
         .expect("Failed to create GCP REST provider");
 
     let result = provider
-        .create_or_update_secret("test-secret-name", secret_value)
+        .create_or_update_secret("test-secret-name", secret_value, "test", "us-central1")
         .await;
 
     assert!(result.is_ok(), "Failed to check secret: {:?}", result);
@@ -729,6 +733,10 @@ async fn test_gcp_provider_error_handling_forbidden() {
                 "secretId": "test-secret-name",
                 "replication": {
                     "automatic": {}
+                },
+                "labels": {
+                    "environment": "test",
+                    "location": "us-central1"
                 }
             }));
         i.response
@@ -779,7 +787,7 @@ async fn test_gcp_provider_error_handling_forbidden() {
         .expect("Failed to create GCP REST provider");
 
     let result = provider
-        .create_or_update_secret("test-secret-name", "test-value")
+        .create_or_update_secret("test-secret-name", "test-value", "test", "us-central1")
         .await;
 
     assert!(result.is_err(), "Should return error for 403: {:?}", result);

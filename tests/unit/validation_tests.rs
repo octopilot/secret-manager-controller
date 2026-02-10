@@ -282,6 +282,7 @@ fn test_validate_provider_config_gcp() {
     // Valid GCP config
     let valid_config = ProviderConfig::Gcp(GcpConfig {
         project_id: "my-project-123".to_string(),
+        location: "us-central1".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&valid_config).is_ok());
@@ -289,6 +290,7 @@ fn test_validate_provider_config_gcp() {
     // Invalid GCP config - empty project ID
     let invalid_config = ProviderConfig::Gcp(GcpConfig {
         project_id: "".to_string(),
+        location: "us-central1".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&invalid_config).is_err());
@@ -296,6 +298,7 @@ fn test_validate_provider_config_gcp() {
     // Invalid GCP config - invalid format
     let invalid_config2 = ProviderConfig::Gcp(GcpConfig {
         project_id: "INVALID-PROJECT".to_string(), // Uppercase
+        location: "us-central1".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&invalid_config2).is_err());
@@ -337,6 +340,7 @@ fn test_validate_provider_config_azure() {
     // Valid Azure config
     let valid_config = ProviderConfig::Azure(AzureConfig {
         vault_name: "my-vault".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&valid_config).is_ok());
@@ -344,6 +348,7 @@ fn test_validate_provider_config_azure() {
     // Invalid Azure config - empty vault name
     let invalid_config = ProviderConfig::Azure(AzureConfig {
         vault_name: "".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&invalid_config).is_err());
@@ -351,6 +356,7 @@ fn test_validate_provider_config_azure() {
     // Invalid Azure config - too short
     let invalid_config2 = ProviderConfig::Azure(AzureConfig {
         vault_name: "ab".to_string(), // Too short (min 3)
+        location: "eastus".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&invalid_config2).is_err());
@@ -358,6 +364,7 @@ fn test_validate_provider_config_azure() {
     // Invalid Azure config - consecutive hyphens
     let invalid_config3 = ProviderConfig::Azure(AzureConfig {
         vault_name: "my--vault".to_string(),
+        location: "eastus".to_string(),
         auth: None,
     });
     assert!(validate_provider_config(&invalid_config3).is_err());

@@ -13,9 +13,9 @@ rules:
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["list"]
-# Allow get and watch on specific ConfigMap only
+# Allow get and watch on specific ConfigMaps only
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "watch"]
-  resourceNames: ["pact-contracts"]  # Restrict to only the pact-contracts ConfigMap
+  resourceNames: ["pact-contracts", "postgres-migrations"]  # Restrict to specific ConfigMaps
 

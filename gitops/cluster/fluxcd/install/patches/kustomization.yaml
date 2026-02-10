@@ -1,6 +1,6 @@
 # Kustomize configuration for FluxCD patches
 # These patches modify FluxCD-managed resources to enable integration with
-# the secret-manager-controller running in microscaler-system namespace.
+# the secret-manager-controller running in octopilot-system namespace.
 #
 # Usage:
 #   kubectl apply -k gitops/cluster/fluxcd/install/

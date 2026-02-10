@@ -4,6 +4,20 @@
 
 The Secret Manager Controller unlocks serverless migration and delivers massive FinOps savings by bridging SOPS-encrypted secrets from Git to cloud-native secret stores. Move workloads to serverless, shrink your Kubernetes footprint, and cut cloud costs—all while preserving your GitOps workflow.
 
+## Why Secret Manager Controller?
+
+- **GitOps-native secrets** for both Kubernetes and serverless workloads
+- **Unified secrets pipeline** from Git to cloud providers
+- **Multi-cloud support** — GCP, AWS, and Azure from one controller
+- **SOPS compatible** — preserves your existing encryption workflow
+- **Eliminates manual scripts** — no more secret drift or copy/paste workflows
+
+## Supported Cloud Providers
+
+- ✅ **Google Cloud Platform** — Secret Manager
+- ✅ **Amazon Web Services** — Secrets Manager
+- ✅ **Microsoft Azure** — Key Vault
+
 ## The FinOps Imperative
 
 Finance and platform leadership are mandating cost optimization initiatives:
@@ -13,7 +27,7 @@ Finance and platform leadership are mandating cost optimization initiatives:
 - **Push workloads to serverless** where viable
 - **Minimize cluster footprints** to only what can't run serverless
 
-**Kubernetes resizing helps—but not nearly enough.** The real savings come from migrating workloads to serverless platforms.
+**Kubernetes resizing helps—but not nearly enough.** The real savings come from running workloads on the most optimal platform for that system.
 
 ## The Blocking Problem
 

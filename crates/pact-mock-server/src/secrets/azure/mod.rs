@@ -5,7 +5,10 @@
 //! - Secret key format: secret name (no path prefix)
 //! - Each update creates a new version automatically
 
-use super::common::{SecretStore, SecretVersion};
+use super::common::{
+    db_store::DbSecretStore, SecretStore, SecretStoreBackend, SecretStoreEnum, SecretVersion,
+};
+use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,16 +17,51 @@ use tokio::sync::RwLock;
 /// Azure-specific secret store wrapper
 #[derive(Clone, Debug)]
 pub struct AzureSecretStore {
-    store: SecretStore,
+    store: Arc<SecretStoreEnum>,
     /// Track deleted secrets (soft-delete)
     /// Key: secret name, Value: (deleted_date, scheduled_purge_date)
+    /// Note: For database store, deleted secrets are stored in azure.deleted_secrets table
     deleted_secrets: Arc<RwLock<HashMap<String, (u64, u64)>>>,
 }
 
 impl AzureSecretStore {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
+        // Check if DATABASE_URL is set - if so, use database store
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            tracing::info!(
+                provider = "azure",
+                store_type = "database",
+                "Initializing Azure secret store with database backend"
+            );
+            if let Ok(db_store) = DbSecretStore::new(&database_url, "azure").await {
+                tracing::info!(
+                    provider = "azure",
+                    store_type = "database",
+                    schema = "azure",
+                    "✅ Azure secret store initialized with database backend"
+                );
+                return Self {
+                    store: Arc::new(SecretStoreEnum::Database(db_store)),
+                    deleted_secrets: Arc::new(RwLock::new(HashMap::new())),
+                };
+            }
+            // If database connection fails, fall back to in-memory store
+            tracing::warn!(
+                provider = "azure",
+                store_type = "in_memory",
+                "Failed to connect to database, falling back to in-memory store"
+            );
+        } else {
+            tracing::info!(
+                provider = "azure",
+                store_type = "in_memory",
+                "DATABASE_URL not set, using in-memory store"
+            );
+        }
+
+        // Fallback to in-memory store
         Self {
-            store: SecretStore::new(),
+            store: Arc::new(SecretStoreEnum::InMemory(SecretStore::new())),
             deleted_secrets: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -45,7 +83,7 @@ impl AzureSecretStore {
         secret_name: &str,
         version_data: Value,
         version_id: Option<String>,
-    ) -> String {
+    ) -> Result<String> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -59,14 +97,14 @@ impl AzureSecretStore {
                 secret_name.to_string(),
                 version_data,
                 Some(new_version_id.clone()),
-                |_, _| new_version_id.clone(), // Not used since we provide version_id
+                move |_, _| new_version_id.clone(), // Not used since we provide version_id
             )
             .await
     }
 
     /// Set/update secret (creates new version automatically)
     /// This is the main method for Azure - each call creates a new version
-    pub async fn set_secret(&self, secret_name: &str, value: String) -> String {
+    pub async fn set_secret(&self, secret_name: &str, value: String) -> Result<String> {
         let version_data = serde_json::json!({
             "value": value
         });
@@ -91,6 +129,12 @@ impl AzureSecretStore {
     /// Get secret metadata
     pub async fn get_metadata(&self, secret_name: &str) -> Option<Value> {
         self.store.get_metadata(secret_name).await
+    }
+
+    /// Update secret metadata (tags, etc.)
+    pub async fn update_metadata(&self, secret_name: &str, metadata: Value) -> Result<()> {
+        SecretStoreBackend::update_metadata(self.store.as_ref(), secret_name.to_string(), metadata)
+            .await
     }
 
     /// Delete a secret (all versions) - soft delete
@@ -194,10 +238,76 @@ impl AzureSecretStore {
     pub async fn list_all_secrets(&self) -> Vec<String> {
         self.store.list_all_keys().await
     }
-}
 
-impl Default for AzureSecretStore {
-    fn default() -> Self {
-        Self::new()
+    /// List unique environments for secrets using database function
+    /// Returns empty vec if database is not available
+    pub async fn list_environments(&self, resource_type: &str) -> Vec<String> {
+        // Try to get DATABASE_URL from environment
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+                use sea_orm::ConnectionTrait;
+                let function_name = if resource_type == "secrets" {
+                    "azure.get_secret_environments"
+                } else {
+                    "azure.get_app_config_environments"
+                };
+
+                let stmt = sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Postgres,
+                    format!("SELECT * FROM {}()", function_name),
+                );
+
+                if let Ok(rows) = db.query_all(stmt).await {
+                    return rows
+                        .into_iter()
+                        .filter_map(|row| {
+                            // Get the environment column value by column name
+                            row.try_get::<Option<String>>("", "environment")
+                                .or_else(|_| row.try_get::<String>("", "environment").map(Some))
+                                .ok()
+                                .flatten()
+                        })
+                        .collect();
+                }
+            }
+        }
+        vec![]
+    }
+
+    /// List unique locations for secrets using database function
+    /// Returns empty vec if database is not available
+    pub async fn list_locations(&self, resource_type: &str) -> Vec<String> {
+        // Try to get DATABASE_URL from environment
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            if let Ok(db) = sea_orm::Database::connect(&database_url).await {
+                use sea_orm::ConnectionTrait;
+                let function_name = if resource_type == "secrets" {
+                    "azure.get_secret_locations"
+                } else {
+                    "azure.get_app_config_locations"
+                };
+
+                let stmt = sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Postgres,
+                    format!("SELECT * FROM {}()", function_name),
+                );
+
+                if let Ok(rows) = db.query_all(stmt).await {
+                    return rows
+                        .into_iter()
+                        .filter_map(|row| {
+                            // Get the location column value by column name
+                            row.try_get::<Option<String>>("", "location")
+                                .or_else(|_| row.try_get::<String>("", "location").map(Some))
+                                .ok()
+                                .flatten()
+                        })
+                        .collect();
+                }
+            }
+        }
+        vec![]
     }
 }
+
+// Note: Cannot implement Default for async new() - use AzureSecretStore::new().await instead

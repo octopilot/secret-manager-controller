@@ -36,11 +36,11 @@ kubectl apply -k gitops/cluster/fluxcd/install/
    - NetworkPolicies
 
 2. **Patches Applied**:
-   - NetworkPolicy `allow-egress` is patched to allow ingress from `microscaler-system` namespace
+   - NetworkPolicy `allow-egress` is patched to allow ingress from `octopilot-system` namespace
    - This enables the secret-manager-controller to download FluxCD artifacts
 
 3. **Additional Resources**:
-   - Namespace label for `microscaler-system` (from `config/namespace.yaml` - DRY principle)
+   - Namespace label for `octopilot-system` (from `config/namespace.yaml` - DRY principle)
 
 ## Regenerating FluxCD Manifests
 
@@ -87,9 +87,9 @@ If the NetworkPolicy patch doesn't apply correctly:
 
 3. **Verify namespace label exists:**
    ```bash
-   kubectl get namespace microscaler-system -o jsonpath='{.metadata.labels.name}'
+   kubectl get namespace octopilot-system -o jsonpath='{.metadata.labels.name}'
    ```
-   Should output: `microscaler-system`
+   Should output: `octopilot-system`
 
 ### Kustomize Errors
 
@@ -97,7 +97,7 @@ If you see namespace transformation conflicts:
 
 - The namespace label is included from `config/namespace.yaml` via the kustomization
 - Kustomize handles namespace transformation automatically
-- If issues occur, verify the namespace exists: `kubectl get namespace microscaler-system`
+- If issues occur, verify the namespace exists: `kubectl get namespace octopilot-system`
 
 ## See Also
 

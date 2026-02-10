@@ -291,6 +291,16 @@ pub async fn get_argocd_artifact_path(
         None
     };
 
+    // Acquire singleton lock for this resource to serialize git operations
+    // This ensures only one git operation (clone/fetch) per resource at a time
+    // The lock is automatically released when the guard is dropped
+    let git_lock = reconciler.get_git_operation_lock(&source_ref.namespace, &source_ref.name);
+    info!(
+        "Acquiring git operation lock for resource: {}/{}",
+        source_ref.namespace, source_ref.name
+    );
+    let _lock_guard = git_lock.lock().await;
+
     // Check if repository already exists and try to update it if it's a valid git repo
     if path_buf.exists() {
         let git_dir = path_buf.join(".git");
@@ -888,6 +898,7 @@ pub async fn get_argocd_artifact_path(
     .instrument(span)
     .await;
 
+    // Lock will be released automatically when _lock_guard is dropped
     match clone_result {
         Ok(_) => {
             span_clone_for_match

@@ -70,6 +70,7 @@ pub fn create_test_secret_manager_config_flux_with_options(
             },
             provider: ProviderConfig::Gcp(GcpConfig {
                 project_id: project.to_string(),
+                location: "us-central1".to_string(),
                 auth: None,
             }),
             configs: None,
@@ -124,6 +125,7 @@ pub fn create_test_secret_manager_config_argocd(
             },
             provider: ProviderConfig::Gcp(GcpConfig {
                 project_id: project.to_string(),
+                location: "us-central1".to_string(),
                 auth: None,
             }),
             configs: None,
@@ -286,6 +288,7 @@ pub fn create_test_secret_manager_config_azure_flux(
             },
             provider: ProviderConfig::Azure(AzureConfig {
                 vault_name: vault_name.to_string(),
+                location: "eastus".to_string(),
                 auth: None,
             }),
             configs: None,
@@ -340,6 +343,7 @@ pub fn create_test_secret_manager_config_azure_argocd(
             },
             provider: ProviderConfig::Azure(AzureConfig {
                 vault_name: vault_name.to_string(),
+                location: "eastus".to_string(),
                 auth: None,
             }),
             configs: None,

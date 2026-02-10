@@ -15,7 +15,7 @@ kubectl create secret generic aws-credentials \
   --from-literal=AWS_ACCESS_KEY_ID=your-key \
   --from-literal=AWS_SECRET_ACCESS_KEY=your-secret \
   --from-literal=AWS_REGION=us-east-1 \
-  -n microscaler-system
+  -n octopilot-system
 ```
 
 ## Step 3: Create SecretManagerConfig
@@ -23,7 +23,7 @@ kubectl create secret generic aws-credentials \
 Create a configuration file:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-app-secrets
@@ -34,7 +34,7 @@ spec:
   credentials:
     secretRef:
       name: aws-credentials
-      namespace: microscaler-system
+      namespace: octopilot-system
   secrets:
     - name: database-password
       key: /myapp/database/password

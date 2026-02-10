@@ -1,0 +1,20 @@
+---
+# ConfigMap containing PostgreSQL migration SQL files
+# This ConfigMap is populated by scripts/tilt/populate_migrations_configmap.py
+# The postgres-manager sidecar watches this ConfigMap and runs migrations when it changes
+#
+# Note: This ConfigMap starts empty and is populated automatically by Tilt
+# when migration files are available in crates/pact-mock-server/migrations/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-migrations
+  namespace: secret-manager-controller-pact-broker
+  labels:
+    app: postgres
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/part-of: secret-manager-controller
+data:
+  # This ConfigMap is populated by scripts/tilt/populate_migrations_configmap.py
+  # It will be updated when migration files are added to crates/pact-mock-server/migrations/
+

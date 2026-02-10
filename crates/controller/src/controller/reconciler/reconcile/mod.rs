@@ -160,7 +160,7 @@ pub async fn reconcile(
         .metadata
         .annotations
         .as_ref()
-        .and_then(|ann| ann.get("secret-management.microscaler.io/reconcile"))
+        .and_then(|ann| ann.get("secret-management.octopilot.io/reconcile"))
         .is_some();
 
     // Determine trigger source for logging

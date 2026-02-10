@@ -1,5 +1,6 @@
 import { Component, createEffect } from 'solid-js';
 import { userSections, contributorSections, DocCategory } from '../../data/sections';
+import { DOCS_BASE_URL } from '../../data/site-config';
 
 interface MetaTagsProps {
   category: DocCategory;
@@ -9,7 +10,7 @@ interface MetaTagsProps {
 }
 
 const MetaTags: Component<MetaTagsProps> = (props) => {
-  const baseUrl = () => props.baseUrl || 'https://secret-manager-controller.microscaler.io';
+  const baseUrl = () => props.baseUrl || DOCS_BASE_URL;
 
   const getPageMetadata = () => {
     // Landing page
@@ -118,11 +119,11 @@ const MetaTags: Component<MetaTagsProps> = (props) => {
       url: canonicalUrl(),
       author: {
         '@type': 'Organization',
-        name: 'Microscaler',
+        name: 'OctoPilot',
       },
       publisher: {
         '@type': 'Organization',
-        name: 'Microscaler',
+        name: 'OctoPilot',
       },
       mainEntityOfPage: {
         '@type': 'WebPage',

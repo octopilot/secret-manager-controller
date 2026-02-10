@@ -55,7 +55,13 @@ async fn handle_aws_request(State(app_state): State<AwsAppState>, request: Reque
         .unwrap_or("unknown")
         .to_string();
 
-    info!("  AWS Request: x-amz-target={}", target);
+    info!(
+        provider = "aws",
+        operation = "handle_request",
+        x_amz_target = target,
+        "AWS Request: x-amz-target={}",
+        target
+    );
 
     // Parse request body once and extract secret name
     let (secret_name, body_json) = match axum::body::to_bytes(request.into_body(), usize::MAX).await
@@ -86,13 +92,26 @@ async fn handle_aws_request(State(app_state): State<AwsAppState>, request: Reque
     // Match against constants from paths::aws::secrets_manager
     match target.as_str() {
         secrets_manager::CREATE_SECRET => {
-            info!("  CREATE secret: {}", secret_name);
+            info!(
+                provider = "aws",
+                secret_name = secret_name,
+                operation = "create_secret",
+                "CREATE secret: {}",
+                secret_name
+            );
 
             // Validate secret size if SecretString is provided (AWS limit: 64KB)
             if let Some(json) = &body_json {
                 if let Some(secret_string) = json.get("SecretString").and_then(|v| v.as_str()) {
                     if let Err(size_error) = validate_aws_secret_size(secret_string) {
-                        warn!("  Secret size validation failed: {}", size_error);
+                        warn!(
+                            provider = "aws",
+                            secret_name = secret_name,
+                            operation = "create_secret",
+                            error = %size_error,
+                            "Secret size validation failed: {}",
+                            size_error
+                        );
                         return aws_error_response(
                             StatusCode::BAD_REQUEST,
                             aws_error_types::INVALID_PARAMETER,
@@ -128,7 +147,13 @@ async fn handle_aws_request(State(app_state): State<AwsAppState>, request: Reque
                 .into_response()
         }
         secrets_manager::GET_SECRET_VALUE => {
-            info!("  GET secret value: {}", secret_name);
+            info!(
+                provider = "aws",
+                secret_name = secret_name,
+                operation = "get_secret_value",
+                "GET secret value: {}",
+                secret_name
+            );
 
             // Check if secret is deleted (disabled)
             if app_state.secrets.is_deleted(&secret_name).await {
@@ -251,7 +276,13 @@ async fn handle_aws_request(State(app_state): State<AwsAppState>, request: Reque
                 .into_response()
         }
         secrets_manager::PUT_SECRET_VALUE => {
-            info!("  PUT secret value: {}", secret_name);
+            info!(
+                provider = "aws",
+                secret_name = secret_name,
+                operation = "put_secret_value",
+                "PUT secret value: {}",
+                secret_name
+            );
 
             // Validate secret size if SecretString is provided (AWS limit: 64KB)
             if let Some(json) = &body_json {
@@ -448,41 +479,59 @@ async fn handle_aws_request(State(app_state): State<AwsAppState>, request: Reque
                 .into_response()
         }
         secrets_manager::LIST_SECRETS => {
-            info!("  LIST all secrets");
+            info!(
+                provider = "aws",
+                operation = "list_secrets",
+                "LIST all secrets"
+            );
 
             // Get all secret names
             let all_keys = app_state.secrets.list_all_secrets().await;
 
-            let secret_list: Vec<serde_json::Value> = all_keys
+            // Process all secrets concurrently using futures
+            let secret_futures: Vec<_> = all_keys
                 .iter()
-                .filter_map(|secret_name| {
-                    // Get current version for metadata
-                    let current_version = app_state.secrets.get_current(secret_name);
-                    // Use tokio::runtime::Handle to run async in sync context
-                    let rt = tokio::runtime::Handle::current();
-                    let version = rt.block_on(current_version)?;
+                .map(|secret_name| {
+                    let secret_name = secret_name.clone();
+                    let secrets = app_state.secrets.clone();
+                    async move {
+                        // Get current version for metadata
+                        if let Some(version) = secrets.get_current(&secret_name).await {
+                            let labels = secrets.get_staging_labels(&secret_name).await.unwrap_or_default();
+                            let version_stages: Vec<String> = labels.iter()
+                                .filter(|(_, vid)| **vid == version.version_id)
+                                .map(|(label, _)| label.clone())
+                                .collect();
 
-                    let labels = rt.block_on(app_state.secrets.get_staging_labels(secret_name)).unwrap_or_default();
-                    let version_stages: Vec<String> = labels.iter()
-                        .filter(|(_, vid)| **vid == version.version_id)
-                        .map(|(label, _)| label.clone())
-                        .collect();
-
-                    Some(json!({
-                        "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789012:secret:{}", secret_name),
-                        "Name": secret_name,
-                        "Description": "",
-                        "LastChangedDate": format_timestamp_aws(version.created_at),
-                        "LastRotatedDate": format_timestamp_aws(version.created_at),
-                        "VersionIdToStages": {
-                            version.version_id: if version_stages.is_empty() {
-                                vec!["AWSCURRENT".to_string()]
-                            } else {
-                                version_stages
-                            }
+                            Some(json!({
+                                "ARN": format!("arn:aws:secretsmanager:us-east-1:123456789012:secret:{}", secret_name),
+                                "Name": secret_name,
+                                "Description": "",
+                                "LastChangedDate": format_timestamp_aws(version.created_at),
+                                "LastRotatedDate": format_timestamp_aws(version.created_at),
+                                "VersionIdToStages": {
+                                    version.version_id: if version_stages.is_empty() {
+                                        vec!["AWSCURRENT".to_string()]
+                                    } else {
+                                        version_stages
+                                    }
+                                }
+                            }))
+                        } else {
+                            None
                         }
-                    }))
+                    }
                 })
+                .collect();
+
+            // Await all futures concurrently
+            use futures::future;
+            let secret_results: Vec<_> = future::join_all(secret_futures).await;
+
+            // Filter out None values and collect successful results
+            let secret_list: Vec<serde_json::Value> = secret_results
+                .into_iter()
+                .filter_map(|result| result)
                 .collect();
 
             (
@@ -714,17 +763,37 @@ async fn main() {
     let contracts_state = AppState::new(contracts);
     let app_state = AwsAppState {
         contracts: contracts_state.contracts,
-        secrets: AwsSecretStore::new(),
+        secrets: AwsSecretStore::new().await,
     };
 
     // Build router - all AWS requests go to POST "/"
     // Build router with AWS Secrets Manager API endpoints
     // Note: AWS uses a single POST endpoint "/" with x-amz-target header
     // All operation names are defined in paths::aws::secrets_manager
+    // Custom filter endpoints (GET requests)
+    async fn list_environments(State(app_state): State<AwsAppState>) -> Response {
+        let environments = app_state.secrets.list_environments("secrets").await;
+        Json(json!({ "environments": environments })).into_response()
+    }
+
+    async fn list_locations(State(app_state): State<AwsAppState>) -> Response {
+        let locations = app_state.secrets.list_locations("secrets").await;
+        Json(json!({ "locations": locations })).into_response()
+    }
+
+    async fn list_projects(State(app_state): State<AwsAppState>) -> Response {
+        let projects = app_state.secrets.list_all_projects().await;
+        Json(json!({ "projects": projects })).into_response()
+    }
+
     let app = Router::new()
         // Health check endpoints
         .route("/", axum::routing::get(health_check))
         .route("/health", axum::routing::get(health_check))
+        // Custom filter endpoints (must come before POST "/" route)
+        .route("/environments", axum::routing::get(list_environments))
+        .route("/locations", axum::routing::get(list_locations))
+        .route("/projects", axum::routing::get(list_projects))
         // AWS Secrets Manager API - all operations via POST "/" with x-amz-target header
         // Using route constant from paths::aws::routes for type safety
         .route(aws_routes::BASE, post(handle_aws_request))

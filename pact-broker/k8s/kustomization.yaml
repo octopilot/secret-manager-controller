@@ -7,9 +7,13 @@ namespace: secret-manager-controller-pact-broker
 resources:
   - namespace.yaml
   - pact-contracts-configmap.yaml  # Created first, populated automatically
-  - rbac-serviceaccount.yaml  # ServiceAccount for manager sidecar
+  - postgres-migrations-configmap.yaml  # Created first, populated automatically
+  - postgres-init-configmap.yaml  # Init scripts for PostgreSQL (runs on first initialization)
+  - rbac-serviceaccount.yaml  # ServiceAccount for manager sidecars
   - rbac-role.yaml  # Role granting ConfigMap read permissions
   - rbac-rolebinding.yaml  # RoleBinding for manager ServiceAccount
+  - postgres-deployment.yaml  # PostgreSQL database with migration manager sidecar
   - pact-deployment.yaml
   # Note: pact-publish-job.yaml removed - publishing is handled by init containers in deployment
+  # Note: Migrations are run by postgres-manager sidecar watching ConfigMap
 

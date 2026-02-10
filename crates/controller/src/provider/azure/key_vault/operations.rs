@@ -16,7 +16,13 @@ use super::AzureKeyVault;
 
 #[async_trait]
 impl SecretManagerProvider for AzureKeyVault {
-    async fn create_or_update_secret(&self, secret_name: &str, secret_value: &str) -> Result<bool> {
+    async fn create_or_update_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        environment: &str,
+        location: &str,
+    ) -> Result<bool> {
         let vault_name = self
             ._vault_url
             .strip_prefix("https://")
@@ -35,9 +41,22 @@ impl SecretManagerProvider for AzureKeyVault {
             // Check if secret exists by trying to get it
             let current_value = self.get_secret_value(secret_name).await?;
 
+            let vault_name = self
+                ._vault_url
+                .strip_prefix("https://")
+                .and_then(|s| s.strip_suffix(".vault.azure.net/"))
+                .unwrap_or("unknown");
+
             let operation_type = if let Some(current) = current_value {
                 if current == secret_value_clone {
-                    debug!("Azure secret {} unchanged, skipping update", secret_name);
+                    debug!(
+                        provider = "azure",
+                        vault_name = vault_name,
+                        secret_name = secret_name,
+                        operation = "no_change",
+                        "Azure secret {} unchanged, skipping update",
+                        secret_name
+                    );
                     metrics::record_secret_operation(
                         "azure",
                         "no_change",
@@ -55,9 +74,24 @@ impl SecretManagerProvider for AzureKeyVault {
 
             // Create or update secret
             // Azure Key Vault automatically creates a new version when updating
-            info!("Creating/updating Azure secret: {}", secret_name);
+            info!(
+                provider = "azure",
+                vault_name = vault_name,
+                secret_name = secret_name,
+                operation = operation_type,
+                "Creating/updating Azure secret: vault={}, secret={}, operation={}",
+                vault_name,
+                secret_name,
+                operation_type
+            );
+            // Build tags with environment and location
+            let mut tags = std::collections::HashMap::new();
+            tags.insert("environment".to_string(), environment.to_string());
+            tags.insert("location".to_string(), location.to_string());
+
             let parameters = SetSecretParameters {
                 value: Some(secret_value_clone),
+                tags: Some(tags),
                 ..Default::default()
             };
             match self
@@ -151,9 +185,12 @@ impl SecretManagerProvider for AzureKeyVault {
                 }
                 Err(e) => {
                     let error_msg = e.to_string();
+                    // Treat missing, disabled, or not found secrets as Ok(None) so controller can create them
                     if error_msg.contains("SecretNotFound")
                         || error_msg.contains("404")
                         || error_msg.contains("not found")
+                        || error_msg.contains("disabled")
+                        || error_msg.contains("is disabled")
                     {
                         span_clone.record("operation.success", true);
                         span_clone.record("operation.found", false);

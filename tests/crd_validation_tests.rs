@@ -13,7 +13,7 @@ use controller::crd::{
 #[test]
 fn test_gcp_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -22,11 +22,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: gcp
     gcp:
       projectId: my-gcp-project
+      location: us-central1
       auth:
         authType: workloadIdentity
         serviceAccountEmail: sa@project.iam.gserviceaccount.com
@@ -99,7 +100,7 @@ spec:
 #[test]
 fn test_gcp_provider_without_type_field() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -108,10 +109,11 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -131,7 +133,7 @@ spec:
 #[test]
 fn test_gcp_provider_without_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -140,10 +142,11 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -165,7 +168,7 @@ spec:
 #[test]
 fn test_aws_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -174,7 +177,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: aws
     aws:
@@ -207,7 +210,7 @@ spec:
 #[test]
 fn test_aws_provider_with_configs() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -216,7 +219,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     aws:
       region: us-east-1
@@ -239,7 +242,7 @@ spec:
 #[test]
 fn test_azure_provider_with_auth() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -248,11 +251,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: azure
     azure:
       vaultName: my-vault
+      location: eastus
       auth:
         authType: workloadIdentity
         clientId: 12345678-1234-1234-1234-123456789012
@@ -281,7 +285,7 @@ spec:
 #[test]
 fn test_azure_provider_with_configs() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -290,10 +294,11 @@ spec:
   sourceRef:
     kind: GitRepository
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     azure:
       vaultName: my-vault
+      location: eastus
   secrets:
     environment: dev
   configs:
@@ -316,7 +321,7 @@ spec:
 #[test]
 fn test_argocd_application_source() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-argocd
@@ -329,6 +334,7 @@ spec:
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -345,7 +351,7 @@ spec:
 #[test]
 fn test_minimal_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-minimal
@@ -353,10 +359,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -367,7 +374,7 @@ spec:
     // SourceRef kind defaults to "GitRepository"
     assert_eq!(config.spec.source_ref.kind, "GitRepository");
     assert_eq!(config.spec.source_ref.name, "my-repo");
-    assert_eq!(config.spec.source_ref.namespace, "microscaler-system");
+    assert_eq!(config.spec.source_ref.namespace, "octopilot-system");
 
     // Secrets config minimal
     assert_eq!(config.spec.secrets.environment, "dev");
@@ -395,7 +402,7 @@ spec:
 #[test]
 fn test_otel_otlp_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-otel-otlp
@@ -403,10 +410,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   otel:
@@ -442,7 +450,7 @@ spec:
 #[test]
 fn test_otel_datadog_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-otel-datadog
@@ -450,10 +458,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   otel:
@@ -492,7 +501,7 @@ spec:
 #[test]
 fn test_gcp_parameter_manager_store() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp-param-manager
@@ -500,10 +509,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   configs:
@@ -523,7 +533,7 @@ spec:
 #[test]
 fn test_secrets_config_all_fields() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-secrets-all
@@ -531,10 +541,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
     kustomizePath: microservices/my-service/deployment-configuration/profiles/dev
@@ -563,7 +574,7 @@ spec:
 #[test]
 fn test_suspended_configuration() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-suspended
@@ -571,10 +582,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   suspend: true
@@ -588,12 +600,233 @@ spec:
     assert!(config.spec.suspend_git_pulls);
 }
 
+// ============================================================================
+// Provider Location/Region Required Tests
+// ============================================================================
+// These tests enforce that location/region is required for all providers.
+// This ensures that Kubernetes will reject SecretManagerConfig resources
+// that don't include the required location/region field.
+
+/// Test that GCP config without location fails deserialization
+#[test]
+fn test_gcp_provider_missing_location_fails() {
+    let json = r#"{
+        "gcp": {
+            "projectId": "test-project"
+        }
+    }"#;
+
+    let result: Result<ProviderConfig, _> = serde_json::from_str(json);
+    assert!(
+        result.is_err(),
+        "GCP config without location should fail deserialization"
+    );
+
+    // Verify the error message mentions location
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("location") || error_msg.contains("missing field"),
+        "Error should mention missing location field. Got: {}",
+        error_msg
+    );
+}
+
+/// Test that GCP config with location succeeds
+#[test]
+fn test_gcp_provider_with_location_succeeds() {
+    let json = r#"{
+        "gcp": {
+            "projectId": "test-project",
+            "location": "us-central1"
+        }
+    }"#;
+
+    let config: ProviderConfig = serde_json::from_str(json)
+        .expect("GCP config with location should deserialize successfully");
+
+    match config {
+        ProviderConfig::Gcp(gcp_config) => {
+            assert_eq!(gcp_config.project_id, "test-project");
+            assert_eq!(gcp_config.location, "us-central1");
+        }
+        _ => panic!("Expected GCP provider"),
+    }
+}
+
+/// Test that AWS config without region fails deserialization
+#[test]
+fn test_aws_provider_missing_region_fails() {
+    let json = r#"{
+        "aws": {}
+    }"#;
+
+    let result: Result<ProviderConfig, _> = serde_json::from_str(json);
+    assert!(
+        result.is_err(),
+        "AWS config without region should fail deserialization"
+    );
+
+    // Verify the error message mentions region
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("region") || error_msg.contains("missing field"),
+        "Error should mention missing region field. Got: {}",
+        error_msg
+    );
+}
+
+/// Test that AWS config with region succeeds
+#[test]
+fn test_aws_provider_with_region_succeeds() {
+    let json = r#"{
+        "aws": {
+            "region": "us-east-1"
+        }
+    }"#;
+
+    let config: ProviderConfig =
+        serde_json::from_str(json).expect("AWS config with region should deserialize successfully");
+
+    match config {
+        ProviderConfig::Aws(aws_config) => {
+            assert_eq!(aws_config.region, "us-east-1");
+        }
+        _ => panic!("Expected AWS provider"),
+    }
+}
+
+/// Test that Azure config without location fails deserialization
+#[test]
+fn test_azure_provider_missing_location_fails() {
+    let json = r#"{
+        "azure": {
+            "vaultName": "test-vault"
+        }
+    }"#;
+
+    let result: Result<ProviderConfig, _> = serde_json::from_str(json);
+    assert!(
+        result.is_err(),
+        "Azure config without location should fail deserialization"
+    );
+
+    // Verify the error message mentions location
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("location") || error_msg.contains("missing field"),
+        "Error should mention missing location field. Got: {}",
+        error_msg
+    );
+}
+
+/// Test that Azure config with location succeeds
+#[test]
+fn test_azure_provider_with_location_succeeds() {
+    let json = r#"{
+        "azure": {
+            "vaultName": "test-vault",
+            "location": "eastus"
+        }
+    }"#;
+
+    let config: ProviderConfig = serde_json::from_str(json)
+        .expect("Azure config with location should deserialize successfully");
+
+    match config {
+        ProviderConfig::Azure(azure_config) => {
+            assert_eq!(azure_config.vault_name, "test-vault");
+            assert_eq!(azure_config.location, "eastus");
+        }
+        _ => panic!("Expected Azure provider"),
+    }
+}
+
+/// Test that Azure config without vaultName also fails (both are required)
+#[test]
+fn test_azure_provider_missing_vault_name_fails() {
+    let json = r#"{
+        "azure": {
+            "location": "eastus"
+        }
+    }"#;
+
+    let result: Result<ProviderConfig, _> = serde_json::from_str(json);
+    assert!(
+        result.is_err(),
+        "Azure config without vaultName should fail deserialization"
+    );
+
+    // Verify the error message mentions vaultName
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("vaultName")
+            || error_msg.contains("vault_name")
+            || error_msg.contains("missing field"),
+        "Error should mention missing vaultName field. Got: {}",
+        error_msg
+    );
+}
+
+/// Test all three providers with valid location/region
+#[test]
+fn test_all_providers_with_valid_location() {
+    // GCP
+    let gcp_json = r#"{
+        "gcp": {
+            "projectId": "test-project",
+            "location": "us-central1"
+        }
+    }"#;
+
+    let gcp_config: ProviderConfig =
+        serde_json::from_str(gcp_json).expect("GCP config should deserialize");
+    match gcp_config {
+        ProviderConfig::Gcp(gcp) => {
+            assert_eq!(gcp.location, "us-central1");
+        }
+        _ => panic!("Expected GCP"),
+    }
+
+    // AWS
+    let aws_json = r#"{
+        "aws": {
+            "region": "us-east-1"
+        }
+    }"#;
+
+    let aws_config: ProviderConfig =
+        serde_json::from_str(aws_json).expect("AWS config should deserialize");
+    match aws_config {
+        ProviderConfig::Aws(aws) => {
+            assert_eq!(aws.region, "us-east-1");
+        }
+        _ => panic!("Expected AWS"),
+    }
+
+    // Azure
+    let azure_json = r#"{
+        "azure": {
+            "vaultName": "test-vault",
+            "location": "eastus"
+        }
+    }"#;
+
+    let azure_config: ProviderConfig =
+        serde_json::from_str(azure_json).expect("Azure config should deserialize");
+    match azure_config {
+        ProviderConfig::Azure(azure) => {
+            assert_eq!(azure.location, "eastus");
+        }
+        _ => panic!("Expected Azure"),
+    }
+}
+
 /// Test all three providers with type field (compatibility test)
 #[test]
 fn test_all_providers_with_type_field() {
     // GCP
     let gcp_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-gcp
@@ -601,11 +834,12 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: gcp
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
 "#;
@@ -616,7 +850,7 @@ spec:
 
     // AWS
     let aws_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-aws
@@ -624,7 +858,7 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: aws
     aws:
@@ -639,7 +873,7 @@ spec:
 
     // Azure
     let azure_yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-azure
@@ -647,11 +881,12 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     type: azure
     azure:
       vaultName: my-vault
+      location: eastus
   secrets:
     environment: dev
 "#;
@@ -668,7 +903,7 @@ spec:
 #[test]
 fn test_configs_disabled() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-configs-disabled
@@ -676,10 +911,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   configs:
@@ -697,7 +933,7 @@ spec:
 #[test]
 fn test_interval_formats() {
     let yaml = r#"
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: test-intervals
@@ -705,10 +941,11 @@ metadata:
 spec:
   sourceRef:
     name: my-repo
-    namespace: microscaler-system
+    namespace: octopilot-system
   provider:
     gcp:
       projectId: my-gcp-project
+      location: us-central1
   secrets:
     environment: dev
   reconcileInterval: "30s"

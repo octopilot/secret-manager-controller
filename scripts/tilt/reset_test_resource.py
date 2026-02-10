@@ -103,7 +103,8 @@ Examples:
     print("🔄 Updating test SecretManagerConfig resources...")
     print(f"📋 Found {len(test_resources)} test resource(s) to update")
     
-    # Apply CRD if it exists (will install if missing, update if changed)
+    # Apply/update CRD if it exists (idempotent - installs if missing, updates if changed)
+    # Note: CRD may already be installed from cluster setup (setup_kind.py)
     # kubectl apply handles both cases without needing to delete first
     if crd_yaml_path.exists():
         print("📋 Installing/updating CRD (if changed)...")
@@ -120,6 +121,32 @@ Examples:
             # Continue anyway - CRD might already be installed
         else:
             print("✅ CRD installed/updated successfully")
+        
+        # Wait for CRD to be established before applying resources
+        # This prevents "no matches for kind" errors when resources are applied too quickly
+        print("⏳ Waiting for CRD to be established...")
+        crd_name = "secretmanagerconfigs.secret-management.octopilot.io"
+        max_attempts = 30  # Wait up to 1 minute
+        crd_established = False
+        
+        for i in range(max_attempts):
+            wait_result = subprocess.run(
+                ["kubectl", "wait", "--for=condition=established", "crd", crd_name, "--timeout=2s"],
+                capture_output=True,
+                text=True
+            )
+            
+            if wait_result.returncode == 0:
+                print("✅ CRD is established and ready")
+                crd_established = True
+                break
+            
+            if i < max_attempts - 1:
+                time.sleep(2)
+        
+        if not crd_established:
+            print("⚠️  Warning: CRD not established after 60 seconds, but continuing anyway", file=sys.stderr)
+            print("   Resources may fail to apply if CRD is not ready", file=sys.stderr)
     else:
         print(f"⚠️  Warning: CRD file not found at {crd_yaml_path}", file=sys.stderr)
         print("   Make sure 'secret-manager-controller-crd-gen' has completed", file=sys.stderr)

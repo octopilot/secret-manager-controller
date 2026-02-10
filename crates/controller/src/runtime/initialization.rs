@@ -169,7 +169,7 @@ pub async fn initialize() -> Result<InitializationResult> {
     // Start ConfigMap watcher for hot-reload if enabled
     if let Some(hot_reload) = hot_reload_config {
         let controller_namespace =
-            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
         let configmap_namespace = hot_reload
             .config_map_namespace
             .as_deref()

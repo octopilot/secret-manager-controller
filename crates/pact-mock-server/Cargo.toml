@@ -6,7 +6,7 @@ resolver = "2"
 authors = ["Microscaler <info@microscaler.io>"]
 description = "Unified Pact Mock Server for GCP, AWS, and Azure Secret Manager APIs"
 license = "BSL-1.1"
-repository = "https://github.com/microscaler/secret-manager-controller"
+repository = "https://github.com/octopilot/secret-manager-controller"
 keywords = ["kubernetes", "pact", "testing", "mock-server", "gcp", "aws", "azure"]
 categories = ["development-tools", "testing"]
 
@@ -34,6 +34,10 @@ path = "src/bin/webhook.rs"
 name = "manager"
 path = "src/bin/manager.rs"
 
+[[bin]]
+name = "postgres-manager"
+path = "src/bin/postgres-manager.rs"
+
 [dependencies]
 # Shared API paths (source of truth for GCP API paths)
 paths = { path = "../paths" }
@@ -56,6 +60,10 @@ k8s-openapi = { version = "0.26", default-features = false, features = ["v1_30"]
 anyhow = "1.0"
 futures = "0.3"
 which = "6.0"
+# SeaORM for database access
+sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "chrono"] }
+sea-query = "0.12"
+async-trait = "0.1"
 
 [dev-dependencies]
 axum-test = "18.0"

@@ -10,7 +10,9 @@ Configure the Secret Manager Controller to work with AWS Secrets Manager.
 
 ## IAM Permissions
 
-Your AWS credentials need the following permissions:
+Your AWS credentials need the following minimum permissions to create and manage secrets:
+
+### Minimum Required Permissions
 
 ```json
 {
@@ -19,8 +21,48 @@ Your AWS credentials need the following permissions:
     {
       "Effect": "Allow",
       "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:PutSecretValue",
         "secretsmanager:GetSecretValue",
         "secretsmanager:DescribeSecret",
+        "secretsmanager:ListSecrets",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Recommended: Scoped Permissions
+
+For better security, scope permissions to specific secret paths:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:*:*:secret:my-service/*",
+        "arn:aws:secretsmanager:*:*:secret:production/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
         "secretsmanager:ListSecrets"
       ],
       "Resource": "*"
@@ -28,6 +70,27 @@ Your AWS credentials need the following permissions:
   ]
 }
 ```
+
+### Using AWS Managed Policies
+
+You can use the AWS managed policy `SecretsManagerReadWrite` for full access:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+**Note:** The managed policy `SecretsManagerReadWrite` provides read/write access. For production, prefer scoped permissions above.
 
 ## Authentication Methods
 
@@ -40,7 +103,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/SecretManagerRole
 ```
@@ -54,7 +117,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: aws-credentials
-  namespace: microscaler-system
+  namespace: octopilot-system
 type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: your-access-key-id
@@ -65,7 +128,7 @@ stringData:
 Reference in your SecretManagerConfig:
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: aws-secrets
@@ -75,7 +138,7 @@ spec:
   credentials:
     secretRef:
       name: aws-credentials
-      namespace: microscaler-system
+      namespace: octopilot-system
   secrets:
     - name: database-password
       key: /myapp/database/password
@@ -84,7 +147,7 @@ spec:
 ## Configuration Example
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: production-secrets

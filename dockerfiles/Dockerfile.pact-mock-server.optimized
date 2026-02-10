@@ -1,0 +1,48 @@
+# Optimized Dockerfile for Pact Mock Servers (without Ruby)
+# Uses alpine for minimal size while keeping shell for verification
+# Only manager needs Ruby, so other binaries use this optimized version
+# Image size: ~5MB base (alpine) + binary size vs ~100MB (debian + Ruby)
+
+ARG TARGETPLATFORM=linux/amd64
+ARG TARGETARCH
+FROM alpine:3.20
+
+# Create non-root user
+RUN addgroup -g 1001 pact && \
+    adduser -D -u 1001 -G pact pact
+
+# Install ca-certificates for HTTPS (required for rustls)
+RUN apk add --no-cache ca-certificates && \
+    rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Copy pre-built binaries (statically linked with musl)
+# These binaries don't need Ruby or any other dependencies
+COPY ./build_artifacts/mock-server/gcp-mock-server \
+     ./build_artifacts/mock-server/aws-mock-server \
+     ./build_artifacts/mock-server/azure-mock-server \
+     ./build_artifacts/mock-server/webhook \
+     /app/
+
+# Verify files exist and set permissions (fail fast if missing)
+RUN test -f /app/gcp-mock-server && \
+    test -f /app/aws-mock-server && \
+    test -f /app/azure-mock-server && \
+    test -f /app/webhook && \
+    chmod +x /app/gcp-mock-server /app/aws-mock-server /app/azure-mock-server /app/webhook && \
+    chown -R pact:pact /app
+
+# Switch to non-root user
+USER pact
+
+# Expose ports
+EXPOSE 1234 8080
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+
+# Default command (can be overridden in deployment)
+CMD ["/app/gcp-mock-server"]
+

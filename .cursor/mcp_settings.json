@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "postgres_mcp_server",
+        "postgresql://pact:pact@localhost:5432/pact_mock_servers"
+      ],
+      "env": {}
+    }
+  }
+}

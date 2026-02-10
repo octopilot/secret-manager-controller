@@ -90,7 +90,7 @@ pub async fn install_command(
     export: bool,
     dry_run: bool,
 ) -> Result<()> {
-    let ns = namespace.as_deref().unwrap_or("microscaler-system");
+    let ns = namespace.as_deref().unwrap_or("octopilot-system");
 
     if export {
         // Export mode: just print manifests to stdout
@@ -171,7 +171,7 @@ fn apply_manifest(manifest_yaml: &str, default_namespace: &str) -> Result<()> {
     let mut temp_file = NamedTempFile::new().context("Failed to create temporary file")?;
 
     // Replace namespace placeholder if needed
-    let manifest_with_ns = manifest_yaml.replace("microscaler-system", default_namespace);
+    let manifest_with_ns = manifest_yaml.replace("octopilot-system", default_namespace);
     temp_file
         .write_all(manifest_with_ns.as_bytes())
         .context("Failed to write manifest to temporary file")?;
@@ -211,7 +211,7 @@ fn get_combined_manifests(namespace: &str) -> Result<String> {
     let static_manifests = manifests::get_static_manifests();
     for manifest in static_manifests {
         // Replace namespace placeholder if present
-        let manifest_with_ns = manifest.replace("microscaler-system", namespace);
+        let manifest_with_ns = manifest.replace("octopilot-system", namespace);
         combined.push_str(&manifest_with_ns);
         combined.push_str("\n---\n");
     }

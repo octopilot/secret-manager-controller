@@ -50,6 +50,7 @@ mod tests {
                 },
                 provider: ProviderConfig::Gcp(GcpConfig {
                     project_id: "test-project".to_string(),
+                    location: "us-central1".to_string(),
                     auth: None,
                 }),
                 secrets: SecretsConfig {
@@ -103,7 +104,7 @@ mod tests {
         // Ensure SOPS key is NOT available in the controller namespace
         // This simulates the key not found scenario
         let controller_namespace =
-            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
         let secrets_api: Api<Secret> = Api::namespaced(client.clone(), &controller_namespace);
 
         // Delete any existing SOPS key secrets to ensure key not found

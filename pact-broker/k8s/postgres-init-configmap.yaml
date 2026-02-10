@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: secret-manager-controller-pact-broker
+data:
+  # PostgreSQL executes files in /docker-entrypoint-initdb.d/ in alphabetical order
+  # Simplified initialization for standard PostgreSQL 15 (no Supabase dependencies)
+  # The 'pact' user and 'postgres' database are created automatically by the postgres image
+  # based on POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB environment variables
+  
+  # 00-init.sh - Basic initialization script
+  # Creates the pact_mock_servers database that our migrations will use
+  # Note: CREATE DATABASE cannot be executed from a DO block, so we use a shell script
+  # The postgres Docker image executes .sh files in /docker-entrypoint-initdb.d/
+  00-init.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Create the pact_mock_servers database if it doesn't exist
+    # This is the database used by the postgres-manager sidecar for migrations
+    # We use psql to check and create the database directly (not in a DO block)
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -tc \
+        "SELECT 1 FROM pg_database WHERE datname = 'pact_mock_servers'" | grep -q 1 || \
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c \
+        "CREATE DATABASE pact_mock_servers"
+    
+    # Grant permissions to the pact user
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c \
+        "GRANT ALL PRIVILEGES ON DATABASE pact_mock_servers TO $POSTGRES_USER"

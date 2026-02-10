@@ -46,6 +46,7 @@ mod tests {
                 },
                 provider: ProviderConfig::Gcp(GcpConfig {
                     project_id: "test-project".to_string(),
+                    location: "us-central1".to_string(),
                     auth: None,
                 }),
                 secrets: SecretsConfig {

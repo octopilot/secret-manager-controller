@@ -1,11 +1,13 @@
 # Production Dockerfile for Secret Manager Controller
 # Multi-stage build that compiles the Rust binary inside Docker
 # This is used for production builds with docker buildx
+# Pass build-arg REGISTRY_ORG (default: octopilot) to pull base images from ghcr.io.
 
+ARG REGISTRY_ORG=octopilot
 # Stage 1: Build the Rust binary
 # Uses pre-built Rust builder base image with all build dependencies
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM docker.io/microscaler/rust-builder-base-image:latest AS builder
+FROM --platform=$BUILDPLATFORM ghcr.io/${REGISTRY_ORG}/rust-builder-base-image:latest AS builder
 
 # Build arguments for build.rs
 ARG BUILD_GIT_HASH=unknown
@@ -24,30 +26,34 @@ COPY Cargo.toml Cargo.lock ./
 
 # Copy crate Cargo files
 COPY crates/controller/Cargo.toml ./crates/controller/
-COPY crates/gcp-api-paths/Cargo.toml ./crates/gcp-api-paths/
+COPY crates/paths/Cargo.toml ./crates/paths/
 
 # Copy build script (needed for build-time git hash)
 COPY crates/controller/build.rs ./crates/controller/
 
 # Copy source code
 COPY crates/controller/src ./crates/controller/src
-COPY crates/gcp-api-paths/src ./crates/gcp-api-paths/src
+COPY crates/paths/src ./crates/paths/src
 COPY config ./config
 
-# Build the binary in release mode
+# Build the binary in release mode with optimizations
 # Pass build-time environment variables to build.rs
 # Use --locked to ensure Cargo.lock is respected and transitive dependencies resolve correctly
 # CARGO_NET_GIT_FETCH_WITH_CLI=true forces Cargo to use git CLI instead of libgit2
+# RUSTFLAGS="-C link-arg=-s" strips debug symbols to reduce binary size
 # This ensures full git clones and better compatibility with git dependencies
 RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
     BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
     BUILD_DATETIME=${BUILD_DATETIME} \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    cargo build --release --locked --bin secret-manager-controller
+    RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --locked --bin secret-manager-controller && \
+    # Strip the binary to remove debug symbols (further size reduction)
+    strip target/release/secret-manager-controller
 
 # Stage 2: Runtime image
 # Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
-FROM docker.io/microscaler/secret-manager-controller-base-image:latest
+FROM ghcr.io/${REGISTRY_ORG}/secret-manager-controller-base-image:latest
 
 # Base image already has:
 # - git, curl, gnupg, ca-certificates

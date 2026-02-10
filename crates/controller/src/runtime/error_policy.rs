@@ -127,13 +127,13 @@ pub async fn handle_watch_stream_error(
         error!("   2. Verify ClusterRoleBinding still binds ServiceAccount:");
         error!("      kubectl get clusterrolebinding secret-manager-controller -o yaml");
         error!("   3. Verify ServiceAccount still exists:");
-        error!("      kubectl get sa secret-manager-controller -n microscaler-system");
+        error!("      kubectl get sa secret-manager-controller -n octopilot-system");
         error!("   4. Check if pod ServiceAccount token is valid:");
-        error!("      kubectl get pod -n microscaler-system -l app=secret-manager-controller -o jsonpath='{{{{.spec.serviceAccountName}}}}'");
+        error!("      kubectl get pod -n octopilot-system -l app=secret-manager-controller -o jsonpath='{{{{.spec.serviceAccountName}}}}'");
         error!("   5. Verify RBAC permissions are still active:");
-        error!("      kubectl auth can-i list secretmanagerconfigs --as=system:serviceaccount:microscaler-system:secret-manager-controller --all-namespaces");
+        error!("      kubectl auth can-i list secretmanagerconfigs --as=system:serviceaccount:octopilot-system:secret-manager-controller --all-namespaces");
         error!("   6. If RBAC was recently changed, restart the controller pod:");
-        error!("      kubectl delete pod -n microscaler-system -l app=secret-manager-controller");
+        error!("      kubectl delete pod -n octopilot-system -l app=secret-manager-controller");
         warn!(
             "⏳ Waiting {}s before retrying watch (RBAC may need time to propagate)...",
             watch_restart_delay_secs

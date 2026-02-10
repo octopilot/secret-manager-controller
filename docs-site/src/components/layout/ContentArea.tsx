@@ -2,6 +2,7 @@ import { Component, createSignal, createEffect, Show, createMemo } from 'solid-j
 import { DocCategory, userSections, contributorSections } from '../../data/sections';
 import MarkdownRenderer from '../content/MarkdownRenderer';
 import PageNavigation from './PageNavigation';
+import SecretsViewer from '../pages/SecretsViewer';
 
 interface ContentAreaProps {
   category: DocCategory;
@@ -28,15 +29,27 @@ const ContentArea: Component<ContentAreaProps> = (props) => {
   // Use Vite's glob import to load markdown files
   const contentModules = import.meta.glob('../../data/content/**/*.md', { 
     eager: false,
-    as: 'raw' 
+    query: '?raw',
+    import: 'default'
   });
 
   // Watch for prop changes and reload content
   createEffect(() => {
+    // Skip loading markdown for special component pages
+    if (props.page === 'secrets-viewer') {
+      setContent('');
+      props.onContentChange?.('');
+      return;
+    }
     loadContent();
   });
 
   const loadContent = async () => {
+    // Skip special component pages
+    if (props.page === 'secrets-viewer') {
+      return;
+    }
+
     // Handle landing page (index)
     if (props.page === 'index' && !props.section) {
       setLoading(true);
@@ -110,23 +123,29 @@ const ContentArea: Component<ContentAreaProps> = (props) => {
   };
 
   return (
-    <main id="main-content" class="flex-1 overflow-y-auto bg-white custom-scrollbar" role="main">
-      <div class="max-w-4xl mx-auto px-8 py-10">
-          <Show when={loading()}>
-            <div class="text-center py-16" role="status" aria-live="polite">
-              <div class="animate-spin rounded-full h-12 w-12 border-2 border-[#e5e3df] border-t-[#5a6c5d] mx-auto mb-4" aria-hidden="true"></div>
-              <p class="text-[#6b7280]">Loading content...</p>
-            </div>
-          </Show>
-          
-          <Show when={!loading() && error()}>
-            <div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 mb-6" role="alert">
-              <p class="text-[#991b1b]">{error()}</p>
-            </div>
-          </Show>
+    <main class="flex-1 overflow-y-auto custom-scrollbar bg-white" role="main">
+      <div class="max-w-[1100px] mx-auto px-8 py-10">
+        <Show when={loading()}>
+          <div class="text-center py-16" role="status" aria-live="polite">
+            <div class="animate-spin rounded-full h-12 w-12 border-2 border-[#e5e3df] border-t-[#5a6c5d] mx-auto mb-4" aria-hidden="true"></div>
+            <p class="text-[#6b7280]">Loading content...</p>
+          </div>
+        </Show>
+        
+        <Show when={!loading() && error()}>
+          <div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-4 mb-6" role="alert">
+            <p class="text-[#991b1b]">{error()}</p>
+          </div>
+        </Show>
 
         <Show when={!loading() && !error()}>
-          <div>
+          {/* Special component pages */}
+          <Show when={props.page === 'secrets-viewer'}>
+            <SecretsViewer onNavigate={props.onNavigate} />
+          </Show>
+          
+          {/* Regular markdown pages */}
+          <Show when={props.page !== 'secrets-viewer'}>
             {/* Reading time */}
             <Show when={readingTime() > 0 && props.page !== 'index'}>
               <div class="mb-6 text-sm text-[#6b7280] flex items-center gap-2">
@@ -136,14 +155,17 @@ const ContentArea: Component<ContentAreaProps> = (props) => {
                 <span>{readingTime()} {readingTime() === 1 ? 'minute' : 'minutes'} read</span>
               </div>
             </Show>
-            <MarkdownRenderer content={content()} />
-            <PageNavigation
-              category={props.category}
-              section={props.section}
-              page={props.page}
-              onNavigate={props.onNavigate}
-            />
-          </div>
+            <div class="prose prose-slate max-w-none">
+              <MarkdownRenderer content={content()} />
+            </div>
+          </Show>
+          
+          <PageNavigation
+            category={props.category}
+            section={props.section}
+            page={props.page}
+            onNavigate={props.onNavigate}
+          />
         </Show>
       </div>
     </main>

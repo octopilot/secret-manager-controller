@@ -330,7 +330,7 @@ RUST_LOG=trace
 The controller supports fine-grained logging configuration per resource via the CRD:
 
 ```yaml
-apiVersion: secret-manager.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-config
@@ -361,7 +361,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: secret-manager-controller-config
-  namespace: microscaler-system
+  namespace: octopilot-system
 data:
   LOG_LEVEL: "INFO"        # ERROR, WARN, INFO, DEBUG, TRACE
   LOG_FORMAT: "json"       # json, text

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```yaml
-/// apiVersion: secret-management.microscaler.io/v1beta1
+/// apiVersion: secret-management.octopilot.io/v1beta1
 /// kind: SecretManagerConfig
 /// metadata:
 ///   name: my-service-secrets
@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 ///   sourceRef:
 ///     kind: GitRepository
 ///     name: my-repo
-///     namespace: microscaler-system
+///     namespace: octopilot-system
 ///   provider:
 ///     gcp:
 ///       projectId: my-gcp-project
@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 #[derive(kube::CustomResource, Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[kube(
     kind = "SecretManagerConfig",
-    group = "secret-management.microscaler.io",
+    group = "secret-management.octopilot.io",
     version = "v1beta1",
     namespaced,
     status = "crate::crd::SecretManagerConfigStatus",

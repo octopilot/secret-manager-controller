@@ -42,7 +42,7 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                 warn!("⚠️  To enable SOPS key hot-reloading:");
                 warn!("     1. Verify RBAC is installed: kubectl get clusterrole secret-manager-controller");
                 warn!("     2. Verify ServiceAccount is bound: kubectl get clusterrolebinding secret-manager-controller");
-                warn!("     3. Test permissions: kubectl auth can-i list secrets --as=system:serviceaccount:microscaler-system:secret-manager-controller --all-namespaces");
+                warn!("     3. Test permissions: kubectl auth can-i list secrets --as=system:serviceaccount:octopilot-system:secret-manager-controller --all-namespaces");
                 warn!("     4. If RBAC was created after pod started, restart the pod");
                 return;
             }
@@ -96,7 +96,7 @@ async fn handle_secret_apply(reconciler: &Reconciler, secret: &Secret, secret_na
 
         // Update bootstrap flag if this is controller namespace
         let controller_namespace =
-            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
         if secret_namespace == controller_namespace {
             reconciler
                 .sops_capability_ready
@@ -151,7 +151,7 @@ async fn handle_secret_delete(reconciler: &Reconciler, secret: &Secret, secret_n
 
         // Update bootstrap flag if this is controller namespace
         let controller_namespace =
-            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
         if secret_namespace == controller_namespace {
             reconciler
                 .sops_capability_ready
@@ -164,7 +164,7 @@ async fn handle_secret_delete(reconciler: &Reconciler, secret: &Secret, secret_n
 
         // Try to reload from controller namespace as fallback
         let controller_namespace_for_reload =
-            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
         if let Err(e) =
             crate::controller::reconciler::sops::load::reload_sops_private_key(reconciler).await
         {

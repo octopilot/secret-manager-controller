@@ -234,8 +234,9 @@ async fn test_aws_provider_create_secret_with_pact() {
                 // Workaround: The test may need to be updated to handle this, or we need to
                 // configure the AWS SDK to use a fixed ClientRequestToken in test mode
                 // AWS SDK sends compact JSON (no spaces) with fields in specific order
-                // SDK order: Name, ClientRequestToken, SecretString
-                .body(r#"{"Name":"test-secret-name","ClientRequestToken":"00000000-0000-0000-0000-000000000000","SecretString":"test-secret-value"}"#);
+                // SDK order: Name, ClientRequestToken, SecretString, Tags
+                // Tags are added with environment and location from the controller
+                .body(r#"{"Name":"test-secret-name","ClientRequestToken":"00000000-0000-0000-0000-000000000000","SecretString":"test-secret-value","Tags":[{"Key":"environment","Value":"test"},{"Key":"location","Value":"us-east-1"}]}"#);
             i.response
                 .status(200)
                 .header("content-type", "application/x-amz-json-1.1")
@@ -283,7 +284,7 @@ async fn test_aws_provider_create_secret_with_pact() {
 
     // Call the actual provider method
     let result = provider
-        .create_or_update_secret("test-secret-name", "test-secret-value")
+        .create_or_update_secret("test-secret-name", "test-secret-value", "test", "us-east-1")
         .await;
 
     // Verify it succeeded
@@ -430,7 +431,7 @@ async fn test_aws_provider_update_secret_with_pact() {
 
     // Call the actual provider method - should update since value changed
     let result = provider
-        .create_or_update_secret("test-secret-name", "new-secret-value")
+        .create_or_update_secret("test-secret-name", "new-secret-value", "test", "us-east-1")
         .await;
 
     assert!(result.is_ok());
@@ -551,7 +552,7 @@ async fn test_aws_provider_no_change_with_pact() {
 
     // Call the actual provider method - should return false (no change)
     let result = provider
-        .create_or_update_secret("test-secret-name", "test-secret-value")
+        .create_or_update_secret("test-secret-name", "test-secret-value", "test", "us-east-1")
         .await;
 
     assert!(result.is_ok());

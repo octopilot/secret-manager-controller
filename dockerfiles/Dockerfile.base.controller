@@ -1,6 +1,6 @@
 # Base image for Secret Manager Controller
 # Contains all runtime dependencies: git, curl, gnupg, kustomize, sops
-# This base image is built once and published to ghcr.io/microscaler/secret-manager-controller-base-image
+# This base image is built once and published to ghcr.io/octopilot/secret-manager-controller-base-image
 # The controller Dockerfiles then just copy the binary onto this base image
 
 ARG TARGETPLATFORM=linux/amd64

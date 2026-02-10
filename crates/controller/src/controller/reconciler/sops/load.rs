@@ -9,12 +9,12 @@ use kube::{Api, Client};
 use tracing::{error, info, warn};
 
 /// Load SOPS private key from Kubernetes secret in controller namespace
-/// Defaults to microscaler-system namespace
+/// Defaults to octopilot-system namespace
 pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
-    // Use controller namespace (defaults to microscaler-system)
+    // Use controller namespace (defaults to octopilot-system)
     // Can be overridden via POD_NAMESPACE environment variable
     let namespace =
-        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
 
     let secrets: Api<Secret> = Api::namespaced(client.clone(), &namespace);
 
@@ -91,7 +91,7 @@ pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
         .store(new_key.is_some(), std::sync::atomic::Ordering::Relaxed);
 
     let controller_namespace =
-        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "microscaler-system".to_string());
+        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
 
     if new_key.is_some() {
         info!(
@@ -151,7 +151,7 @@ pub async fn reload_sops_private_key_from_namespace(
 
                         // Update capability flag if this is controller namespace
                         let controller_namespace = std::env::var("POD_NAMESPACE")
-                            .unwrap_or_else(|_| "microscaler-system".to_string());
+                            .unwrap_or_else(|_| "octopilot-system".to_string());
                         if namespace == controller_namespace {
                             reconciler
                                 .sops_capability_ready

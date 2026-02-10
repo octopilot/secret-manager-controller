@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:search-index && npm run build:sitemap && npm run build:rss && vite build",
+    "build": "yarn build:search-index && yarn build:sitemap && yarn build:rss && vite build",
     "build:search-index": "tsx scripts/build-search-index.ts",
     "build:sitemap": "tsx scripts/generate-sitemap.ts",
     "build:rss": "tsx scripts/generate-rss.ts",

@@ -56,7 +56,7 @@ Build the search index when the app loads.
 
 ```bash
 cd docs-site
-npm install minisearch
+yarn add minisearch
 ```
 
 ### Step 2: Create Search Index Builder
@@ -181,7 +181,7 @@ Update `package.json`:
 {
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:search-index && vite build",
+    "build": "yarn build:search-index && vite build",
     "build:search-index": "tsx scripts/build-search-index.ts",
     "preview": "vite preview"
   },

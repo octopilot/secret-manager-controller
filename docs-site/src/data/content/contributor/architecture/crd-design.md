@@ -6,7 +6,7 @@ Comprehensive guide to the `SecretManagerConfig` Custom Resource Definition stru
 
 The `SecretManagerConfig` CRD is the primary interface for configuring the Secret Manager Controller. It defines how secrets from GitOps repositories are synced to cloud secret managers (GCP, AWS, Azure).
 
-**API Version:** `secret-management.microscaler.io/v1beta1`  
+**API Version:** `secret-management.octopilot.io/v1beta1`  
 **Kind:** `SecretManagerConfig` (shortname: `smc`)  
 **Scope:** Namespaced
 
@@ -15,7 +15,7 @@ The `SecretManagerConfig` CRD is the primary interface for configuring the Secre
 ### High-Level Structure
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: <resource-name>
@@ -67,7 +67,7 @@ status:
 sourceRef:
   kind: GitRepository  # or "Application" for ArgoCD
   name: my-repo
-  namespace: microscaler-system
+  namespace: octopilot-system
   gitCredentials:      # Optional - for ArgoCD private repos
     name: git-credentials
     namespace: my-namespace
@@ -355,7 +355,7 @@ logging:
 hotReload:
   enabled: true
   configMapName: secret-manager-controller-config
-  configMapNamespace: microscaler-system
+  configMapNamespace: octopilot-system
 ```
 
 **Design Decisions:**
@@ -659,7 +659,7 @@ kubectl get smc  # Instead of kubectl get secretmanagerconfig
 ### Minimal Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-secrets
@@ -679,7 +679,7 @@ spec:
 ### Full Configuration
 
 ```yaml
-apiVersion: secret-management.microscaler.io/v1beta1
+apiVersion: secret-management.octopilot.io/v1beta1
 kind: SecretManagerConfig
 metadata:
   name: my-secrets

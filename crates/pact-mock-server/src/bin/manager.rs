@@ -436,6 +436,9 @@ async fn wait_for_broker(config: &ManagerConfig) -> Result<()> {
 }
 
 /// Check if ConfigMap exists and has pact files
+/// Returns Ok(true) if ConfigMap exists and has pacts
+/// Returns Ok(false) if ConfigMap exists but has no pacts
+/// Returns Err if there's an error (including RBAC/401 - caller should retry)
 async fn check_configmap_has_pacts(
     client: &Client,
     namespace: &str,
@@ -454,17 +457,82 @@ async fn check_configmap_has_pacts(
             }
         }
         Err(kube::Error::Api(e)) if e.code == 404 => {
-            warn!("ConfigMap {}/{} not found", namespace, configmap_name);
+            // ConfigMap doesn't exist yet - this is OK, not an error
             Ok(false)
+        }
+        Err(kube::Error::Api(e)) if e.code == 401 || e.code == 403 => {
+            // RBAC not ready yet - return error so caller can retry
+            Err(anyhow::anyhow!(
+                "Unauthorized ({}): RBAC may not be ready yet - will retry",
+                e.code
+            ))
         }
         Err(e) => {
-            warn!(
+            // Other errors - return as error
+            Err(anyhow::anyhow!(
                 "Error checking ConfigMap {}/{}: {}",
-                namespace, configmap_name, e
-            );
-            Ok(false)
+                namespace,
+                configmap_name,
+                e
+            ))
         }
     }
+}
+
+/// Wait for RBAC to be ready by checking ConfigMap access with retries
+async fn wait_for_rbac_ready(
+    client: &Client,
+    namespace: &str,
+    configmap_name: &str,
+    max_attempts: u32,
+) -> Result<()> {
+    let mut attempt = 0;
+    let mut delay = Duration::from_secs(2); // Start with 2 second delay
+
+    while attempt < max_attempts {
+        match check_configmap_has_pacts(client, namespace, configmap_name).await {
+            Ok(_) => {
+                // Successfully accessed ConfigMap - RBAC is ready
+                info!("✅ RBAC is ready - can access ConfigMap");
+                return Ok(());
+            }
+            Err(e)
+                if e.to_string().contains("Unauthorized")
+                    || e.to_string().contains("401")
+                    || e.to_string().contains("403") =>
+            {
+                // RBAC not ready yet - retry with exponential backoff
+                attempt += 1;
+                if attempt % 5 == 0 {
+                    info!(
+                        "⏳ Waiting for RBAC to be ready... (attempt {}/{})",
+                        attempt, max_attempts
+                    );
+                }
+                sleep(delay).await;
+                // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+                delay = std::cmp::min(delay * 2, Duration::from_secs(30));
+            }
+            Err(e) => {
+                // Other error - might be transient, retry a few times
+                attempt += 1;
+                if attempt < 3 {
+                    warn!("⚠️  Error checking ConfigMap (will retry): {}", e);
+                    sleep(delay).await;
+                } else {
+                    // After 3 attempts, give up on this check but continue
+                    warn!("⚠️  Error checking ConfigMap (continuing anyway): {}", e);
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    warn!(
+        "⚠️  RBAC check timed out after {} attempts, but continuing - watcher will retry",
+        max_attempts
+    );
+    Ok(())
 }
 
 /// Watch ConfigMap for changes and republish pacts
@@ -477,6 +545,15 @@ async fn watch_configmap(
     pacts_published: Arc<AtomicBool>,
     published_providers: Arc<tokio::sync::RwLock<HashSet<String>>>,
 ) -> Result<()> {
+    // Wait for RBAC to be ready before starting watch
+    info!("🔐 Waiting for RBAC to be ready before starting ConfigMap watch...");
+    if let Err(e) = wait_for_rbac_ready(&client, &namespace, &configmap_name, 30).await {
+        warn!(
+            "⚠️  RBAC readiness check failed: {} (will continue and retry)",
+            e
+        );
+    }
+
     let configmaps: Api<ConfigMap> = Api::namespaced(client.clone(), &namespace);
 
     // Use field selector to only watch our specific ConfigMap (more efficient)
@@ -490,22 +567,51 @@ async fn watch_configmap(
         namespace, configmap_name
     );
 
-    // Verify ConfigMap exists before starting watch
-    match check_configmap_has_pacts(&client, &namespace, &configmap_name).await {
-        Ok(true) => {
-            info!(
-                "✅ ConfigMap {}/{} exists and contains pact files",
-                namespace, configmap_name
-            );
-        }
-        Ok(false) => {
-            info!(
-                "ℹ️  ConfigMap {}/{} exists but has no pact files yet (this is expected - pact files will be added when tests run)",
-                namespace, configmap_name
-            );
-        }
-        Err(e) => {
-            warn!("⚠️  Error checking ConfigMap: {}", e);
+    // Verify ConfigMap exists before starting watch (with retry for RBAC)
+    let mut check_attempts = 0;
+    loop {
+        match check_configmap_has_pacts(&client, &namespace, &configmap_name).await {
+            Ok(true) => {
+                info!(
+                    "✅ ConfigMap {}/{} exists and contains pact files",
+                    namespace, configmap_name
+                );
+                break;
+            }
+            Ok(false) => {
+                info!(
+                    "ℹ️  ConfigMap {}/{} exists but has no pact files yet (this is expected - pact files will be added when tests run)",
+                    namespace, configmap_name
+                );
+                break;
+            }
+            Err(e)
+                if e.to_string().contains("Unauthorized")
+                    || e.to_string().contains("401")
+                    || e.to_string().contains("403") =>
+            {
+                // RBAC not ready - retry
+                check_attempts += 1;
+                if check_attempts < 10 {
+                    if check_attempts % 3 == 0 {
+                        info!(
+                            "⏳ RBAC not ready yet, retrying ConfigMap check... (attempt {})",
+                            check_attempts
+                        );
+                    }
+                    sleep(Duration::from_secs(2)).await;
+                } else {
+                    warn!("⚠️  RBAC still not ready after {} attempts, continuing anyway - watcher will handle retries", check_attempts);
+                    break;
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "⚠️  Error checking ConfigMap: {} (will continue watching)",
+                    e
+                );
+                break;
+            }
         }
     }
 
@@ -579,10 +685,24 @@ async fn watch_configmap(
                 }
             }
             Err(e) => {
-                error!("Error watching ConfigMap: {}", e);
-                // Continue watching - stream will retry automatically
-                // Add a small delay before continuing to avoid tight error loop
-                sleep(Duration::from_secs(5)).await;
+                let error_str = e.to_string();
+                // Check if this is an RBAC/authorization error
+                if error_str.contains("Unauthorized")
+                    || error_str.contains("401")
+                    || error_str.contains("403")
+                {
+                    // RBAC might have been revoked or not ready - wait longer and retry
+                    warn!(
+                        "⚠️  RBAC error watching ConfigMap (will retry with backoff): {}",
+                        e
+                    );
+                    sleep(Duration::from_secs(10)).await;
+                } else {
+                    error!("Error watching ConfigMap: {}", e);
+                    // Continue watching - stream will retry automatically
+                    // Add a small delay before continuing to avoid tight error loop
+                    sleep(Duration::from_secs(5)).await;
+                }
             }
         }
     }
@@ -618,9 +738,11 @@ async fn main() -> Result<()> {
     }
 
     // Shared state for health checks
-    let broker_healthy = Arc::new(AtomicBool::new(false));
+    let broker_healthy = Arc::new(AtomicBool::new(true)); // Broker is ready - we just confirmed it
     let pacts_published = Arc::new(AtomicBool::new(false));
     let published_providers = Arc::new(tokio::sync::RwLock::new(HashSet::new()));
+
+    info!("✅ Broker is ready - health flag set");
 
     // Publish pacts if not already published
     let published_flag = Path::new(&config.published_flag_path);
@@ -669,25 +791,60 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to create Kubernetes client")?;
 
-    // Check if ConfigMap exists and has pact files before starting watch
+    // Wait for RBAC to be ready before checking ConfigMap
     info!(
         "🔍 Checking for ConfigMap {}/{}...",
         config.namespace, config.configmap_name
     );
-    match check_configmap_has_pacts(&client, &config.namespace, &config.configmap_name).await {
-        Ok(true) => {
-            info!("✅ ConfigMap found with pact files");
-        }
-        Ok(false) => {
-            info!(
-                "ℹ️  ConfigMap exists but has no pact files yet (this is expected - will publish when pact files are added to ConfigMap)"
-            );
-        }
-        Err(e) => {
-            warn!(
-                "⚠️  Error checking ConfigMap: {} (will continue watching)",
-                e
-            );
+
+    // Wait for RBAC with retries
+    let mut check_attempts = 0;
+    loop {
+        match check_configmap_has_pacts(&client, &config.namespace, &config.configmap_name).await {
+            Ok(true) => {
+                info!("✅ ConfigMap found with pact files");
+                break;
+            }
+            Ok(false) => {
+                info!(
+                    "ℹ️  ConfigMap exists but has no pact files yet (this is expected - will publish when pact files are added to ConfigMap)"
+                );
+                break;
+            }
+            Err(e)
+                if e.to_string().contains("Unauthorized")
+                    || e.to_string().contains("401")
+                    || e.to_string().contains("403") =>
+            {
+                // RBAC not ready - retry with exponential backoff
+                check_attempts += 1;
+                if check_attempts < 15 {
+                    if check_attempts % 3 == 0 {
+                        info!(
+                            "⏳ Waiting for RBAC to be ready... (attempt {})",
+                            check_attempts
+                        );
+                    }
+                    let delay = std::cmp::min(
+                        Duration::from_secs(2).saturating_mul(check_attempts),
+                        Duration::from_secs(10),
+                    );
+                    sleep(delay).await;
+                } else {
+                    warn!(
+                        "⚠️  RBAC still not ready after {} attempts, continuing anyway - watcher will handle retries",
+                        check_attempts
+                    );
+                    break;
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "⚠️  Error checking ConfigMap: {} (will continue watching)",
+                    e
+                );
+                break;
+            }
         }
     }
 

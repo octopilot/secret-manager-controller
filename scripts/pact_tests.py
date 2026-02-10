@@ -120,7 +120,67 @@ def wait_for_pact_broker(timeout: int = 120) -> bool:
         return False
 
 
-def setup_port_forward(namespace: str, target: str, local_port: int, remote_port: int, is_pod: bool = False) -> Optional[subprocess.Popen]:
+def check_port_in_use(port: int) -> bool:
+    """Check if a port is already in use."""
+    try:
+        # Try to bind to the port to see if it's available
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('127.0.0.1', port))
+            return False
+    except OSError:
+        return True
+
+
+def test_port_forward_works(url: str, username: str = None, password: str = None, timeout: int = 3) -> bool:
+    """Test if a port forward is already working by trying to connect."""
+    try:
+        req = urllib.request.Request(url)
+        if username and password:
+            credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+            req.add_header("Authorization", f"Basic {credentials}")
+        
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            # If we get any response (even 404), the port forward is working
+            return True
+    except urllib.error.HTTPError:
+        # HTTP error means connection worked, just wrong endpoint
+        return True
+    except (urllib.error.URLError, ConnectionRefusedError, OSError):
+        # Connection refused or timeout means port forward not working
+        return False
+    except Exception:
+        # Any other error, assume it's not working
+        return False
+
+
+def kill_existing_port_forwards(port: int) -> bool:
+    """Kill existing kubectl port-forward processes for a given port."""
+    try:
+        # Find kubectl port-forward processes for this port
+        ps_cmd = ["ps", "aux"]
+        ps_result = subprocess.run(ps_cmd, capture_output=True, text=True, check=False)
+        if ps_result.returncode == 0:
+            for line in ps_result.stdout.split('\n'):
+                if 'kubectl' in line and 'port-forward' in line and str(port) in line:
+                    # Extract PID
+                    parts = line.split()
+                    if len(parts) > 1:
+                        try:
+                            pid = int(parts[1])
+                            print(f"  Killing existing port-forward process (PID: {pid})...")
+                            subprocess.run(["kill", str(pid)], check=False)
+                            time.sleep(1)  # Give it time to die
+                        except (ValueError, IndexError):
+                            pass
+        return True
+    except Exception as e:
+        print(f"  ⚠️  Could not check for existing port forwards: {e}")
+        return False
+
+
+def setup_port_forward(namespace: str, target: str, local_port: int, remote_port: int, is_pod: bool = False, test_url: str = None, test_username: str = None, test_password: str = None) -> Optional[subprocess.Popen]:
     """Set up port forwarding in the background.
     
     Args:
@@ -129,9 +189,67 @@ def setup_port_forward(namespace: str, target: str, local_port: int, remote_port
         local_port: Local port to forward to
         remote_port: Remote port to forward from
         is_pod: If True, target is a pod name; if False, target is a service name
+        test_url: URL to test if port forward is already working (optional)
+        test_username: Username for test URL (optional)
+        test_password: Password for test URL (optional)
     """
     print(f"Setting up port forwarding {local_port}:{remote_port}...")
     log_file_path = f"/tmp/pact-port-forward-{local_port}.log"
+    
+    # Check if port is already in use
+    if check_port_in_use(local_port):
+        print(f"  ⚠️  Port {local_port} is already in use")
+        
+        # If we have a test URL, check if the existing port forward is working
+        if test_url:
+            print(f"  🔍 Testing if existing port forward is working...")
+            if test_port_forward_works(test_url, test_username, test_password):
+                print(f"  ✅ Port {local_port} is already forwarding correctly (likely Tilt or existing port-forward)")
+                print(f"  ⏭️  Skipping port forward setup, using existing connection")
+                # Return a dummy process object that won't be cleaned up
+                # We'll use a sentinel value to indicate this is an existing forward
+                class ExistingPortForward:
+                    def poll(self):
+                        return None  # Always running
+                    def terminate(self):
+                        pass  # Don't kill existing forward
+                    def wait(self, timeout=None):
+                        return 0
+                    def kill(self):
+                        pass
+                return ExistingPortForward()
+            else:
+                print(f"  ⚠️  Port {local_port} is in use but not forwarding correctly")
+        
+        # Try to kill existing kubectl port-forward processes (but not Tilt)
+        print(f"  🔧 Attempting to clean up existing kubectl port-forward processes...")
+        if kill_existing_port_forwards(local_port):
+            # Wait a bit and check again
+            time.sleep(2)
+            if check_port_in_use(local_port):
+                # Port still in use - might be Tilt or another non-kubectl process
+                if test_url and test_port_forward_works(test_url, test_username, test_password):
+                    print(f"  ✅ Port {local_port} is working (likely managed by Tilt)")
+                    print(f"  ⏭️  Using existing port forward")
+                    class ExistingPortForward:
+                        def poll(self):
+                            return None
+                        def terminate(self):
+                            pass
+                        def wait(self, timeout=None):
+                            return 0
+                        def kill(self):
+                            pass
+                    return ExistingPortForward()
+                else:
+                    print(f"  ❌ Port {local_port} is still in use and not working correctly")
+                    print(f"  💡 This may be Tilt or another tool. The script will attempt to continue.")
+                    print(f"  💡 If tests fail, you may need to manually configure port forwarding.")
+                    # Continue anyway - let the connection test later determine if it works
+            else:
+                print(f"  ✅ Port {local_port} is now free")
+        else:
+            print(f"  ⚠️  Could not clean up port {local_port}, but will attempt to use it")
     
     # Build kubectl port-forward command
     # For pods: kubectl port-forward -n namespace pod/pod-name local:remote
@@ -196,19 +314,24 @@ def check_port_forward(url: str, username: str, password: str) -> bool:
         return False
 
 
-def check_manager_health(manager_url: str, timeout: int = 30) -> Tuple[bool, dict]:
-    """Check the manager's /ready endpoint.
+def check_manager_health(manager_url: str, timeout: int = 300) -> Tuple[bool, dict]:
+    """Check the manager's /health endpoint to verify it's running and broker is healthy.
     
-    Returns (is_ready, health_data) where is_ready is True if broker is healthy and pacts are published.
+    Note: We check /health (not /ready) because /ready requires pacts to be published,
+    but pacts are only published AFTER tests run. We just need to verify the manager
+    is running and the broker is healthy before running tests.
+    
+    Returns (is_ready, health_data) where is_ready is True if manager is running and broker is healthy.
     """
-    print(f"Checking manager readiness at {manager_url}/ready...")
+    print(f"Checking manager health at {manager_url}/health...")
+    print(f"  (Note: We check /health, not /ready, because pacts are published after tests run)")
     
     max_attempts = timeout // 2  # Check every 2 seconds
     attempt = 0
     
     while attempt < max_attempts:
         try:
-            req = urllib.request.Request(f"{manager_url}/ready")
+            req = urllib.request.Request(f"{manager_url}/health")
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status == 200:
                     health_data = json.loads(response.read().decode())
@@ -218,20 +341,36 @@ def check_manager_health(manager_url: str, timeout: int = 30) -> Tuple[bool, dic
                     
                     print(f"  Manager status: {status}")
                     print(f"  Broker healthy: {broker_healthy}")
-                    print(f"  Pacts published: {pacts_published}")
+                    print(f"  Pacts published: {pacts_published} (expected to be false before tests run)")
                     
-                    # Ready if both broker is healthy and pacts are published
-                    is_ready = broker_healthy and pacts_published
+                    # Ready if manager is running and broker is healthy
+                    # We don't require pacts_published because tests haven't run yet
+                    is_ready = broker_healthy
                     
                     if is_ready:
-                        print("✅ Manager indicates all components are ready and pacts are published")
+                        print("✅ Manager is running and broker is healthy - ready to run tests")
+                        print("   (Pacts will be published after tests generate them)")
                         return (True, health_data)
                     else:
                         if attempt % 5 == 0:  # Log every 5 attempts
-                            print(f"  ⏳ Waiting for manager to be ready... (attempt {attempt + 1}/{max_attempts})")
+                            print(f"  ⏳ Waiting for manager and broker to be ready... (attempt {attempt + 1}/{max_attempts})")
+                            if not broker_healthy:
+                                print(f"     Broker is not healthy yet")
+                elif response.status == 503:
+                    # 503 means service unavailable - container might still be starting
+                    if attempt % 10 == 0:  # Log every 10 attempts for 503
+                        print(f"  ⏳ Manager returning 503 (Service Unavailable) - container may still be starting (attempt {attempt + 1}/{max_attempts})")
                 else:
                     if attempt % 5 == 0:
                         print(f"  ⚠️  Manager health check returned status {response.status}")
+        except urllib.error.HTTPError as e:
+            if e.code == 503:
+                # 503 means service unavailable - container might still be starting
+                if attempt % 10 == 0:  # Log every 10 attempts for 503
+                    print(f"  ⏳ Manager not yet accessible: HTTP Error 503: Service Unavailable (attempt {attempt + 1}/{max_attempts})")
+            else:
+                if attempt % 5 == 0:
+                    print(f"  ⏳ Manager not yet accessible: HTTP Error {e.code} (attempt {attempt + 1}/{max_attempts})")
         except urllib.error.URLError as e:
             if attempt % 5 == 0:
                 print(f"  ⏳ Manager not yet accessible: {e} (attempt {attempt + 1}/{max_attempts})")
@@ -244,6 +383,9 @@ def check_manager_health(manager_url: str, timeout: int = 30) -> Tuple[bool, dic
             time.sleep(2)
     
     print(f"❌ Manager health check timed out after {timeout} seconds")
+    print(f"💡 The manager container may still be initializing. Check:")
+    print(f"   kubectl get pods -l app=pact-infrastructure -n secret-manager-controller-pact-broker")
+    print(f"   kubectl logs deployment/pact-infrastructure -c manager -n secret-manager-controller-pact-broker")
     return (False, {})
 
 
@@ -449,7 +591,7 @@ def publish_pact_files(
                 cmd.extend([
                     "-v", f"{temp_path}:/pacts/{temp_dir_base}",
                     "-w", f"/pacts/{temp_dir_base}",
-                    "docker.io/microscaler/pact-cli:latest",
+                    "ghcr.io/octopilot/pact-cli:latest",
                     "publish", ".",
                     "--consumer-app-version", provider_version,
                     "--branch", branch,
@@ -516,8 +658,8 @@ def main() -> int:
     parser.add_argument(
         "--manager-timeout",
         type=int,
-        default=120,
-        help="Timeout in seconds for waiting for manager to be ready (default: 120)"
+        default=300,
+        help="Timeout in seconds for waiting for manager to be ready (default: 300, 5 minutes)"
     )
     
     args = parser.parse_args()
@@ -535,18 +677,23 @@ def main() -> int:
         manager_port_forward = None
         if not args.skip_port_forward:
             # Port forward for Pact broker (service)
+            # Test URL to check if port forward already works
+            broker_test_url = f"{args.broker_url}/"
             broker_port_forward = setup_port_forward(
                 "secret-manager-controller-pact-broker",
                 "pact-broker",
                 9292,
                 9292,
-                is_pod=False
+                is_pod=False,
+                test_url=broker_test_url,
+                test_username=args.username,
+                test_password=args.password
             )
             
+            # Verify the port forward is working (whether we created it or it already existed)
             if not check_port_forward(args.broker_url, args.username, args.password):
-                if broker_port_forward:
-                    broker_port_forward.terminate()
-                return 1
+                print("  ⚠️  Port forward check failed, but continuing...")
+                # Don't return error immediately - the manager health check will catch real issues
             
             # Port forward for manager health endpoint
             # Manager is in the same pod, so we can port-forward to the pod directly
@@ -563,12 +710,14 @@ def main() -> int:
             pod_result = subprocess.run(get_pod_cmd, capture_output=True, text=True, check=False)
             if pod_result.returncode == 0 and pod_result.stdout.strip():
                 pod_name = pod_result.stdout.strip()
+                manager_test_url = f"http://localhost:{args.manager_port}/health"
                 manager_port_forward = setup_port_forward(
                     namespace,
                     pod_name,  # Port-forward to pod directly
                     args.manager_port,
                     1238,  # Manager's health port
-                    is_pod=True  # This is a pod, not a service
+                    is_pod=True,  # This is a pod, not a service
+                    test_url=manager_test_url
                 )
             else:
                 print("⚠️  Could not find pact-infrastructure pod for manager port-forward")
@@ -579,29 +728,39 @@ def main() -> int:
         print("\n" + "=" * 60)
         print("Checking manager health status...")
         print("=" * 60)
+        print(f"⏳ This may take a few minutes after a cluster restart...")
+        print(f"   The manager container needs time to start and publish pacts.")
+        print("=" * 60 + "\n")
         
         manager_url = f"http://localhost:{args.manager_port}"
         manager_ready, health_data = check_manager_health(manager_url, timeout=args.manager_timeout)
         
         if not manager_ready:
             print("\n" + "=" * 60)
-            print("❌ Manager indicates components are not ready")
+            print("❌ Manager or broker is not ready")
             print("=" * 60)
             broker_healthy = health_data.get("broker_healthy", False)
-            pacts_published = health_data.get("pacts_published", False)
             
             if not broker_healthy:
                 print("\n⚠️  Broker is not healthy yet.")
                 print("   The pact-infrastructure deployment may still be initializing.")
-            if not pacts_published:
-                print("\n⚠️  Pacts are not yet published.")
-                print("   The manager may still be publishing contracts.")
+                print("   This can take a few minutes after cluster restart.")
             
-            print("\nWait for the manager to indicate readiness, then run this script again.")
-            print("\nTo check manager status:")
-            print("  kubectl get deployment pact-infrastructure -n secret-manager-controller-pact-broker")
-            print("  kubectl logs deployment/pact-infrastructure -c manager -n secret-manager-controller-pact-broker")
-            print(f"  curl http://localhost:{args.manager_port}/health")
+            print("\n💡 Troubleshooting steps:")
+            print("   1. Check if pods are running:")
+            print("      kubectl get pods -l app=pact-infrastructure -n secret-manager-controller-pact-broker")
+            print("   2. Check manager container logs:")
+            print("      kubectl logs deployment/pact-infrastructure -c manager -n secret-manager-controller-pact-broker")
+            print("   3. Check broker container logs:")
+            print("      kubectl logs deployment/pact-infrastructure -c pact-broker -n secret-manager-controller-pact-broker")
+            print(f"   4. Check manager health endpoint directly:")
+            print(f"      curl http://localhost:{args.manager_port}/health")
+            print(f"      curl http://localhost:{args.manager_port}/healthz")
+            print("   5. Check RBAC permissions (manager needs ConfigMap access):")
+            print("      kubectl get rolebinding pact-manager -n secret-manager-controller-pact-broker")
+            print("      kubectl get role pact-manager -n secret-manager-controller-pact-broker")
+            print("\n⏳ Wait for the manager and broker to be ready, then run this script again.")
+            print("   After a cluster restart, this can take 2-5 minutes.")
             return 1
         
         print("\n" + "=" * 60)

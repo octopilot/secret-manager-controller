@@ -1,0 +1,9 @@
+-- Create AWS secrets table
+CREATE TABLE IF NOT EXISTS aws.secrets (
+    name TEXT PRIMARY KEY,
+    disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    updated_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
+);
+

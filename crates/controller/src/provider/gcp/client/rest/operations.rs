@@ -21,11 +21,19 @@ use paths::prelude::{GcpOperation, PathBuilder};
 
 #[async_trait]
 impl SecretManagerProvider for SecretManagerREST {
-    async fn create_or_update_secret(&self, secret_name: &str, secret_value: &str) -> Result<bool> {
+    async fn create_or_update_secret(
+        &self,
+        secret_name: &str,
+        secret_value: &str,
+        environment: &str,
+        location: &str,
+    ) -> Result<bool> {
         let span = info_span!(
             "gcp.secret.create_or_update",
             secret.name = secret_name,
-            project.id = self.project_id()
+            project.id = self.project_id(),
+            provider = "gcp",
+            operation = "create_or_update_secret"
         );
         let span_clone = span.clone();
         let project_id = self.project_id().to_string();
@@ -47,15 +55,39 @@ impl SecretManagerProvider for SecretManagerREST {
 
             // Create secret if it doesn't exist
             if existing_secret.is_none() {
-                info!("Creating new GCP secret: {}", secret_name);
+                info!(
+                    provider = "gcp",
+                    project = self_ref.project_id,
+                    secret_name = secret_name,
+                    operation = "create_secret",
+                    "Creating new GCP secret: project={}, secret={}",
+                    self_ref.project_id,
+                    secret_name
+                );
 
-                let create_request = CreateSecretRequest::new(secret_name.to_string());
+                let create_request = CreateSecretRequest::new(
+                    secret_name.to_string(),
+                    environment.to_string(),
+                    location.to_string(),
+                );
 
                 let path = PathBuilder::new()
                     .gcp_operation(GcpOperation::CreateSecret)
                     .project(&self_ref.project_id)
                     .build_http_path()
                     .context("Failed to build create secret path")?;
+
+                info!(
+                    provider = "gcp",
+                    project = self_ref.project_id,
+                    secret_name = secret_name,
+                    operation = "create_secret",
+                    path = path,
+                    "Building create_secret path: project={}, secret={}, path={}",
+                    self_ref.project_id,
+                    secret_name,
+                    path
+                );
 
                 let response = self_ref
                     .make_request("POST", &path, Some(serde_json::to_value(&create_request)?))
@@ -82,7 +114,15 @@ impl SecretManagerProvider for SecretManagerREST {
                 }
                 Some(op_type) => {
                     if op_type == "update" {
-                        info!("Secret value changed, updating GCP secret: {}", secret_name);
+                        info!(
+                            provider = "gcp",
+                            project = self_ref.project_id,
+                            secret_name = secret_name,
+                            operation = "update",
+                            "Secret value changed, updating GCP secret: project={}, secret={}",
+                            self_ref.project_id,
+                            secret_name
+                        );
                     }
                     op_type
                 }
@@ -107,6 +147,19 @@ impl SecretManagerProvider for SecretManagerREST {
                 .build_http_path()
                 .context("Failed to build add version path")?;
 
+            info!(
+                provider = "gcp",
+                project = self_ref.project_id,
+                secret_name = secret_name,
+                operation = "add_version",
+                path = path,
+                method = "POST",
+                "Building add_version path: project={}, secret={}, path={}",
+                self_ref.project_id,
+                secret_name,
+                path
+            );
+
             let response = self_ref
                 .make_request(
                     "POST",
@@ -116,6 +169,18 @@ impl SecretManagerProvider for SecretManagerREST {
                 .send()
                 .await
                 .context("Failed to add secret version")?;
+
+            info!(
+                provider = "gcp",
+                project = self_ref.project_id,
+                secret_name = secret_name,
+                operation = "add_version",
+                status_code = response.status().as_u16(),
+                "add_version response: project={}, secret={}, status={}",
+                self_ref.project_id,
+                secret_name,
+                response.status()
+            );
 
             if !response.status().is_success() {
                 let status = response.status();

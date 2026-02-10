@@ -67,7 +67,7 @@ pub async fn ensure_fluxcd_alert(
 
     if let Some(uid) = &config.metadata.uid {
         alert_metadata["ownerReferences"] = serde_json::json!([{
-            "apiVersion": "secret-management.microscaler.io/v1beta1",
+            "apiVersion": "secret-management.octopilot.io/v1beta1",
             "kind": "SecretManagerConfig",
             "name": name,
             "uid": uid,

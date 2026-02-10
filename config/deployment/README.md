@@ -11,7 +11,7 @@ To enable Pact mode for testing without cloud accounts, apply the Pact environme
 ### Option 1: kubectl patch (one-time)
 
 ```bash
-kubectl patch deployment secret-manager-controller -n microscaler-system \
+kubectl patch deployment secret-manager-controller -n octopilot-system \
   --patch-file config/deployment/pact-env-patch.yaml
 ```
 
@@ -42,7 +42,7 @@ kubectl apply -k ./overlays/pact-mode
 ### Option 3: Manual environment variable injection
 
 ```bash
-kubectl set env deployment/secret-manager-controller -n microscaler-system \
+kubectl set env deployment/secret-manager-controller -n octopilot-system \
   PACT_MODE=true \
   AWS_SECRETS_MANAGER_ENDPOINT=http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292 \
   AZURE_KEY_VAULT_ENDPOINT=http://pact-broker.secret-manager-controller-pact-broker.svc.cluster.local:9292
@@ -64,7 +64,7 @@ Both AWS and Azure endpoints point to the same Pact broker service. If you need 
 To disable Pact mode and return to production configuration:
 
 ```bash
-kubectl set env deployment/secret-manager-controller -n microscaler-system \
+kubectl set env deployment/secret-manager-controller -n octopilot-system \
   PACT_MODE- \
   AWS_SECRETS_MANAGER_ENDPOINT- \
   AZURE_KEY_VAULT_ENDPOINT-

@@ -9,7 +9,7 @@
 # This will:
 # - Install FluxCD components (CRDs, RBAC, deployments, services, etc.)
 # - Apply network policy patches to allow controller access
-# - Label the microscaler-system namespace for network policy matching
+# - Label the octopilot-system namespace for network policy matching
 
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -23,7 +23,7 @@ resources:
 
 # Patches to enable secret-manager-controller integration
 # These patches modify FluxCD-managed resources to allow the controller
-# (running in microscaler-system namespace) to access FluxCD services
+# (running in octopilot-system namespace) to access FluxCD services
 patches:
   - path: patches/networkpolicy-allow-egress.yaml
     target:

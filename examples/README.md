@@ -150,7 +150,7 @@ After applying a `SecretManagerConfig`, verify secrets are synced:
 
 ```bash
 # Check controller logs
-kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=50
+kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=50
 
 # Check GCP Secret Manager (requires gcloud CLI)
 gcloud secrets list --project=your-project --filter="name:your-prefix-*"
@@ -170,7 +170,7 @@ If the status shows `Ready=False`, check:
 
 2. **Controller Logs:**
    ```bash
-   kubectl logs -n microscaler-system -l app=secret-manager-controller --tail=100
+   kubectl logs -n octopilot-system -l app=secret-manager-controller --tail=100
    ```
 
 3. **Cloud Provider Authentication:**

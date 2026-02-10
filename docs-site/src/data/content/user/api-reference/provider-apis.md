@@ -189,7 +189,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/secret-manager-role
 ```
@@ -409,7 +409,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     iam.gke.io/gcp-service-account: secret-manager@my-project.iam.gserviceaccount.com
 ```
@@ -432,7 +432,7 @@ spec:
         serviceAccountKey:
           secretRef:
             name: gcp-service-account-key
-            namespace: microscaler-system
+            namespace: octopilot-system
             key: key.json
 ```
 
@@ -642,7 +642,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: secret-manager-controller
-  namespace: microscaler-system
+  namespace: octopilot-system
   annotations:
     azure.workload.identity/client-id: <managed-identity-client-id>
 ```
@@ -667,7 +667,7 @@ spec:
           clientSecret:
             secretRef:
               name: azure-service-principal
-              namespace: microscaler-system
+              namespace: octopilot-system
               key: client-secret
           tenantId: <tenant-id>
 ```

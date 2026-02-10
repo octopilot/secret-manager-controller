@@ -23,6 +23,7 @@ def main():
         "azure-mock-server": "azure-mock-server",
         "webhook": "webhook",
         "manager": "manager",
+        "postgres-manager": "postgres-manager",
     }
     
     print("📋 Copying mock server binaries to build_artifacts...")

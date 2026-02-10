@@ -610,7 +610,7 @@ use serde::{Deserialize, Serialize};
 #[derive(CustomResource, Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[kube(
     kind = "SecretManagerConfig",
-    group = "secret-management.microscaler.io",
+    group = "secret-management.octopilot.io",
     version = "v1beta1",
     namespaced,
     status = "SecretManagerConfigStatus",
