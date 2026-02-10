@@ -99,7 +99,6 @@ Expire-Date: 0
                 # Extract the long key ID (last part after the /)
                 parts = line.split('/')
                 if len(parts) > 1:
-                    key_id = parts[1].split()[0]
                     # Get full fingerprint
                     fp_result = run_command(
                         f"gpg --fingerprint --keyid-format LONG flux@octopilot.io",
