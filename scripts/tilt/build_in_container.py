@@ -45,11 +45,23 @@ from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-# Rust builder image — same one used by the production multi-stage Dockerfiles.
-# Override with OP_RUST_BUILDER env var if you have a custom image.
+# Rust builder image used for container-based compilation.
+#
+# Default: official rust:stable-bookworm — always has the current stable Rust
+#   release so edition2024 (stabilised in 1.85) and future features work.
+#   musl-tools and the musl Rust target are installed at runtime (see below).
+#
+# Override: set OP_RUST_BUILDER to use the octopilot pre-baked base image once
+#   it has been rebuilt against rust:stable and includes musl-tools.
+#   e.g.  OP_RUST_BUILDER=ghcr.io/octopilot/rust-builder-base-image:latest
+#
+# Why not default to the octopilot image?
+#   The published ghcr.io/octopilot/rust-builder-base-image:latest was built
+#   against rust:1.82 which predates edition2024 support (requires 1.85+).
+#   Until that image is rebuilt and pushed, the official image is the safe default.
 RUST_BUILDER_IMAGE = os.environ.get(
     "OP_RUST_BUILDER",
-    "ghcr.io/octopilot/rust-builder-base-image:latest",
+    "rust:stable-bookworm",
 )
 
 # Cargo target — musl for static binaries compatible with alpine-based dev images.
@@ -125,7 +137,27 @@ def main() -> None:
                         help="Skip CRD generation and kubectl apply")
     parser.add_argument("--skip-apply", action="store_true",
                         help="Generate CRD but do not kubectl apply")
+    parser.add_argument("--purge-cache", action="store_true",
+                        help=(
+                            "Delete the smc-cargo-registry and smc-cargo-git "
+                            "Docker volumes before building.  Use this when the "
+                            "cached dependency index becomes incompatible with a "
+                            "newer Rust toolchain (e.g. after upgrading the "
+                            "builder image from rust:1.82 to rust:stable)."
+                        ))
     args = parser.parse_args()
+
+    if args.purge_cache:
+        print("🗑  Purging Cargo cache volumes...")
+        for vol in (CARGO_REGISTRY_VOLUME, CARGO_GIT_VOLUME):
+            result = subprocess.run(
+                f"docker volume rm {vol}",
+                shell=True, capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                print(f"  ✅ Removed volume '{vol}'")
+            else:
+                print(f"  ⚠️  Volume '{vol}' not found or already removed")
 
     workspace = Path.cwd()
     profile = "release" if args.release else "debug"
@@ -160,9 +192,14 @@ def main() -> None:
         f"-e CARGO_NET_GIT_FETCH_WITH_CLI=true "
         f"{RUST_BUILDER_IMAGE} "
         f"sh -c '"
-        # musl-tools and the x86_64-unknown-linux-musl Rust target are pre-installed
-        # in rust-builder-base-image (Dockerfile.base.rust-builder) so no runtime
-        # install is needed here.  Build all workspace binaries directly.
+        # Install musl-tools and add the musl Rust target.
+        # These are idempotent: if OP_RUST_BUILDER points to the octopilot base
+        # image (which pre-installs them), apt-get and rustup skip silently.
+        # With the default rust:stable-bookworm image they are installed fresh.
+        # apt-get is run quietly (-qq) so it doesn't flood the build log.
+        f"apt-get update -qq && "
+        f"apt-get install -y --no-install-recommends musl-tools -qq 2>/dev/null && "
+        f"rustup target add {CARGO_TARGET} 2>/dev/null && "
         f"cargo build {profile_flag} --workspace --bins --target {CARGO_TARGET}"
         f"'"
     )

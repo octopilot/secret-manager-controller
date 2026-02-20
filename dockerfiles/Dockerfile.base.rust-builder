@@ -12,7 +12,11 @@
 ARG BUILDPLATFORM=linux/amd64
 ARG TARGETPLATFORM
 ARG TARGETARCH
-FROM --platform=$BUILDPLATFORM rust:1.82-bookworm
+# Use the latest stable Rust release so that dependencies requiring newer Rust
+# features (e.g. edition2024, stabilised in 1.85) always compile.
+# Pin to a specific stable version here if you need fully reproducible base images;
+# otherwise "stable" tracks the current stable release.
+FROM --platform=$BUILDPLATFORM rust:stable-bookworm
 
 # Install build dependencies
 # pkg-config: Required for finding system libraries
