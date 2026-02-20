@@ -16,7 +16,7 @@ spec:
       serviceAccountName: secret-manager-controller
       containers:
       - name: controller
-        image: localhost:5000/secret-manager-controller
+        image: localhost:5001/secret-manager-controller
         imagePullPolicy: IfNotPresent
         envFrom:
         # Controller-level configuration from ConfigMap

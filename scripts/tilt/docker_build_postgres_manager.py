@@ -29,7 +29,7 @@ def main():
     expected_ref = os.getenv("EXPECTED_REF")
     if not expected_ref:
         # Fallback for manual execution
-        image_name = os.getenv("IMAGE_NAME", "localhost:5000/postgres-manager")
+        image_name = os.getenv("IMAGE_NAME", "localhost:5001/postgres-manager")
         tag = os.getenv("TAG", "tilt")
         expected_ref = f"{image_name}:{tag}"
     
@@ -80,7 +80,7 @@ def main():
         sys.exit(1)
     
     # Push to registry (for Kind cluster access)
-    if tagged_image.startswith("localhost:5000"):
+    if tagged_image.startswith("localhost:5001"):
         log_info(f"Pushing image to registry: {tagged_image}")
         push_result = subprocess.run(
             ["docker", "push", tagged_image],

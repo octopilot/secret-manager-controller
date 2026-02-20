@@ -217,91 +217,77 @@ def configure_containerd_registry():
 
     mirror_host = f"localhost:{REGISTRY_PORT}"
 
-    # Containerd config patch:
-    # 1. Mirror localhost:5001 to the registry container's HTTPS endpoint
-    # 2. Skip TLS verification for the self-signed certificate
-    # Use IP address for reliable connectivity (avoids DNS resolution issues in Kind)
-    containerd_patch = f"""
-[plugins."io.containerd.grpc.v1.cri".registry.mirrors."{mirror_host}"]
-  endpoint = ["{registry_endpoint}"]
-[plugins."io.containerd.grpc.v1.cri".registry.configs."{registry_ip}:{REGISTRY_CONTAINER_PORT}".tls]
-  insecure_skip_verify = true
+    # Containerd v2 uses the certs.d directory structure for registry configuration.
+    # The old inline [plugins."io.containerd.grpc.v1.cri".registry.mirrors.*] format
+    # was REMOVED in containerd v2 and will break the CRI plugin if written.
+    #
+    # Correct v2 approach:
+    #   /etc/containerd/certs.d/<host>/hosts.toml
+    #
+    # The CRI plugin's config_path already includes /etc/containerd/certs.d in
+    # the default Kind containerd config, so no config.toml modification is needed.
+    hosts_toml = f"""server = "https://{mirror_host}"
+
+[host."{registry_endpoint}"]
+  capabilities = ["pull", "resolve", "push"]
+  skip_verify = true
 """
 
     for node in nodes:
         log_info(f"Configuring containerd on node: {node}")
 
-        # Read current containerd config
-        read_cmd = f"docker exec {node} cat /etc/containerd/config.toml"
-        result = run_command(read_cmd, check=False, capture_output=True)
-
-        if result.returncode != 0:
-            log_error(f"Could not read containerd config on {node}, skipping registry configuration")
-            continue
-
-        config_content = result.stdout
-
-        # Check if registry mirror is already configured with the correct endpoint
-        if f'endpoint = ["{registry_endpoint}"]' in config_content:
+        # Check if already configured correctly
+        check_cmd = f"docker exec {node} cat /etc/containerd/certs.d/{mirror_host}/hosts.toml"
+        check_result = run_command(check_cmd, check=False, capture_output=True)
+        if check_result.returncode == 0 and registry_endpoint in check_result.stdout:
             log_info(f"Registry mirror already configured correctly on {node}")
             continue
 
-        # Remove any existing localhost:5000 or localhost:5001 mirror config
-        # to avoid stale entries from previous setups
-        lines = config_content.split('\n')
-        new_lines = []
-        skip_until_end = False
-        for i, line in enumerate(lines):
-            if (
-                '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]' in line
-                or '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]' in line
-            ):
-                skip_until_end = True
-                continue
-            if skip_until_end:
-                if line.strip().startswith('[') and 'registry.mirrors' in line:
-                    skip_until_end = False
-                    new_lines.append(line)
-                elif line.strip() and not line.strip().startswith('endpoint') and not line.strip().startswith('  '):
-                    skip_until_end = False
-                    new_lines.append(line)
-                continue
-            new_lines.append(line)
-        
-        # Append new registry mirror configuration
-        config_content = '\n'.join(new_lines).rstrip() + containerd_patch
-        
-        # Write updated config back
-        write_cmd = f"docker exec -i {node} sh -c 'cat > /etc/containerd/config.toml'"
-        result = run_command(write_cmd, input=config_content, check=False)
-        
+        # Create the certs.d directory for this mirror host
+        mkdir_cmd = f"docker exec {node} mkdir -p /etc/containerd/certs.d/{mirror_host}"
+        run_command(mkdir_cmd, check=False)
+
+        # Write the hosts.toml file
+        write_cmd = (
+            f"docker exec -i {node} "
+            f"sh -c 'cat > /etc/containerd/certs.d/{mirror_host}/hosts.toml'"
+        )
+        result = run_command(write_cmd, input=hosts_toml, check=False)
         if result.returncode != 0:
-            log_error(f"Could not write containerd config on {node}")
+            log_error(f"Could not write hosts.toml on {node}")
             continue
-        
-        # Restart containerd
+
+        # Verify config_path in containerd config includes certs.d
+        # (default Kind containerd config already has this, but ensure it)
+        check_path_cmd = f"docker exec {node} grep -c 'certs.d' /etc/containerd/config.toml"
+        path_result = run_command(check_path_cmd, check=False, capture_output=True)
+        if path_result.returncode != 0 or int((path_result.stdout or "0").strip()) == 0:
+            log_warn(
+                f"  /etc/containerd/certs.d not in config_path on {node}, "
+                "registry mirror may not be effective"
+            )
+
+        # Restart containerd to pick up the new certs.d config
         log_info(f"Restarting containerd on {node}...")
-        result = run_command(f"docker exec {node} systemctl restart containerd", check=False)
-        if result.returncode != 0:
-            log_warn(f"Could not restart containerd on {node} (may already be restarted)")
-        
-        # Poll for containerd to be ready (check if it's responding)
+        run_command(f"docker exec {node} systemctl restart containerd", check=False)
+
+        # Poll until containerd CRI is responding (not just the daemon)
         log_info(f"Waiting for containerd to be ready on {node}...")
-        max_containerd_wait = 10  # Wait up to 10 seconds
         containerd_ready = False
-        for i in range(max_containerd_wait):
-            # Check if containerd is responding
-            result = run_command(f"docker exec {node} ctr version", check=False, capture_output=True)
+        for i in range(15):
+            result = run_command(
+                f"docker exec {node} ctr version",
+                check=False, capture_output=True
+            )
             if result.returncode == 0:
                 containerd_ready = True
                 break
-            if i < max_containerd_wait - 1:
-                time.sleep(1)
-        
+            time.sleep(1)
+
         if not containerd_ready:
             log_warn(f"Containerd may not be fully ready on {node}, but continuing...")
-        
-        log_info(f"✅ Configured registry mirror on {node} (endpoint: {registry_endpoint})")
+
+        log_info(f"✅ Configured registry mirror on {node} (certs.d/{mirror_host})")
 
 
 def create_octopilot_system_namespace():

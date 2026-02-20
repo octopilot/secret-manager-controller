@@ -194,7 +194,7 @@ spec:
             periodSeconds: 10
         # PostgreSQL migration manager sidecar
         # Watches ConfigMap for migration files and runs them when postgres is ready
-        # Note: Tilt will automatically substitute 'postgres-manager' with 'localhost:5000/postgres-manager:tilt-{hash}'
+        # Note: Tilt will automatically substitute 'postgres-manager' with 'localhost:5001/postgres-manager:tilt-{hash}'
         # The image name must match the custom_build name in Tiltfile for Tilt to substitute it
         - name: postgres-manager
           image: postgres-manager

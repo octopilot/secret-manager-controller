@@ -119,7 +119,7 @@ def cleanup_dangling_images():
 
 
 def cleanup_unused_images():
-    """Remove unused images we build ourselves (localhost:5000/* with tilt-* tags).
+    """Remove unused images we build ourselves (localhost:5001/* with tilt-* tags).
     
     NOTE: We do NOT use 'docker image prune -a' as it would remove:
     - Base images (rust:alpine, debian, etc.)
@@ -130,11 +130,11 @@ def cleanup_unused_images():
     
     Tilt-specific images are handled separately by cleanup_old_tilt_images().
     """
-    print("🖼️  Pruning unused images we build (localhost:5000/* with tilt-* tags)...")
+    print("🖼️  Pruning unused images we build (localhost:5001/* with tilt-* tags)...")
     # Only clean up images we build ourselves, not base images or dependencies
     # This prevents re-downloading images and hitting Docker rate limits
     result = run_command(
-        ["docker", "images", "localhost:5000/*", "--format", "{{.Repository}}\t{{.Tag}}\t{{.ID}}"],
+        ["docker", "images", "localhost:5001/*", "--format", "{{.Repository}}\t{{.Tag}}\t{{.ID}}"],
         check=False
     )
     if result.returncode == 0 and result.stdout:
@@ -248,7 +248,7 @@ def cleanup_registry_images():
     
     # Method 1: Use registry garbage collection API (if available)
     # This requires the registry to have delete enabled
-    registry_url = os.getenv("REGISTRY_URL", "http://localhost:5000")
+    registry_url = os.getenv("REGISTRY_URL", "http://localhost:5001")
     
     # Try to get catalog first to see if API is accessible
     catalog_result = run_command(
@@ -269,7 +269,7 @@ def cleanup_registry_images():
             print(f"  📋 Found {len(repositories)} repository/repositories in registry")
             
             # For each repository, list tags and identify old ones
-            image_name = os.getenv("IMAGE_NAME", "localhost:5000/secret-manager-controller")
+            image_name = os.getenv("IMAGE_NAME", "localhost:5001/secret-manager-controller")
             repo_name = image_name.split("/")[-1] if "/" in image_name else image_name.split(":")[0]
             
             if repo_name not in repositories:
