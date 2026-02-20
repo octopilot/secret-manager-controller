@@ -152,6 +152,11 @@ jobs:
   coverage:
     name: Coverage and Pact Tests
     runs-on: ubuntu-latest
+    services:
+      registry:
+        image: ghcr.io/octopilot/registry-tls:latest
+        ports:
+          - 5001:5000
     needs: test
     timeout-minutes: 30
     permissions:
