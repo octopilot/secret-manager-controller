@@ -1,13 +1,20 @@
 # Production Dockerfile for Secret Manager Controller
 # Multi-stage build that compiles the Rust binary inside Docker
-# This is used for production builds with docker buildx
-# Pass build-arg REGISTRY_ORG (default: octopilot) to pull base images from ghcr.io.
+# This is used for production builds with docker buildx / op build.
+#
+# RUST_BUILDER is injected by Skaffold when this image is built via skaffold.yaml
+# (which declares rust-builder-base-image as a required dependency with the alias
+# RUST_BUILDER).  When building standalone (e.g. direct docker build), the default
+# falls back to the published ghcr.io image.
 
 ARG REGISTRY_ORG=octopilot
-# Stage 1: Build the Rust binary
-# Uses pre-built Rust builder base image with all build dependencies
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM ghcr.io/${REGISTRY_ORG}/rust-builder-base-image:latest AS builder
+# Allow Skaffold to inject the locally-built rust-builder-base-image reference.
+# Default falls back to the published ghcr.io image for standalone docker builds.
+ARG RUST_BUILDER=ghcr.io/${REGISTRY_ORG}/rust-builder-base-image:latest
+
+# Stage 1: Build the Rust binary
+FROM --platform=$BUILDPLATFORM ${RUST_BUILDER} AS builder
 
 # Build arguments for build.rs
 ARG BUILD_GIT_HASH=unknown

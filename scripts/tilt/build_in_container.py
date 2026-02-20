@@ -160,10 +160,9 @@ def main() -> None:
         f"-e CARGO_NET_GIT_FETCH_WITH_CLI=true "
         f"{RUST_BUILDER_IMAGE} "
         f"sh -c '"
-        # Install musl target once (idempotent, fast if already present)
-        f"rustup target add {CARGO_TARGET} 2>/dev/null || true && "
-        f"apt-get install -y --no-install-recommends musl-tools -qq 2>/dev/null || true && "
-        # Build all workspace binaries
+        # musl-tools and the x86_64-unknown-linux-musl Rust target are pre-installed
+        # in rust-builder-base-image (Dockerfile.base.rust-builder) so no runtime
+        # install is needed here.  Build all workspace binaries directly.
         f"cargo build {profile_flag} --workspace --bins --target {CARGO_TARGET}"
         f"'"
     )

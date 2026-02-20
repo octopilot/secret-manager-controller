@@ -31,41 +31,65 @@ build:
     useBuildkit: true
   artifacts:
 
-    # ── Secret Manager Controller ─────────────────────────────────────────
+    # ── 1. Rust builder base image ────────────────────────────────────────
+    # Must be listed first.  All Rust compilation stages depend on this image.
+    # It pre-installs the Rust toolchain, musl target, system build tools
+    # (pkg-config, libssl-dev, musl-tools), and pre-fetches Cargo dependencies
+    # so that downstream multi-stage builds start with a warm registry cache.
+    #
+    # Skaffold injects the locally-built reference of this image into every
+    # artifact that declares `requires: [{image: rust-builder-base-image,
+    # alias: RUST_BUILDER}]`.  That alias becomes a Docker build-arg which
+    # overrides the default `FROM ghcr.io/octopilot/rust-builder-base-image`
+    # fallback in each Dockerfile.
+    - image: rust-builder-base-image
+      context: .
+      docker:
+        dockerfile: dockerfiles/Dockerfile.base.rust-builder
+
+    # ── 2. Secret Manager Controller ─────────────────────────────────────
     # Multi-stage: compiles secret-manager-controller from source.
+    # Depends on rust-builder-base-image (injected via RUST_BUILDER build-arg).
     - image: secret-manager-controller
       context: .
       docker:
         dockerfile: dockerfiles/Dockerfile.controller
         buildArgs:
           REGISTRY_ORG: "{{.REGISTRY_ORG | default \"octopilot\"}}"
+      requires:
+        - image: rust-builder-base-image
+          alias: RUST_BUILDER
 
-    # ── Pact Mock Servers ─────────────────────────────────────────────────
+    # ── 3. Pact Mock Servers ──────────────────────────────────────────────
     # Bundles gcp-mock-server, aws-mock-server, azure-mock-server, webhook,
     # and the manager sidecar into a single image.
     # Uses the multi-stage .build Dockerfile (compiles from source with
     # BuildKit cache mounts).  The plain Dockerfile.pact-mock-server is
     # kept for Tilt dev-loop binary injection.
+    # Depends on rust-builder-base-image (injected via RUST_BUILDER build-arg).
     - image: pact-mock-server
       context: .
       docker:
         dockerfile: dockerfiles/Dockerfile.pact-mock-server.build
         buildArgs:
           REGISTRY_ORG: "{{.REGISTRY_ORG | default \"octopilot\"}}"
+      requires:
+        - image: rust-builder-base-image
+          alias: RUST_BUILDER
 
-    # ── Mock Webhook ──────────────────────────────────────────────────────
+    # ── 4. Mock Webhook ───────────────────────────────────────────────────
     - image: mock-webhook
       context: .
       docker:
         dockerfile: dockerfiles/Dockerfile.pact-webhook.optimized
 
-    # ── Postgres Manager ──────────────────────────────────────────────────
+    # ── 5. Postgres Manager ───────────────────────────────────────────────
     - image: postgres-manager
       context: .
       docker:
         dockerfile: dockerfiles/Dockerfile.postgres-manager.optimized
 
-    # ── Documentation Site ────────────────────────────────────────────────
+    # ── 6. Documentation Site ─────────────────────────────────────────────
     - image: docs-site
       context: .
       docker:

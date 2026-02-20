@@ -1,7 +1,13 @@
 # Rust Builder Base Image
-# Contains all build dependencies for compiling Rust projects
-# This base image is built once and published to ghcr.io/octopilot/rust-builder-base-image
-# The controller production Dockerfile then uses this for the builder stage
+# Contains all build dependencies for compiling Rust projects targeting both
+# native Linux (x86_64-unknown-linux-gnu) and static Linux (x86_64-unknown-linux-musl).
+#
+# This image is the first artifact in skaffold.yaml.  All other Rust compilation
+# stages declare it as a required dependency (alias: RUST_BUILDER) so that op build
+# and Skaffold always use the locally-built version rather than pulling from ghcr.io.
+#
+# When building standalone (outside Skaffold), the downstream Dockerfiles fall back
+# to FROM ghcr.io/octopilot/rust-builder-base-image:latest.
 
 ARG BUILDPLATFORM=linux/amd64
 ARG TARGETPLATFORM
@@ -21,11 +27,19 @@ RUN apt-get clean && \
     apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9 6ED0E7B82643E131 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    git \
-    curl \
+        pkg-config \
+        libssl-dev \
+        git \
+        curl \
+        # musl-tools provides musl-gcc and related tools needed for
+        # x86_64-unknown-linux-musl targets (static, alpine-compatible binaries).
+        # Baked in here so build_in_container.py and downstream multi-stage builds
+        # do not need to apt-get install on every run.
+        musl-tools \
     && rm -rf /var/lib/apt/lists/*
+
+# Pre-install the musl Rust target (idempotent — rustup skips if already present).
+RUN rustup target add x86_64-unknown-linux-musl
 
 # Configure git to fetch full history for git dependencies
 # This ensures Cargo can access branches and commits from git dependencies
