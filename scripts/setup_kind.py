@@ -18,6 +18,10 @@ from pathlib import Path
 
 # Configuration
 CLUSTER_NAME = "secret-manager-controller"
+# Pinned to v1.34.3 (containerd v1.7.x) — matches kind-config.yaml.
+# Kind v1.35+ ships containerd v2 which has breaking changes in registry
+# config. Revisit when the tooling ecosystem stabilises around containerd v2.
+KIND_NODE_IMAGE = "kindest/node:v1.34.3"
 # Use the shared octopilot-registry (registry-tls, HTTPS) on port 5001.
 # Port 5000 is avoided because macOS AirPlay Receiver occupies it on macOS 12+,
 # and a plain HTTP registry requires --insecure-registries Docker daemon config
