@@ -318,29 +318,7 @@ jobs:
 
 
       - name: Verify local registry is accessible
-        run: |
-          echo "Checking local registry accessibility..."
-          # Wait for registry to be ready (with retries)
-          for i in {1..10}; do
-            if curl -f -s http://localhost:5000/v2/ >/dev/null 2>&1; then
-              echo "✅ Registry is accessible"
-              break
-            fi
-            if [ $i -eq 10 ]; then
-              echo "⚠️  Registry not responding after 10 attempts"
-              echo "Registry status:"
-              docker ps | grep registry || echo "No registry container found"
-              exit 1
-            fi
-            echo "Waiting for registry... (attempt $i/10)"
-            sleep 2
-          done
-          # Test a small push/pull to verify registry works
-          echo "Testing registry with small image..."
-          docker pull alpine:latest >/dev/null 2>&1 || true
-          docker tag alpine:latest localhost:5000/test:latest || true
-          docker push localhost:5000/test:latest >/dev/null 2>&1 && echo "✅ Registry push test successful" || echo "⚠️  Registry push test failed"
-          echo "✅ Registry check complete"
+        uses: octopilot/actions/verify-registry@main
 
       - name: Run Tilt CI (deploys controller and all infrastructure)
         run: |
@@ -384,11 +362,11 @@ jobs:
 
       - name: Build and push mock server Docker image to local registry
         env:
-          IMAGE_NAME: localhost:5000/pact-mock-server
+          IMAGE_NAME: localhost:5001/pact-mock-server
           TAG: ci
         run: |
           # Build the pact-mock-server image containing all mock server binaries
-          # Push to localhost:5000 so Kind cluster can access it
+          # Push to localhost:5001 so Kind cluster can access it
           python3 scripts/tilt/docker_build_mock_server.py
           echo "✅ Mock server image built and pushed to local registry"
 
@@ -399,7 +377,7 @@ jobs:
           kubectl apply -k pact-broker/k8s/
           # Patch deployment to use the CI-built image from local registry
           kubectl set image deployment/pact-infrastructure \
-            pact-mock-server=localhost:5000/pact-mock-server:ci \
+            pact-mock-server=localhost:5001/pact-mock-server:ci \
             -n secret-manager-controller-pact-broker || echo "Image patch completed or not needed"
           echo "✅ Pact infrastructure manifests applied"
 
