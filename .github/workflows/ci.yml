@@ -18,19 +18,32 @@ env:
   TTL_REGISTRY: ttl.sh
 
 jobs:
-  # Step 1: Run linting checks
+  # ── Step 0: Detect language contexts from skaffold.yaml ─────────────────────
+  detect:
+    name: Detect Contexts
+    runs-on: ubuntu-latest
+    outputs:
+      pipeline-context: ${{ steps.detect.outputs.pipeline-context }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: detect
+        uses: octopilot/actions/detect-contexts@main
+
+  # ── Step 1: Lint ─────────────────────────────────────────────────────────────
+  # Runs in parallel with test once detect completes.
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    needs: detect
+    timeout-minutes: 15
     permissions:
       contents: read
       checks: write
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
 
+    steps:
+      - uses: actions/checkout@v5
+
+      # GPG key is needed so SOPS-encrypted files pass the pre-commit SOPS check.
       - name: Import GPG key for SOPS
         env:
           GPG_KEY: ${{ secrets.GPG_KEY }}
@@ -39,116 +52,69 @@ jobs:
             echo "ℹ️  GPG_KEY secret not set, skipping GPG key import"
             exit 0
           fi
-          echo "🔑 Importing GPG key from GitHub secret..."
-          echo "$GPG_KEY" | base64 -d | gpg --import --batch --yes || echo "⚠️  GPG key import failed or key already exists"
-          # List imported keys for verification (shows key ID from .sops.yaml)
-          echo "📋 Imported GPG keys:"
+          echo "$GPG_KEY" | base64 -d | gpg --import --batch --yes \
+            || echo "⚠️  GPG key import failed or key already exists"
           gpg --list-secret-keys --keyid-format LONG || echo "⚠️  No GPG keys found"
-          echo "✅ GPG key import completed"
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      # Composite action handles: Rust toolchain, cargo fmt, clippy, pre-commit.
+      - name: Lint
+        uses: octopilot/actions/lint@main
         with:
-          toolchain: stable
+          pipeline-context: ${{ needs.detect.outputs.pipeline-context }}
 
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-secret-manager-
-
-      - name: Check formatting
-        run: |
-          cargo fmt --all -- --check
-
-      - name: Run clippy
-        continue-on-error: true
-        run: |
-          cargo clippy --all-targets --all-features -- -D warnings || echo "Clippy found warnings (non-blocking)"
-
+      # cargo audit is repo-specific and not part of the shared lint action.
       - name: Run cargo audit
         continue-on-error: true
         run: |
-          # Install cargo-audit if not available
           if ! command -v cargo-audit &> /dev/null; then
-            cargo install cargo-audit --locked || echo "cargo-audit installation failed, skipping audit"
+            cargo install cargo-audit --locked || echo "cargo-audit install failed, skipping"
           fi
           cargo audit || echo "Audit completed with warnings"
 
-  # Step 2: Run cargo tests
+  # ── Step 2: Unit tests ───────────────────────────────────────────────────────
+  # Runs in parallel with lint once detect completes.
   test:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-    needs: lint
-    timeout-minutes: 15
+    needs: detect
+    timeout-minutes: 20
     permissions:
       contents: read
       checks: write
-    
+    strategy:
+      matrix:
+        context: ${{ fromJson(needs.detect.outputs.pipeline-context).matrix }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      # Composite action handles: Rust toolchain + cargo test.
+      - name: Test
+        uses: octopilot/actions/test@main
         with:
-          toolchain: stable
+          pipeline-context: ${{ toJson(matrix.context) }}
 
-      - name: Install musl target and tools (for Linux musl builds)
+      # musl cross-compilation — verifies the release target builds cleanly.
+      - name: Install musl target and tools
         run: |
           rustup target add x86_64-unknown-linux-musl
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y musl-tools
 
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-secret-manager-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-secret-manager-
+      - name: Cross-compile musl target
+        run: python3 scripts/host_aware_build.py --all-features
 
-      - name: Build (native and musl targets)
-        run: |
-          # Build native target (for faster unit tests)
-          cargo build --all-targets --all-features
-          # Build musl target using host_aware_build.py (tests cross-compilation)
-          python3 scripts/host_aware_build.py --all-features
-
-      - name: Run unit tests
-        run: |
-          # Run library tests for workspace members only (excludes test-only packages)
-          cargo test --lib --all-features --no-fail-fast --workspace
-
+      # CRD generation — verifies the crdgen binary is healthy.
       - name: Generate CRD
-        run: |
-          cargo run -p controller --bin crdgen > config/crd/secretmanagerconfig.yaml || echo "CRD generation completed"
+        run: cargo run -p controller --bin crdgen > config/crd/secretmanagerconfig.yaml
 
       - name: Verify CRD is valid YAML
         run: |
-          # Check if CRD file exists and is valid YAML
-          if [ -f config/crd/secretmanagerconfig.yaml ]; then
-            # Use Python to validate YAML (available in GitHub Actions)
-            python3 -c "import yaml; yaml.safe_load(open('config/crd/secretmanagerconfig.yaml'))" || exit 1
-            echo "✅ CRD YAML is valid"
-          else
-            echo "⚠️  CRD file not found"
-            exit 1
-          fi
+          python3 -c "import yaml; yaml.safe_load(open('config/crd/secretmanagerconfig.yaml'))" \
+            && echo "✅ CRD YAML is valid"
 
-  # Step 2.5: Code Coverage with Pact Tests (Kind cluster)
+  # ── Step 2.5: Code Coverage with Pact Tests (Kind cluster) ──────────────────
+  # Requires both lint and test to pass — they ran in parallel above.
   coverage:
     name: Coverage and Pact Tests
     runs-on: ubuntu-latest
@@ -157,7 +123,7 @@ jobs:
         image: ghcr.io/octopilot/registry-tls:latest
         ports:
           - 5001:5000
-    needs: test
+    needs: [lint, test]
     timeout-minutes: 30
     permissions:
       contents: read

@@ -1,0 +1,11 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: secret-manager-controller
+
+build:
+  artifacts:
+    - image: secret-manager-controller
+      context: .
+      buildpacks:
+        builder: ghcr.io/octopilot/builder-jammy-base:latest
