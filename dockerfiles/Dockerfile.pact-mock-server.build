@@ -1,0 +1,110 @@
+# Multi-stage production Dockerfile for the Pact Mock Server image.
+# Used by op build / skaffold build for CI and release builds.
+#
+# For local Tilt development use Dockerfile.pact-mock-server (binary injection)
+# which is faster — binaries are compiled by build_in_container.py outside.
+#
+# This file compiles all pact-mock-server binaries from source and bundles them
+# with the pact-broker CLI (Ruby) needed by the manager sidecar.
+#
+# BuildKit cache mounts keep the cargo registry and build cache between runs so
+# op build is fast after the first cold build.
+
+ARG REGISTRY_ORG=octopilot
+ARG BUILDPLATFORM=linux/amd64
+
+# ── Stage 1: Compile ─────────────────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM ghcr.io/${REGISTRY_ORG}/rust-builder-base-image:latest AS builder
+
+ARG BUILD_GIT_HASH=unknown
+ARG BUILD_TIMESTAMP
+ARG BUILD_DATETIME
+
+# Install musl toolchain for static binaries (alpine-compatible)
+RUN rustup target add x86_64-unknown-linux-musl && \
+    apt-get update -qq && \
+    apt-get install -y --no-install-recommends musl-tools && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy workspace manifests for dependency layer caching.
+# cargo resolves ALL workspace member Cargo.toml files even when only
+# building one package.  Copying manifests first and creating stub sources
+# lets Docker cache the dependency download layer separately.
+COPY Cargo.toml Cargo.lock ./
+COPY crates/pact-mock-server/Cargo.toml ./crates/pact-mock-server/
+COPY crates/paths/Cargo.toml             ./crates/paths/
+COPY crates/controller/Cargo.toml        ./crates/controller/
+
+# Stub sources for workspace members that we're NOT building (controller).
+# This prevents cargo from trying to compile them while still satisfying
+# the workspace manifest.
+RUN mkdir -p crates/controller/src crates/controller/src/bin && \
+    echo 'fn main(){}' > crates/controller/src/main.rs && \
+    printf '[[bin]]\nname = "crdgen"\npath = "src/bin/crdgen.rs"\n' >> crates/controller/Cargo.toml || true && \
+    echo 'fn main(){}' > crates/controller/src/bin/crdgen.rs
+
+# Copy real source code
+COPY crates/pact-mock-server/src ./crates/pact-mock-server/src
+COPY crates/paths/src             ./crates/paths/src
+
+# Compile all pact-mock-server binaries.
+# The cargo registry cache and compiled dependencies are kept in BuildKit
+# cache mounts — they persist between docker buildx / op build invocations
+# on the same machine without bloating the final image layer.
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/build/target \
+    BUILD_GIT_HASH=${BUILD_GIT_HASH} \
+    BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
+    BUILD_DATETIME=${BUILD_DATETIME} \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    RUSTFLAGS="-C link-arg=-s" \
+    cargo build --release --locked \
+        --target x86_64-unknown-linux-musl \
+        --bin gcp-mock-server \
+        --bin aws-mock-server \
+        --bin azure-mock-server \
+        --bin webhook \
+        --bin manager \
+        --bin postgres-manager && \
+    # Copy compiled binaries OUT of the cache-mounted target dir
+    cp target/x86_64-unknown-linux-musl/release/gcp-mock-server   /build/ && \
+    cp target/x86_64-unknown-linux-musl/release/aws-mock-server   /build/ && \
+    cp target/x86_64-unknown-linux-musl/release/azure-mock-server /build/ && \
+    cp target/x86_64-unknown-linux-musl/release/webhook            /build/ && \
+    cp target/x86_64-unknown-linux-musl/release/manager            /build/ && \
+    cp target/x86_64-unknown-linux-musl/release/postgres-manager   /build/
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
+# Base image has Ruby (for pact-broker CLI used by the manager sidecar),
+# the non-root pact user, exposed ports, and /app directory.
+FROM ghcr.io/${REGISTRY_ORG}/pact-mock-server-base-image:latest
+
+USER root
+COPY --from=builder \
+    /build/gcp-mock-server \
+    /build/aws-mock-server \
+    /build/azure-mock-server \
+    /build/webhook \
+    /build/manager \
+    /build/postgres-manager \
+    /app/
+
+RUN test -f /app/gcp-mock-server   && \
+    test -f /app/aws-mock-server   && \
+    test -f /app/azure-mock-server && \
+    test -f /app/webhook           && \
+    test -f /app/manager           && \
+    test -f /app/postgres-manager  && \
+    chmod +x /app/gcp-mock-server /app/aws-mock-server /app/azure-mock-server \
+             /app/webhook /app/manager /app/postgres-manager && \
+    chown -R pact:pact /app
+
+USER pact
+
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+
+CMD ["/app/gcp-mock-server"]

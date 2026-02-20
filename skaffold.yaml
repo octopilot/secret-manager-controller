@@ -3,9 +3,70 @@ kind: Config
 metadata:
   name: secret-manager-controller
 
+# ── Why Dockerfiles, not buildpacks ──────────────────────────────────────────
+#
+# This workspace has two Rust crates sharing a common 'paths' library crate:
+#
+#   crates/controller/      → 4 binaries (secret-manager-controller, crdgen,
+#                              msmctl, debug-sops)
+#   crates/pact-mock-server/ → 6 binaries (gcp-mock-server, aws-mock-server,
+#                              azure-mock-server, webhook, manager,
+#                              postgres-manager)
+#   crates/paths/           → shared library (no binary)
+#
+# Cloud Native Buildpacks produce exactly one binary per image invocation.
+# The pact-mock-server image bundles multiple binaries (GCP + AWS + Azure
+# mock servers) into a single container, which requires a Dockerfile.
+#
+# Since the multi-binary requirement forces at least one Dockerfile, and all
+# artifacts share the same root workspace context, using Dockerfiles for all
+# artifacts is simpler and more consistent than mixing buildpack and
+# Dockerfile artifacts.
+#
+# The production Dockerfiles use BuildKit --mount=type=cache for the cargo
+# compile step, so op build / skaffold build is fast after the first run.
+
 build:
+  local:
+    useBuildkit: true
   artifacts:
+
+    # ── Secret Manager Controller ─────────────────────────────────────────
+    # Multi-stage: compiles secret-manager-controller from source.
     - image: secret-manager-controller
       context: .
-      buildpacks:
-        builder: ghcr.io/octopilot/builder-jammy-base:latest
+      docker:
+        dockerfile: dockerfiles/Dockerfile.controller
+        buildArgs:
+          REGISTRY_ORG: "{{.REGISTRY_ORG | default \"octopilot\"}}"
+
+    # ── Pact Mock Servers ─────────────────────────────────────────────────
+    # Bundles gcp-mock-server, aws-mock-server, azure-mock-server, webhook,
+    # and the manager sidecar into a single image.
+    # Uses the multi-stage .build Dockerfile (compiles from source with
+    # BuildKit cache mounts).  The plain Dockerfile.pact-mock-server is
+    # kept for Tilt dev-loop binary injection.
+    - image: pact-mock-server
+      context: .
+      docker:
+        dockerfile: dockerfiles/Dockerfile.pact-mock-server.build
+        buildArgs:
+          REGISTRY_ORG: "{{.REGISTRY_ORG | default \"octopilot\"}}"
+
+    # ── Mock Webhook ──────────────────────────────────────────────────────
+    - image: mock-webhook
+      context: .
+      docker:
+        dockerfile: dockerfiles/Dockerfile.pact-webhook.optimized
+
+    # ── Postgres Manager ──────────────────────────────────────────────────
+    - image: postgres-manager
+      context: .
+      docker:
+        dockerfile: dockerfiles/Dockerfile.postgres-manager.optimized
+
+    # ── Documentation Site ────────────────────────────────────────────────
+    - image: docs-site
+      context: .
+      docker:
+        dockerfile: dockerfiles/Dockerfile.docs-site

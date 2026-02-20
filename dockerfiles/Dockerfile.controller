@@ -36,20 +36,22 @@ COPY crates/controller/src ./crates/controller/src
 COPY crates/paths/src ./crates/paths/src
 COPY config ./config
 
-# Build the binary in release mode with optimizations
-# Pass build-time environment variables to build.rs
-# Use --locked to ensure Cargo.lock is respected and transitive dependencies resolve correctly
-# CARGO_NET_GIT_FETCH_WITH_CLI=true forces Cargo to use git CLI instead of libgit2
-# RUSTFLAGS="-C link-arg=-s" strips debug symbols to reduce binary size
-# This ensures full git clones and better compatibility with git dependencies
-RUN BUILD_GIT_HASH=${BUILD_GIT_HASH} \
+# Build the binary in release mode with optimizations.
+# --mount=type=cache keeps the cargo registry and compiled artifacts between
+# builds so op build / docker buildx build is fast after the first run.
+# The binary is copied out of the cached target dir before the cache is
+# unmounted; otherwise it disappears when this RUN layer completes.
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/build/target \
+    BUILD_GIT_HASH=${BUILD_GIT_HASH} \
     BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
     BUILD_DATETIME=${BUILD_DATETIME} \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     RUSTFLAGS="-C link-arg=-s" \
     cargo build --release --locked --bin secret-manager-controller && \
-    # Strip the binary to remove debug symbols (further size reduction)
-    strip target/release/secret-manager-controller
+    strip target/release/secret-manager-controller && \
+    cp target/release/secret-manager-controller /build/smc-release
 
 # Stage 2: Runtime image
 # Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
@@ -64,8 +66,8 @@ FROM ghcr.io/${REGISTRY_ORG}/secret-manager-controller-base-image:latest
 
 # WORKDIR is already set to /app in base image
 
-# Copy binary from builder stage
-COPY --from=builder /build/target/release/secret-manager-controller /app/secret-manager-controller
+# Copy binary from builder stage (placed outside the BuildKit cache mount)
+COPY --from=builder /build/smc-release /app/secret-manager-controller
 RUN chmod +x /app/secret-manager-controller
 
 # Expose metrics port

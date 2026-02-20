@@ -57,26 +57,39 @@ CONTROLLER_DIR = '.'
 CONTROLLER_NAME = 'secret-manager-controller'
 IMAGE_NAME = 'localhost:5001/secret-manager-controller'
 BINARY_NAME = 'secret-manager-controller'
-# Build for Linux x86_64 (cross-compile for container compatibility)
-# Use target path directly, not build_artifacts
-# Workspace builds output to root target/ directory
-BINARY_PATH = '%s/target/x86_64-unknown-linux-musl/debug/%s' % (CONTROLLER_DIR, BINARY_NAME)
-CRDGEN_PATH = '%s/target/x86_64-unknown-linux-musl/debug/crdgen' % CONTROLLER_DIR
-# Native crdgen for host execution (CRD generation runs on host, not in container)
-CRDGEN_NATIVE_PATH = '%s/target/debug/crdgen' % CONTROLLER_DIR
+
+# Build target: x86_64-unknown-linux-musl (static binaries, Alpine-compatible).
+# Compilation now happens inside the rust-builder-base-image container so no
+# host-side Rust toolchain or cargo-zigbuild is required.
+# The target/ directory is bind-mounted into the builder container so the
+# compiled binaries are directly accessible on the macOS host.
+CARGO_TARGET   = 'x86_64-unknown-linux-musl'
+BINARY_PATH    = '%s/target/%s/debug/%s' % (CONTROLLER_DIR, CARGO_TARGET, BINARY_NAME)
+CRDGEN_PATH    = '%s/target/%s/debug/crdgen' % (CONTROLLER_DIR, CARGO_TARGET)
 
 
 
 # ====================
-# Build All Rust Binaries
+# Build All Rust Binaries (container-based)
 # ====================
-# Note: build-all-binaries now also generates and applies the CRD
-# Build all binaries (controller, mock servers, webhook) in a single build
-# This is more efficient than building each binary separately
-# Uses cargo zigbuild on macOS (like microservices) for cross-compilation
+# Compiles the entire workspace inside the official rust-builder-base-image
+# Docker container.  No host-side Rust toolchain or cargo-zigbuild required.
+#
+# Volume layout:
+#   smc-cargo-registry  (named volume)  → /root/.cargo/registry  (crate cache)
+#   smc-cargo-git       (named volume)  → /root/.cargo/git        (git deps)
+#   $(pwd)/target       (bind mount)    → /workspace/target       (build output)
+#
+# Named volumes live inside Docker's VM and are NOT accessible from the macOS
+# host — they are only used to speed up the in-container cargo build.
+# The target/ bind-mount IS on the host so dev Dockerfiles and kubectl can
+# read the compiled binaries.
+#
+# Also generates config/crd/secretmanagerconfig.yaml by running crdgen inside
+# the same container (Linux binary, can't run directly on macOS).
 local_resource(
     'build-all-binaries',
-    cmd='python3 scripts/tilt/build_all_binaries.py',
+    cmd='python3 scripts/tilt/build_in_container.py',
     deps=[
         '%s/crates/controller/src' % CONTROLLER_DIR,
         '%s/crates/pact-mock-server/src' % CONTROLLER_DIR,
@@ -86,10 +99,10 @@ local_resource(
         '%s/crates/paths/Cargo.toml' % CONTROLLER_DIR,
         '%s/Cargo.toml' % CONTROLLER_DIR,
         '%s/Cargo.lock' % CONTROLLER_DIR,
-        './scripts/tilt/build_all_binaries.py',
+        './scripts/tilt/build_in_container.py',
     ],
-    resource_deps=[],
-    labels=['controllers',],
+    resource_deps=['registry-health'],  # Registry must be up before any docker run
+    labels=['controllers'],
     allow_parallel=True,
 )
 

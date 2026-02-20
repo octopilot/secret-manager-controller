@@ -13,7 +13,13 @@ from pathlib import Path
 
 def main():
     """Copy mock server binaries to build_artifacts."""
-    target_dir = Path("target/x86_64-unknown-linux-musl/debug")
+    # build_in_container.py always builds to the musl target path.
+    # If for some reason the musl build isn't present, fall back to the
+    # plain debug path (e.g. a developer building natively on Linux).
+    musl_dir  = Path("target/x86_64-unknown-linux-musl/debug")
+    gnu_dir   = Path("target/debug")
+    target_dir = musl_dir if musl_dir.exists() else gnu_dir
+    print(f"  Source: {target_dir}")
     artifact_dir = Path("build_artifacts/mock-server")
     artifact_dir.mkdir(parents=True, exist_ok=True)
     

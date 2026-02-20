@@ -20,11 +20,9 @@ FROM ghcr.io/${REGISTRY_ORG}/secret-manager-controller-base-image:latest
 # /app is already writable (777) from base image for live_update sync
 RUN mkdir -p /tmp/smc && \
     chmod -R 777 /tmp/smc
-# Copy pre-built binary from target directory (x86_64 Linux musl target)
-# Note: Binary must exist before Docker build (ensured by Tilt deps)
-# Copy from target directory directly
-# Volume mount at /tmp/smc won't interfere with /app/
-# crdgen is run on the host, not in the container
+# Copy pre-built binary from the container build output.
+# build_in_container.py compiles to target/x86_64-unknown-linux-musl/debug/
+# (static musl binary, compatible with glibc and musl base images alike).
 COPY ./target/x86_64-unknown-linux-musl/debug/secret-manager-controller /app/secret-manager-controller
 # Make binary executable
 # Verify file exists and set permissions (fail fast if file is missing)
