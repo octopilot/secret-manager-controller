@@ -90,8 +90,8 @@ def main():
     build_env["RUSTFLAGS"] = "-C link-arg=-s"
     
     if os_name == "Darwin":
-        # macOS: Use cargo zigbuild (like microservices)
-        print("  Using cargo-zigbuild for cross-compilation (macOS)")
+        # macOS: cross-compile all workspace binaries for Linux containers
+        print("  Using cargo-zigbuild for cross-compilation (macOS → linux-musl)")
         result = run_command(
             f"cargo zigbuild --target {target} --workspace --bins",
             check=False,
@@ -100,6 +100,22 @@ def main():
         if result.returncode != 0:
             print("❌ Build failed", file=sys.stderr)
             sys.exit(1)
+
+        # Also build native binaries that Tilt needs to execute locally.
+        # crdgen generates CRDs; msmctl is the CLI tool.
+        # Neither can run as a Linux musl binary on macOS.
+        # Both live in the controller crate (-p controller).
+        print("🔨 Building native macOS binaries for local Tilt execution...")
+        native_result = run_command(
+            "cargo build -p controller --bin crdgen --bin msmctl",
+            check=False,
+            env=build_env
+        )
+        if native_result.returncode != 0:
+            print("❌ Native build failed", file=sys.stderr)
+            sys.exit(1)
+        print("  ✅ Native crdgen and msmctl built")
+
     elif os_name == "Linux" and arch == "x86_64":
         # Linux x86_64: Use musl-gcc linker
         print("  Using musl-gcc linker (Linux x86_64)")
@@ -194,49 +210,38 @@ def main():
     crd_output_path = Path("config/crd/secretmanagerconfig.yaml")
     crd_output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Determine which crdgen binary to use based on platform
-    # On Linux x86_64 (CI), use the cross-compiled binary we just built
-    # On macOS/other platforms, prefer native build but fallback to cross-compiled
+    # Select the correct crdgen to execute for CRD generation.
+    #
+    # macOS (Darwin):  use target/debug/crdgen — the native binary built above.
+    #                  The x86_64-unknown-linux-musl binary cannot execute on macOS.
+    # Linux x86_64:    use target/x86_64-unknown-linux-musl/debug/crdgen — the
+    #                  binary we just built (same architecture as host).
     os_name = platform.system()
     arch = platform.machine()
-    
-    if os_name == "Linux" and arch == "x86_64":
-        # CI/Linux: Use the cross-compiled binary we just built
+
+    if os_name == "Darwin":
+        crdgen_path = Path("target/debug/crdgen")
+        print(f"  Using native macOS crdgen: {crdgen_path}")
+        if not crdgen_path.exists():
+            print("❌ Native crdgen not found — the native build step above should have produced it",
+                  file=sys.stderr)
+            sys.exit(1)
+    elif os_name == "Linux" and arch == "x86_64":
         crdgen_path = target_dir / "crdgen"
-        print(f"  Using cross-compiled crdgen for Linux x86_64: {crdgen_path}")
+        print(f"  Using cross-compiled crdgen (Linux x86_64): {crdgen_path}")
+        if not crdgen_path.exists():
+            print(f"❌ crdgen not found at {crdgen_path}", file=sys.stderr)
+            sys.exit(1)
     else:
-        # macOS/other: Try native first, then fallback to cross-compiled
-        native_crdgen = Path("target/debug/crdgen")
-        if native_crdgen.exists():
-            crdgen_path = native_crdgen
-            print(f"  Using native crdgen: {crdgen_path}")
-        else:
-            # Fallback to cross-compiled
-            crdgen_path = target_dir / "crdgen"
-            print(f"  Using cross-compiled crdgen: {crdgen_path}")
-    
-    if not crdgen_path.exists():
-        # If cross-compiled doesn't exist and we're not on Linux, try building native
-        if os_name != "Linux" or arch != "x86_64":
+        # Other Linux arches or unexpected platforms — try native debug build
+        crdgen_path = Path("target/debug/crdgen")
+        print(f"  Using native crdgen (fallback): {crdgen_path}")
+        if not crdgen_path.exists():
             print("⚠️  crdgen not found, building native version...")
-            build_result = run_command(
-                "cargo build -p controller --bin crdgen",
-                check=False
-            )
-            if build_result.returncode == 0:
-                native_crdgen = Path("target/debug/crdgen")
-                if native_crdgen.exists():
-                    crdgen_path = native_crdgen
-                    print(f"  Using newly built native crdgen: {crdgen_path}")
-                else:
-                    print("❌ crdgen binary not found after build", file=sys.stderr)
-                    sys.exit(1)
-            else:
+            build_result = run_command("cargo build -p controller --bin crdgen", check=False, env=build_env)
+            if build_result.returncode != 0 or not crdgen_path.exists():
                 print("❌ Failed to build native crdgen", file=sys.stderr)
                 sys.exit(1)
-        else:
-            print(f"❌ crdgen binary not found at {crdgen_path}", file=sys.stderr)
-            sys.exit(1)
     
     print(f"  Running crdgen: {crdgen_path}")
     result = run_command(
