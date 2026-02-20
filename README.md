@@ -4,6 +4,7 @@
 [![Dependabot](https://github.com/octopilot/secret-manager-controller/actions/workflows/dependabot-automerge.yml/badge.svg)](https://github.com/octopilot/secret-manager-controller/actions)
 [![Docs](https://github.com/octopilot/secret-manager-controller/actions/workflows/docs-site.yml/badge.svg)](https://octopilot.github.io/secret-manager-controller/#/)
 [![Crate](https://img.shields.io/crates/v/secret-manager-controller.svg)](https://crates.io/crates/secret-manager-controller)
+[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm%20Shield%201.0.0-blue.svg)](https://polyformproject.org/licenses/shield/1.0.0)
 
 **The Missing Bridge Between GitOps and Serverless**
 
