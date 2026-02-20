@@ -14,7 +14,7 @@ use crate::provider::Provider;
 /// # Example
 ///
 /// ```rust
-/// use paths::prelude::*;
+/// use smc_paths::prelude::*;
 ///
 /// let path = PathBuilder::new()
 ///     .gcp_operation(GcpOperation::CreateSecret)

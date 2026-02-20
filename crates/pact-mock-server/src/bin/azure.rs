@@ -21,8 +21,8 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pact_mock_server::prelude::*;
 use pact_mock_server::secrets::common::errors::azure_error_codes;
-use paths::azure::routes::key_vault as azure_routes;
 use serde_json::json;
+use smc_paths::azure::routes::key_vault as azure_routes;
 use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;

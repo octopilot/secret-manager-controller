@@ -1,16 +1,16 @@
 [package]
-name = "paths"
+name        = "smc-paths"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Shared API path definitions for GCP, AWS, and Azure providers"
-repository = "https://github.com/microscaler/PriceWhisperer"
-keywords = ["kubernetes", "secrets", "gcp", "aws", "azure", "api-paths"]
-categories = ["development-tools", "web-programming"]
-readme = "../../README.md"
+description = "Type-safe API path builder for GCP Secret Manager, AWS Secrets Manager, and Azure Key Vault"
+repository  = "https://github.com/octopilot/smc-paths"
+keywords    = ["secrets", "gcp", "aws", "azure", "api-paths"]
+categories  = ["development-tools", "web-programming"]
+readme      = "../../README.md"
 
 [lib]
-name = "paths"
+name = "smc_paths"
 path = "src/lib.rs"
 

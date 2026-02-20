@@ -22,10 +22,10 @@ use axum::{
 // base64 encoding is handled by the secret store
 use futures::future;
 use pact_mock_server::prelude::*;
-use paths::gcp::routes;
-use paths::prelude::{GcpOperation, PathBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use smc_paths::gcp::routes;
+use smc_paths::prelude::{GcpOperation, PathBuilder};
 use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;

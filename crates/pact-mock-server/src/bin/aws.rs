@@ -20,9 +20,9 @@ use axum::{
 };
 use pact_mock_server::prelude::*;
 use pact_mock_server::secrets::common::errors::aws_error_types;
-use paths::aws::routes::secrets_manager as aws_routes;
-use paths::aws::secrets_manager;
 use serde_json::json;
+use smc_paths::aws::routes::secrets_manager as aws_routes;
+use smc_paths::aws::secrets_manager;
 use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;

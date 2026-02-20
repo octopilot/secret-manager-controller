@@ -46,7 +46,7 @@ tokio = { version = "1", features = ["full"] }
 
 # GCP Secret Manager - using native REST implementation (no gRPC SDK dependency)
 # Shared API paths (source of truth for GCP API paths)
-paths = { path = "../paths" }
+smc-paths = { git = "https://github.com/octopilot/smc-paths", rev = "e981d55" }
 # The REST client uses reqwest with rustls, avoiding OpenSSL/SSL issues
 
 # AWS Secrets Manager and Parameter Store - using official AWS Rust SDK

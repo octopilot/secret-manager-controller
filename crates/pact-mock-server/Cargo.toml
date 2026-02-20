@@ -40,7 +40,7 @@ path = "src/bin/postgres-manager.rs"
 
 [dependencies]
 # Shared API paths (source of truth for GCP API paths)
-paths = { path = "../paths" }
+smc-paths = { git = "https://github.com/octopilot/smc-paths", rev = "e981d55" }
 axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6.6", features = ["trace"] }

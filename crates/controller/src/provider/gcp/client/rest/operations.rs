@@ -17,7 +17,7 @@ use super::requests::{AddVersionRequest, CreateSecretRequest};
 use super::responses::AccessSecretVersionResponse;
 use crate::provider::gcp::client::common::{OperationTracker, determine_operation_type};
 use crate::provider::gcp::client::rest::SecretManagerREST;
-use paths::prelude::{GcpOperation, PathBuilder};
+use smc_paths::prelude::{GcpOperation, PathBuilder};
 
 #[async_trait]
 impl SecretManagerProvider for SecretManagerREST {

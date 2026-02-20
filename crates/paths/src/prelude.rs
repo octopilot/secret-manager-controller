@@ -2,13 +2,13 @@
 //!
 //! Re-exports commonly used types for convenience.
 //!
-//! This module provides a prelude that can be imported with `use paths::prelude::*;`
+//! This module provides a prelude that can be imported with `use smc_paths::prelude::*;`
 //! to bring commonly used types into scope.
 //!
 //! ## Usage
 //!
 //! ```rust
-//! use paths::prelude::*;
+//! use smc_paths::prelude::*;
 //!
 //! let path = PathBuilder::new()
 //!     .gcp_operation(GcpOperation::CreateSecret)

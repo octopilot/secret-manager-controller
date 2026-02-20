@@ -1437,7 +1437,6 @@ dependencies = [
  "opentelemetry 0.31.0",
  "opentelemetry_sdk 0.31.0",
  "pact_consumer",
- "paths",
  "prometheus",
  "regex",
  "reqwest",
@@ -1448,6 +1447,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "smc-paths",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -4409,13 +4409,13 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "kube-runtime",
- "paths",
  "reqwest",
  "rustls 0.23.35",
  "sea-orm",
  "sea-query 0.12.12",
  "serde",
  "serde_json",
+ "smc-paths",
  "tokio",
  "tower",
  "tower-http",
@@ -4654,10 +4654,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "paths"
-version = "0.1.0"
 
 [[package]]
 name = "pbkdf2"
@@ -6005,11 +6001,11 @@ dependencies = [
  "md5 0.8.0",
  "pact-mock-server",
  "pact_consumer",
- "paths",
  "reqwest",
  "rustls 0.23.35",
  "serde_json",
  "serde_yaml",
+ "smc-paths",
  "tokio",
  "tracing",
 ]
@@ -6317,6 +6313,10 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smc-paths"
+version = "0.1.0"
 
 [[package]]
 name = "socket2"
