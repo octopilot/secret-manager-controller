@@ -168,10 +168,22 @@ async fn setup_pact_environment(endpoint: String) -> TestFixture {
 
 #[tokio::test]
 async fn test_azure_provider_create_secret_with_pact() {
-    // Acquire test mutex to ensure sequential execution
-    let _guard = TEST_MUTEX.lock().expect("Test mutex poisoned");
+    // Acquire test mutex — recover from poison so a single test failure doesn't cascade
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     init_test();
+
+    // Check for Kubernetes cluster BEFORE creating the mock server.
+    // If we return/panic after the mock server is created, its Drop impl panics
+    // when expected interactions were never triggered, poisoning the mutex.
+    let kube_client = match kube::Client::try_default().await {
+        Ok(client) => client,
+        Err(_) => {
+            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
+            eprintln!("💡 Run 'kind create cluster' or set KUBECONFIG to enable this test");
+            return;
+        }
+    };
 
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
@@ -245,11 +257,6 @@ async fn test_azure_provider_create_secret_with_pact() {
         auth: None, // Use default (Managed Identity) - won't matter for Pact
     };
 
-    // Create a minimal kube client for provider initialization
-    let kube_client = kube::Client::try_default()
-        .await
-        .expect("Failed to create kube client");
-
     let provider = AzureKeyVault::new(&config, &kube_client)
         .await
         .expect("Failed to create Azure provider");
@@ -269,10 +276,20 @@ async fn test_azure_provider_create_secret_with_pact() {
 
 #[tokio::test]
 async fn test_azure_provider_update_secret_with_pact() {
-    // Acquire test mutex to ensure sequential execution
-    let _guard = TEST_MUTEX.lock().expect("Test mutex poisoned");
+    // Acquire test mutex — recover from poison so a single test failure doesn't cascade
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     init_test();
+
+    // Check for Kubernetes cluster BEFORE creating the mock server
+    let kube_client = match kube::Client::try_default().await {
+        Ok(client) => client,
+        Err(_) => {
+            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
+            eprintln!("💡 Run 'kind create cluster' or set KUBECONFIG to enable this test");
+            return;
+        }
+    };
 
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
@@ -347,10 +364,6 @@ async fn test_azure_provider_update_secret_with_pact() {
         auth: None,
     };
 
-    let kube_client = kube::Client::try_default()
-        .await
-        .expect("Failed to create kube client");
-
     let provider = AzureKeyVault::new(&config, &kube_client)
         .await
         .expect("Failed to create Azure provider");
@@ -369,10 +382,20 @@ async fn test_azure_provider_update_secret_with_pact() {
 
 #[tokio::test]
 async fn test_azure_provider_no_change_with_pact() {
-    // Acquire test mutex to ensure sequential execution
-    let _guard = TEST_MUTEX.lock().expect("Test mutex poisoned");
+    // Acquire test mutex — recover from poison so a single test failure doesn't cascade
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     init_test();
+
+    // Check for Kubernetes cluster BEFORE creating the mock server
+    let kube_client = match kube::Client::try_default().await {
+        Ok(client) => client,
+        Err(_) => {
+            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
+            eprintln!("💡 Run 'kind create cluster' or set KUBECONFIG to enable this test");
+            return;
+        }
+    };
 
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "Azure-Key-Vault");
 
@@ -415,10 +438,6 @@ async fn test_azure_provider_no_change_with_pact() {
         location: "eastus".to_string(),
         auth: None,
     };
-
-    let kube_client = kube::Client::try_default()
-        .await
-        .expect("Failed to create kube client");
 
     let provider = AzureKeyVault::new(&config, &kube_client)
         .await

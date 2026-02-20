@@ -188,10 +188,25 @@ async fn create_test_kube_client() -> Option<kube::Client> {
 
 #[tokio::test]
 async fn test_aws_provider_create_secret_with_pact() {
-    // Acquire test mutex to ensure sequential execution
-    let _guard = TEST_MUTEX.lock().expect("Test mutex poisoned");
+    // Acquire test mutex — recover from poison so a single test failure doesn't cascade
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     init_test();
+
+    // Check for Kubernetes cluster BEFORE creating the mock server.
+    // If we return early after the mock server is created, its Drop impl panics
+    // when expected interactions were never triggered, poisoning the mutex.
+    let kube_client = match create_test_kube_client().await {
+        Some(client) => client,
+        None => {
+            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
+            eprintln!("💡 To run this test, ensure a Kubernetes cluster is available:");
+            eprintln!("   - Run 'kind create cluster' for local testing");
+            eprintln!("   - Or set KUBECONFIG environment variable");
+            eprintln!("   - Or ensure in-cluster config is available");
+            return;
+        }
+    };
 
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
@@ -227,15 +242,8 @@ async fn test_aws_provider_create_secret_with_pact() {
                 .path("/")
                 .header("content-type", "application/x-amz-json-1.1")
                 .header("x-amz-target", "secretsmanager.CreateSecret")
-                // AWS SDK automatically adds ClientRequestToken (UUID) to CreateSecret requests
-                // The UUID value will be different each time, so exact matching fails
-                // Note: This is a known limitation - Pact does exact string matching for
-                // application/x-amz-json-1.1 bodies, and we can't use matching rules on string bodies
-                // Workaround: The test may need to be updated to handle this, or we need to
-                // configure the AWS SDK to use a fixed ClientRequestToken in test mode
-                // AWS SDK sends compact JSON (no spaces) with fields in specific order
-                // SDK order: Name, ClientRequestToken, SecretString, Tags
-                // Tags are added with environment and location from the controller
+                // AWS SDK sends compact JSON with fields in specific order:
+                // Name, ClientRequestToken, SecretString, Tags
                 .body(r#"{"Name":"test-secret-name","ClientRequestToken":"00000000-0000-0000-0000-000000000000","SecretString":"test-secret-value","Tags":[{"Key":"environment","Value":"test"},{"Key":"location","Value":"us-east-1"}]}"#);
             i.response
                 .status(200)
@@ -256,26 +264,12 @@ async fn test_aws_provider_create_secret_with_pact() {
     }
 
     // Set up Pact environment variables using test fixture
-    // The fixture will automatically clean up when it goes out of scope
     let _fixture = setup_pact_environment(base_url.clone()).await;
 
     // Create AWS provider instance
     let config = AwsConfig {
         region: "us-east-1".to_string(),
-        auth: None, // Use default (IRSA) - won't matter for Pact
-    };
-
-    // Create a minimal kube client for provider initialization
-    let kube_client = match create_test_kube_client().await {
-        Some(client) => client,
-        None => {
-            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
-            eprintln!("💡 To run this test, ensure a Kubernetes cluster is available:");
-            eprintln!("   - Run 'kind create cluster' for local testing");
-            eprintln!("   - Or set KUBECONFIG environment variable");
-            eprintln!("   - Or ensure in-cluster config is available");
-            return; // Skip test if no cluster available
-        }
+        auth: None,
     };
 
     let provider = AwsSecretManager::new(&config, &kube_client)
@@ -297,10 +291,27 @@ async fn test_aws_provider_create_secret_with_pact() {
 
 #[tokio::test]
 async fn test_aws_provider_update_secret_with_pact() {
-    // Acquire test mutex to ensure sequential execution
-    let _guard = TEST_MUTEX.lock().expect("Test mutex poisoned");
+    // Acquire test mutex — recover from poison so a single test failure doesn't cascade
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     init_test();
+
+    // Check for Kubernetes cluster BEFORE creating the mock server
+    eprintln!("🔧 Creating Kubernetes client...");
+    let kube_client = match create_test_kube_client().await {
+        Some(client) => {
+            eprintln!("✅ Kubernetes client created");
+            client
+        }
+        None => {
+            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
+            eprintln!("💡 To run this test, ensure a Kubernetes cluster is available:");
+            eprintln!("   - Run 'kind create cluster' for local testing");
+            eprintln!("   - Or set KUBECONFIG environment variable");
+            eprintln!("   - Or ensure in-cluster config is available");
+            return;
+        }
+    };
 
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
@@ -389,23 +400,6 @@ async fn test_aws_provider_update_secret_with_pact() {
         auth: None,
     };
 
-    // Create a minimal kube client for provider initialization
-    eprintln!("🔧 Creating Kubernetes client...");
-    let kube_client = match create_test_kube_client().await {
-        Some(client) => {
-            eprintln!("✅ Kubernetes client created");
-            client
-        }
-        None => {
-            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
-            eprintln!("💡 To run this test, ensure a Kubernetes cluster is available:");
-            eprintln!("   - Run 'kind create cluster' for local testing");
-            eprintln!("   - Or set KUBECONFIG environment variable");
-            eprintln!("   - Or ensure in-cluster config is available");
-            return; // Skip test if no cluster available
-        }
-    };
-
     eprintln!("🔧 Creating AWS Secrets Manager provider...");
     eprintln!("   Endpoint: {}", base_url);
     eprintln!(
@@ -443,10 +437,27 @@ async fn test_aws_provider_update_secret_with_pact() {
 
 #[tokio::test]
 async fn test_aws_provider_no_change_with_pact() {
-    // Acquire test mutex to ensure sequential execution
-    let _guard = TEST_MUTEX.lock().expect("Test mutex poisoned");
+    // Acquire test mutex — recover from poison so a single test failure doesn't cascade
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     init_test();
+
+    // Check for Kubernetes cluster BEFORE creating the mock server
+    eprintln!("🔧 Creating Kubernetes client...");
+    let kube_client = match create_test_kube_client().await {
+        Some(client) => {
+            eprintln!("✅ Kubernetes client created");
+            client
+        }
+        None => {
+            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
+            eprintln!("💡 To run this test, ensure a Kubernetes cluster is available:");
+            eprintln!("   - Run 'kind create cluster' for local testing");
+            eprintln!("   - Or set KUBECONFIG environment variable");
+            eprintln!("   - Or ensure in-cluster config is available");
+            return;
+        }
+    };
 
     let mut pact_builder = PactBuilder::new("Secret-Manager-Controller", "AWS-Secrets-Manager");
 
@@ -508,23 +519,6 @@ async fn test_aws_provider_no_change_with_pact() {
     let config = AwsConfig {
         region: "us-east-1".to_string(),
         auth: None,
-    };
-
-    // Create a minimal kube client for provider initialization
-    eprintln!("🔧 Creating Kubernetes client...");
-    let kube_client = match create_test_kube_client().await {
-        Some(client) => {
-            eprintln!("✅ Kubernetes client created");
-            client
-        }
-        None => {
-            eprintln!("⚠️  Skipping test: No Kubernetes cluster available");
-            eprintln!("💡 To run this test, ensure a Kubernetes cluster is available:");
-            eprintln!("   - Run 'kind create cluster' for local testing");
-            eprintln!("   - Or set KUBECONFIG environment variable");
-            eprintln!("   - Or ensure in-cluster config is available");
-            return; // Skip test if no cluster available
-        }
     };
 
     eprintln!("🔧 Creating AWS Secrets Manager provider...");
