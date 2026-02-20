@@ -41,7 +41,6 @@ default_registry('localhost:5001')
 local_resource(
     'registry-health',
     cmd='docker inspect octopilot-registry --format="{{.State.Running}}" 2>/dev/null | grep -q true || (echo "ERROR: octopilot-registry is not running. Start it with: docker run -d --restart=always -p 0.0.0.0:5001:5000 -v octopilot-registry-data:/var/lib/registry --name octopilot-registry ghcr.io/octopilot/registry-tls:latest" && exit 1)',
-    serve_cmd=None,
     labels=['infrastructure'],
 )
 
