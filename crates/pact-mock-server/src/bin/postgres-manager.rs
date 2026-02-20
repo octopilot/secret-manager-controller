@@ -7,21 +7,21 @@
 //! - Monitors migration status
 
 use anyhow::{Context, Result};
-use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
-use futures::{pin_mut, StreamExt};
+use axum::{Router, extract::State, http::StatusCode, response::Json, routing::get};
+use futures::{StreamExt, pin_mut};
 use k8s_openapi::api::core::v1::ConfigMap;
-use kube::{api::Api, Client};
+use kube::{Client, api::Api};
 use kube_runtime::watcher::{self, Config};
 use sea_orm::{ConnectionTrait, Database, Statement};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::hash_map::DefaultHasher;
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
     path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -229,7 +229,10 @@ fn prepare_migrations(
                         );
                     }
                 } else {
-                    warn!("⚠️  Migration file doesn't match expected format (schema_filename.sql): {}", filename);
+                    warn!(
+                        "⚠️  Migration file doesn't match expected format (schema_filename.sql): {}",
+                        filename
+                    );
                 }
             }
         }
@@ -812,7 +815,9 @@ async fn watch_configmap(
                                             );
                                         } else {
                                             migrations_applied.store(false, Ordering::Relaxed);
-                                            warn!("⚠️  No migrations were applied (no migration files found in ConfigMap)");
+                                            warn!(
+                                                "⚠️  No migrations were applied (no migration files found in ConfigMap)"
+                                            );
                                         }
                                         if failed > 0 {
                                             warn!("⚠️  {} migration(s) failed", failed);
@@ -824,7 +829,9 @@ async fn watch_configmap(
                                     }
                                 }
                             } else {
-                                warn!("PostgreSQL not ready, skipping migrations (will retry on next change)");
+                                warn!(
+                                    "PostgreSQL not ready, skipping migrations (will retry on next change)"
+                                );
                             }
                         }
                     }

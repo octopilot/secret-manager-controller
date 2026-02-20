@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(backoff.next_backoff_seconds(), 300); // 5m = 300s
         assert_eq!(backoff.next_backoff_seconds(), 480); // 8m = 480s
         assert_eq!(backoff.next_backoff_seconds(), 600); // 10m = 600s (max)
-                                                         // Next would be 13m (8+5), but should be capped at 10m = 600s
+        // Next would be 13m (8+5), but should be capped at 10m = 600s
         assert_eq!(backoff.next_backoff_seconds(), 600);
         // Should stay at max
         assert_eq!(backoff.next_backoff_seconds(), 600);

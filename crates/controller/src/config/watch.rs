@@ -3,7 +3,7 @@
 //! Watches for ConfigMap changes and hot-reloads controller configuration.
 
 use crate::config::{ControllerConfig, ServerConfig, SharedControllerConfig, SharedServerConfig};
-use futures::{pin_mut, StreamExt};
+use futures::{StreamExt, pin_mut};
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::Api;
 use kube_runtime::watcher;
@@ -141,12 +141,16 @@ async fn reload_config_from_configmap(
         }
     }
 
-    // Set environment variables from ConfigMap data
+    // Set environment variables from ConfigMap data.
+    // SAFETY: This runs inside the controller's single reconciler task while
+    // holding an exclusive write lock on the config.  No other task mutates
+    // env vars at the same time.
     if let Some(data) = &configmap.data {
         for (key, value) in data {
-            // Convert ConfigMap key format (lowercase with underscores) to env var format (UPPERCASE)
             let env_key = key.to_uppercase();
-            std::env::set_var(&env_key, value);
+            unsafe {
+                std::env::set_var(&env_key, value);
+            }
             info!("  Set {}={}", env_key, value);
         }
     }
@@ -166,21 +170,28 @@ async fn reload_config_from_configmap(
     }
 
     info!("✅ Configuration reloaded successfully");
-    info!("  Controller config: reconciliation_error_requeue={}s, backoff_start={}ms, backoff_max={}ms", 
-          new_controller_config.reconciliation_error_requeue_secs,
-          new_controller_config.backoff_start_ms,
-          new_controller_config.backoff_max_ms);
+    info!(
+        "  Controller config: reconciliation_error_requeue={}s, backoff_start={}ms, backoff_max={}ms",
+        new_controller_config.reconciliation_error_requeue_secs,
+        new_controller_config.backoff_start_ms,
+        new_controller_config.backoff_max_ms
+    );
     info!(
         "  Server config: metrics_port={}, startup_timeout={}s",
         new_server_config.metrics_port, new_server_config.startup_timeout_secs
     );
 
-    // Restore original environment variables
+    // Restore original environment variables.
+    // SAFETY: Same single-task context as the set above.
     for key in &env_vars_to_backup {
         if let Some(value) = env_backup.get(*key) {
-            std::env::set_var(key, value);
+            unsafe {
+                std::env::set_var(key, value);
+            }
         } else {
-            std::env::remove_var(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
         }
     }
 }

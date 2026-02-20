@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use controller::crd::SecretManagerConfig;
-use kube::{api::Api, api::Patch, Client};
+use kube::{Client, api::Api, api::Patch};
 use serde_json::json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;

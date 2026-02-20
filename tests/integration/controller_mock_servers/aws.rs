@@ -522,10 +522,12 @@ mod tests {
             .await
             .expect("Failed to parse response");
         assert_eq!(error_json["__type"], "InvalidParameterException");
-        assert!(error_json["message"]
-            .as_str()
-            .unwrap()
-            .contains("exceeds AWS limit"));
+        assert!(
+            error_json["message"]
+                .as_str()
+                .unwrap()
+                .contains("exceeds AWS limit")
+        );
     }
 
     #[tokio::test]
@@ -563,10 +565,12 @@ mod tests {
         let error_json: serde_json::Value =
             response.json().await.expect("Failed to parse response");
         assert_eq!(error_json["__type"], "ResourceNotFoundException");
-        assert!(error_json["message"]
-            .as_str()
-            .unwrap()
-            .contains("can't find the specified secret"));
+        assert!(
+            error_json["message"]
+                .as_str()
+                .unwrap()
+                .contains("can't find the specified secret")
+        );
 
         // 2. Try to describe non-existent secret
         let describe_body = json!({
@@ -797,10 +801,12 @@ mod tests {
             .await
             .expect("Failed to parse response");
         assert_eq!(error_json["__type"], "InvalidRequestException");
-        assert!(error_json["message"]
-            .as_str()
-            .unwrap()
-            .contains("scheduled for deletion"));
+        assert!(
+            error_json["message"]
+                .as_str()
+                .unwrap()
+                .contains("scheduled for deletion")
+        );
 
         // 5. Restore secret
         let restore_body = json!({

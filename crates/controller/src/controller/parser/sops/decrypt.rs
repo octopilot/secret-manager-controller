@@ -3,7 +3,7 @@
 //! Main decryption logic for SOPS-encrypted files.
 
 use crate::controller::parser::sops::error::{
-    classify_sops_error, SopsDecryptionError, SopsDecryptionFailureReason,
+    SopsDecryptionError, SopsDecryptionFailureReason, classify_sops_error,
 };
 use crate::controller::parser::sops::gpg::import_gpg_key;
 use crate::observability::metrics;
@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, error, info, info_span, warn, Instrument};
+use tracing::{Instrument, debug, error, info, info_span, warn};
 
 /// Decrypt SOPS-encrypted content using sops binary
 ///
@@ -166,7 +166,9 @@ async fn decrypt_with_sops_binary(
 
         gpg_result
     } else {
-        warn!("No SOPS private key provided - SOPS decryption may fail if key is not in system keyring");
+        warn!(
+            "No SOPS private key provided - SOPS decryption may fail if key is not in system keyring"
+        );
         None
     };
 
@@ -272,7 +274,9 @@ async fn decrypt_with_sops_binary(
         }
 
         if gpg_home.is_some() {
-            warn!("GPG keyring was set - verify the key matches the encryption key used in .sops.yaml");
+            warn!(
+                "GPG keyring was set - verify the key matches the encryption key used in .sops.yaml"
+            );
         }
 
         // Classify the error based on stderr content and exit code

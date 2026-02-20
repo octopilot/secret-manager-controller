@@ -57,10 +57,14 @@ impl TestFixture {
         Self::cleanup_all();
         tokio::task::yield_now().await;
 
-        // Set up the new test environment
-        env::set_var("PACT_MODE", "true");
-        env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", &endpoint);
-        env::set_var("__PACT_MODE_TEST__", "true");
+        // Set up the new test environment.
+        // SAFETY: All tests in this file hold TEST_MUTEX before calling setup(),
+        // so env mutations are serialised — no concurrent reads or writes.
+        unsafe {
+            env::set_var("PACT_MODE", "true");
+            env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", &endpoint);
+            env::set_var("__PACT_MODE_TEST__", "true");
+        }
 
         // Small delay to ensure environment variables are visible
         tokio::task::yield_now().await;
@@ -119,10 +123,13 @@ impl TestFixture {
 
     /// Clean up all test-related environment variables and state
     fn cleanup_all() {
-        env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
-        env::remove_var("AWS_ENDPOINT_URL_SECRETSMANAGER");
-        env::remove_var("PACT_MODE");
-        env::remove_var("__PACT_MODE_TEST__");
+        // SAFETY: See setup() — called under TEST_MUTEX.
+        unsafe {
+            env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+            env::remove_var("AWS_ENDPOINT_URL_SECRETSMANAGER");
+            env::remove_var("PACT_MODE");
+            env::remove_var("__PACT_MODE_TEST__");
+        }
 
         // Reset PactModeConfig if it exists
         // Note: We can't fully reset OnceLock, but we can clear the config

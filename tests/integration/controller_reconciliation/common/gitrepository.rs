@@ -5,9 +5,9 @@
 
 use anyhow::{Context, Result};
 use kube::{
+    Client,
     api::{Api, PostParams},
     core::DynamicObject,
-    Client,
 };
 use serde_json::json;
 use std::path::{Path, PathBuf};

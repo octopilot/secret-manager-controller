@@ -4,13 +4,13 @@
 //! reconciliation when changes are detected.
 
 use crate::config::SharedControllerConfig;
-use crate::controller::reconciler::{reconcile, Reconciler, TriggerSource};
+use crate::controller::reconciler::{Reconciler, TriggerSource, reconcile};
 use crate::controller::server::ServerState;
 use crate::crd::SecretManagerConfig;
 use crate::runtime::error_policy::{handle_reconciliation_error, handle_watch_stream_error};
 use futures::StreamExt;
 use kube::api::Api;
-use kube_runtime::{controller::Action, watcher, Controller};
+use kube_runtime::{Controller, controller::Action, watcher};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -164,7 +164,7 @@ fn create_reconcile_fn(
     ctx: Arc<Reconciler>,
     controller_config: SharedControllerConfig,
 ) -> impl std::future::Future<Output = Result<Action, crate::controller::reconciler::ReconcilerError>>
-       + Send {
++ Send {
     let reconciler = ctx.clone();
     let controller_config_for_reconcile = controller_config.clone();
     let name = obj
@@ -304,10 +304,14 @@ fn create_reconcile_fn(
                 resource.name = name.as_str(),
                 resource.namespace = namespace.as_str(),
                 has_status = obj.status.is_some(),
-                has_next_reconcile_time = obj.status.as_ref()
+                has_next_reconcile_time = obj
+                    .status
+                    .as_ref()
                     .and_then(|s| s.next_reconcile_time.as_ref())
                     .is_some(),
-                next_reconcile_time = obj.status.as_ref()
+                next_reconcile_time = obj
+                    .status
+                    .as_ref()
                     .and_then(|s| s.next_reconcile_time.as_ref())
                     .map(|s| s.as_str())
                     .unwrap_or("none"),

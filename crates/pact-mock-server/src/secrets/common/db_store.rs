@@ -21,7 +21,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectOptions, Database, DatabaseConnection, EntityTrait,
     QueryFilter, QueryOrder, Set,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use tracing::warn;
 use tracing::{debug, info};
@@ -809,13 +809,8 @@ impl DbSecretStore {
                 let environment = Self::extract_environment(&metadata);
                 // For GCP, location is extracted from labels, but for automatic replication
                 // it should be NULL (not "automatic"). If location label is "automatic", set to None
-                let location = Self::extract_location_from_labels(&metadata).and_then(|loc| {
-                    if loc == "automatic" {
-                        None
-                    } else {
-                        Some(loc)
-                    }
-                });
+                let location = Self::extract_location_from_labels(&metadata)
+                    .and_then(|loc| if loc == "automatic" { None } else { Some(loc) });
 
                 if let Some(existing_secret) = secret {
                     // Update existing secret
@@ -827,7 +822,9 @@ impl DbSecretStore {
                         operation = "update_metadata",
                         action = "update",
                         "Updating secret metadata in database: key={}, environment={:?}, location={:?}",
-                        key, environment, location
+                        key,
+                        environment,
+                        location
                     );
                     let mut secret_model: GcpSecretActiveModel = existing_secret.into();
                     secret_model.metadata = Set(metadata);
@@ -845,7 +842,9 @@ impl DbSecretStore {
                         operation = "update_metadata",
                         action = "create",
                         "Creating secret with metadata in database: key={}, environment={:?}, location={:?}",
-                        key, environment, location
+                        key,
+                        environment,
+                        location
                     );
                     let secret_model = GcpSecretActiveModel {
                         key: Set(key),
@@ -875,7 +874,9 @@ impl DbSecretStore {
                         operation = "update_metadata",
                         action = "update",
                         "Updating secret metadata in database: name={}, environment={:?}, location={:?}",
-                        key, environment, location
+                        key,
+                        environment,
+                        location
                     );
                     let mut secret_model: AwsSecretActiveModel = existing_secret.into();
                     secret_model.metadata = Set(metadata);
@@ -893,7 +894,9 @@ impl DbSecretStore {
                         operation = "update_metadata",
                         action = "create",
                         "Creating secret with metadata in database: name={}, environment={:?}, location={:?}",
-                        key, environment, location
+                        key,
+                        environment,
+                        location
                     );
                     let secret_model = AwsSecretActiveModel {
                         name: Set(key),
@@ -923,7 +926,9 @@ impl DbSecretStore {
                         operation = "update_metadata",
                         action = "update",
                         "Updating secret metadata in database: name={}, environment={:?}, location={:?}",
-                        key, environment, location
+                        key,
+                        environment,
+                        location
                     );
                     let mut secret_model: AzureSecretActiveModel = existing_secret.into();
                     secret_model.metadata = Set(metadata);
@@ -941,7 +946,9 @@ impl DbSecretStore {
                         operation = "update_metadata",
                         action = "create",
                         "Creating secret with metadata in database: name={}, environment={:?}, location={:?}",
-                        key, environment, location
+                        key,
+                        environment,
+                        location
                     );
                     let secret_model = AzureSecretActiveModel {
                         name: Set(key),

@@ -20,7 +20,10 @@ pub async fn create_irsa_config(
 
     // For now, we'll use the AWS SDK's default credential chain which supports IRSA
     // The role ARN from the config is informational - the actual role comes from the pod annotation
-    info!("IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}", role_arn);
+    info!(
+        "IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}",
+        role_arn
+    );
 
     let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .region(aws_config::Region::new(region.to_string()));
@@ -122,7 +125,9 @@ pub async fn create_sdk_config(config: &AwsConfig, k8s_client: &kube::Client) ->
             create_irsa_config(&region, role_arn, k8s_client).await
         }
         None => {
-            info!("No auth configuration specified, defaulting to IRSA (IAM Roles for Service Accounts)");
+            info!(
+                "No auth configuration specified, defaulting to IRSA (IAM Roles for Service Accounts)"
+            );
             info!(
                 "Ensure pod service account has annotation: eks.amazonaws.com/role-arn=<role-arn>"
             );

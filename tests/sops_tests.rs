@@ -9,7 +9,7 @@
 //! - Security: No disk writes (stdin/stdout pipes only)
 
 use controller::controller::parser::sops::error::{
-    classify_sops_error, SopsDecryptionFailureReason,
+    SopsDecryptionFailureReason, classify_sops_error,
 };
 use controller::controller::parser::{decrypt_sops_content, is_sops_encrypted};
 use std::env;

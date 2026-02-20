@@ -9,7 +9,7 @@ use k8s_openapi::{
     api::apps::v1::Deployment,
     apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition,
 };
-use kube::{api::Api, Client};
+use kube::{Client, api::Api};
 
 /// Check the Secret Manager Controller installation
 pub async fn check_command(client: Client, namespace: Option<String>, pre: bool) -> Result<()> {

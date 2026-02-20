@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::common::*;
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use controller::controller::reconciler::reconcile;
     use controller::controller::reconciler::types::{Reconciler, TriggerSource};
     use serde_json::json;
@@ -399,10 +399,12 @@ mod tests {
         let error_json: serde_json::Value =
             response.json().await.expect("Failed to parse response");
         assert_eq!(error_json["error"]["code"], 401);
-        assert!(error_json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Unauthorized"));
+        assert!(
+            error_json["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Unauthorized")
+        );
 
         // 4. Make request without header - should succeed (or return normal response)
         let normal_response = client
@@ -452,10 +454,12 @@ mod tests {
         let error_json: serde_json::Value =
             response.json().await.expect("Failed to parse response");
         assert_eq!(error_json["error"]["code"], 403);
-        assert!(error_json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Forbidden"));
+        assert!(
+            error_json["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Forbidden")
+        );
 
         // 4. Make request without header - should succeed (or return normal response)
         let normal_response = client
@@ -552,10 +556,12 @@ mod tests {
             .await
             .expect("Failed to parse response");
         assert_eq!(error_json["error"]["code"], 400);
-        assert!(error_json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("exceeds GCP limit"));
+        assert!(
+            error_json["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("exceeds GCP limit")
+        );
     }
 
     #[tokio::test]
@@ -595,10 +601,12 @@ mod tests {
             .expect("Failed to parse response");
         assert_eq!(error_json["error"]["code"], 404);
         assert_eq!(error_json["error"]["status"], "NOT_FOUND");
-        assert!(error_json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Secret not found"));
+        assert!(
+            error_json["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Secret not found")
+        );
 
         // 2. Try to get secret value for non-existent secret
         let get_value_url = format!(
@@ -622,10 +630,12 @@ mod tests {
             .expect("Failed to parse response");
         assert_eq!(error_json2["error"]["code"], 404);
         assert_eq!(error_json2["error"]["status"], "NOT_FOUND");
-        assert!(error_json2["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Secret not found"));
+        assert!(
+            error_json2["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Secret not found")
+        );
     }
 
     #[tokio::test]

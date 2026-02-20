@@ -64,7 +64,9 @@ pub async fn download_artifact(artifact_url: &str, temp_file: &Path) -> Result<(
             error!("Error details: {:?}", e);
 
             if is_timeout {
-                error!("Network timeout detected - source-controller may be unreachable or slow to respond");
+                error!(
+                    "Network timeout detected - source-controller may be unreachable or slow to respond"
+                );
                 error!("Troubleshooting:");
                 error!("  1. Check service: kubectl get svc source-controller -n flux-system");
                 error!("  2. Check pods: kubectl get pods -n flux-system -l app=source-controller");
@@ -73,9 +75,13 @@ pub async fn download_artifact(artifact_url: &str, temp_file: &Path) -> Result<(
                 );
                 error!("  4. Test connectivity from controller pod");
             } else if is_dns {
-                error!("DNS resolution failed - check if source-controller.flux-system.svc.cluster.local resolves");
+                error!(
+                    "DNS resolution failed - check if source-controller.flux-system.svc.cluster.local resolves"
+                );
                 error!("Troubleshooting:");
-                error!("  1. Check DNS: kubectl exec -n octopilot-system <pod> -- nslookup source-controller.flux-system.svc.cluster.local");
+                error!(
+                    "  1. Check DNS: kubectl exec -n octopilot-system <pod> -- nslookup source-controller.flux-system.svc.cluster.local"
+                );
                 error!(
                     "  2. Verify service exists: kubectl get svc source-controller -n flux-system"
                 );
@@ -92,9 +98,13 @@ pub async fn download_artifact(artifact_url: &str, temp_file: &Path) -> Result<(
             } else {
                 error!("Unknown network error - full error: {:?}", e);
                 error!("Troubleshooting:");
-                error!("  1. Verify source-controller is running: kubectl get pods -n flux-system -l app=source-controller");
+                error!(
+                    "  1. Verify source-controller is running: kubectl get pods -n flux-system -l app=source-controller"
+                );
                 error!("  2. Check service: kubectl get svc source-controller -n flux-system");
-                error!("  3. Test from controller pod: kubectl exec -n octopilot-system <pod> -- curl -v <url>");
+                error!(
+                    "  3. Test from controller pod: kubectl exec -n octopilot-system <pod> -- curl -v <url>"
+                );
             }
 
             crate::observability::metrics::increment_artifact_download_errors_total();

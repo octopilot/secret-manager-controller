@@ -21,7 +21,9 @@ pub fn start_source_watch(
     // This ensures source changes are picked up without restarting the controller.
     // Future enhancement: Directly watch GitRepository and Application resources
     // and trigger reconciliation of referencing SecretManagerConfig resources.
-    info!("Source watch: SecretManagerConfig resources are watched by main controller, source changes are picked up during reconciliation");
+    info!(
+        "Source watch: SecretManagerConfig resources are watched by main controller, source changes are picked up during reconciliation"
+    );
 }
 
 /// Suspend or resume GitRepository pulls

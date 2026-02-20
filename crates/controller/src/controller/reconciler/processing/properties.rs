@@ -261,7 +261,10 @@ pub async fn store_properties(
                             if was_updated {
                                 sync_state.update_count += 1;
                                 config_updated_count += 1;
-                                info!("Updated config {} from git (GitOps source of truth) - update_count={}", key, sync_state.update_count);
+                                info!(
+                                    "Updated config {} from git (GitOps source of truth) - update_count={}",
+                                    key, sync_state.update_count
+                                );
                             } else {
                                 debug!(
                                     "Config {} unchanged (no update needed) - exists={}, update_count={}",
@@ -311,7 +314,10 @@ pub async fn store_properties(
                             if was_updated {
                                 sync_state.update_count += 1;
                                 config_updated_count += 1;
-                                info!("✅ Updated config '{}' from git (GitOps source of truth) - update_count={}", key, sync_state.update_count);
+                                info!(
+                                    "✅ Updated config '{}' from git (GitOps source of truth) - update_count={}",
+                                    key, sync_state.update_count
+                                );
                             } else {
                                 info!(
                                     "✅ Config '{}' unchanged (no update needed) - exists={}, update_count={}",

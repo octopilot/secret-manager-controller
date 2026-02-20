@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use controller::crd::SecretManagerConfig;
-use kube::{api::Api, Client};
+use kube::{Client, api::Api};
 
 /// Show detailed status of a SecretManagerConfig resource
 pub async fn status_command(client: Client, name: String, namespace: Option<String>) -> Result<()> {

@@ -6,7 +6,7 @@
 //! - Each update creates a new version automatically
 
 use super::common::{
-    db_store::DbSecretStore, SecretStore, SecretStoreBackend, SecretStoreEnum, SecretVersion,
+    SecretStore, SecretStoreBackend, SecretStoreEnum, SecretVersion, db_store::DbSecretStore,
 };
 use anyhow::Result;
 use serde_json::Value;

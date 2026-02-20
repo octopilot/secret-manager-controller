@@ -9,13 +9,13 @@ use crate::observability::metrics;
 use crate::provider::SecretManagerProvider;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::time::Instant;
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{Instrument, debug, info, info_span};
 
 use super::requests::{AddVersionRequest, CreateSecretRequest};
 use super::responses::AccessSecretVersionResponse;
-use crate::provider::gcp::client::common::{determine_operation_type, OperationTracker};
+use crate::provider::gcp::client::common::{OperationTracker, determine_operation_type};
 use crate::provider::gcp::client::rest::SecretManagerREST;
 use paths::prelude::{GcpOperation, PathBuilder};
 

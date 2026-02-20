@@ -46,8 +46,12 @@ impl PactModeAPIOverride for AwsSecretsManagerAPIOverride {
         if let Some(endpoint) = &pact_config.endpoint {
             // CRITICAL: Set environment variables BEFORE SDK reads them
             // The AWS SDK reads these during builder.load().await
-            std::env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
-            std::env::set_var("AWS_ENDPOINT_URL_SECRETSMANAGER", endpoint);
+            // SAFETY: Pact override runs under a test mutex that serialises all
+            // env mutations; no other thread reads or writes env vars concurrently.
+            unsafe {
+                std::env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
+                std::env::set_var("AWS_ENDPOINT_URL_SECRETSMANAGER", endpoint);
+            }
 
             self.validate_endpoint(endpoint)?;
 
@@ -99,9 +103,11 @@ impl PactModeAPIOverride for AwsSecretsManagerAPIOverride {
     }
 
     fn cleanup(&self) -> Result<()> {
-        // Remove AWS-specific environment variables
-        std::env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
-        std::env::remove_var("AWS_ENDPOINT_URL_SECRETSMANAGER");
+        // SAFETY: See set_var above — runs under the test mutex.
+        unsafe {
+            std::env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+            std::env::remove_var("AWS_ENDPOINT_URL_SECRETSMANAGER");
+        }
         Ok(())
     }
 }

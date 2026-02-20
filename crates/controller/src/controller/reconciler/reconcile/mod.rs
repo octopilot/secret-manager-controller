@@ -7,10 +7,10 @@ mod finalize;
 mod provider;
 mod sync;
 
-pub use artifact_path::{resolve_artifact_path, ArtifactPathResult};
+pub use artifact_path::{ArtifactPathResult, resolve_artifact_path};
 pub use finalize::finalize_reconciliation;
 pub use provider::create_provider;
-pub use sync::{sync_secrets, SyncResult};
+pub use sync::{SyncResult, sync_secrets};
 
 use crate::config::SharedControllerConfig;
 use crate::controller::reconciler::status::{update_status, update_status_phase};

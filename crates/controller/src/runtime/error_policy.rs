@@ -120,7 +120,9 @@ pub async fn handle_watch_stream_error(
 
     if is_401 {
         // Authentication error - RBAC may have been revoked or token expired
-        error!("❌ Watch authentication failed (401 Unauthorized) - RBAC may have been revoked or token expired");
+        error!(
+            "❌ Watch authentication failed (401 Unauthorized) - RBAC may have been revoked or token expired"
+        );
         error!("🔍 SRE Diagnostics:");
         error!("   1. Verify ClusterRole 'secret-manager-controller' still exists:");
         error!("      kubectl get clusterrole secret-manager-controller");
@@ -129,9 +131,13 @@ pub async fn handle_watch_stream_error(
         error!("   3. Verify ServiceAccount still exists:");
         error!("      kubectl get sa secret-manager-controller -n octopilot-system");
         error!("   4. Check if pod ServiceAccount token is valid:");
-        error!("      kubectl get pod -n octopilot-system -l app=secret-manager-controller -o jsonpath='{{{{.spec.serviceAccountName}}}}'");
+        error!(
+            "      kubectl get pod -n octopilot-system -l app=secret-manager-controller -o jsonpath='{{{{.spec.serviceAccountName}}}}'"
+        );
         error!("   5. Verify RBAC permissions are still active:");
-        error!("      kubectl auth can-i list secretmanagerconfigs --as=system:serviceaccount:octopilot-system:secret-manager-controller --all-namespaces");
+        error!(
+            "      kubectl auth can-i list secretmanagerconfigs --as=system:serviceaccount:octopilot-system:secret-manager-controller --all-namespaces"
+        );
         error!("   6. If RBAC was recently changed, restart the controller pod:");
         error!("      kubectl delete pod -n octopilot-system -l app=secret-manager-controller");
         warn!(
@@ -142,7 +148,9 @@ pub async fn handle_watch_stream_error(
         None // Filter out to allow restart
     } else if is_410 {
         // Resource version expired - this is normal during pod restarts
-        warn!("Watch resource version expired (410) - this is normal during pod restarts, watch will restart");
+        warn!(
+            "Watch resource version expired (410) - this is normal during pod restarts, watch will restart"
+        );
         warn!(error_type = "410", "watch.error.resource_version_expired");
         None // Filter out to allow restart
     } else if is_429 {
@@ -174,8 +182,7 @@ pub async fn handle_watch_stream_error(
         };
         warn!(
             "{} not found (404) - this may be normal if resource was deleted or CRD is missing. Error: {}",
-            resource_info,
-            error_string
+            resource_info, error_string
         );
         Some(()) // Continue - this is expected
     } else {

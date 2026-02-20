@@ -24,7 +24,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Json, Response},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -289,7 +289,10 @@ pub async fn wait_for_broker_and_pacts(
                     }
                     Ok(response) if response.status() == 404 => {
                         if attempt % 5 == 0 {
-                            info!("Broker is ready, waiting for pacts to be published... (attempt {}/{})", attempt, max_attempts);
+                            info!(
+                                "Broker is ready, waiting for pacts to be published... (attempt {}/{})",
+                                attempt, max_attempts
+                            );
                         }
                     }
                     Ok(response) => {

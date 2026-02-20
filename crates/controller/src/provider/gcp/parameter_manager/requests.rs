@@ -95,7 +95,7 @@ impl CreateParameterVersionRequest {
     /// If version_id is None, GCP will auto-generate one
     pub fn new(version_id: Option<String>, data: String) -> Self {
         // Base64 encode the data
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         let encoded = general_purpose::STANDARD.encode(data.as_bytes());
         Self {
             version_id,

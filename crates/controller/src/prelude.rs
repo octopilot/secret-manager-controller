@@ -26,7 +26,7 @@ pub use crate::provider::{ConfigStoreProvider, SecretManagerProvider};
 
 // Reconciler types - core controller functionality
 pub use crate::controller::reconciler::{
-    reconcile, BackoffState, Reconciler, ReconcilerError, TriggerSource,
+    BackoffState, Reconciler, ReconcilerError, TriggerSource, reconcile,
 };
 
 // Config types - for configuration management

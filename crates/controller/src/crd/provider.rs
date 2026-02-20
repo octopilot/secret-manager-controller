@@ -30,11 +30,11 @@ impl JsonSchema for ProviderConfig {
         Cow::Borrowed("ProviderConfig")
     }
 
-    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
+    fn json_schema(schema_gen: &mut SchemaGenerator) -> Schema {
         // Generate schemas for nested configs using the generator
-        let gcp_schema = GcpConfig::json_schema(gen);
-        let aws_schema = AwsConfig::json_schema(gen);
-        let azure_schema = AzureConfig::json_schema(gen);
+        let gcp_schema = GcpConfig::json_schema(schema_gen);
+        let aws_schema = AwsConfig::json_schema(schema_gen);
+        let azure_schema = AzureConfig::json_schema(schema_gen);
 
         // Convert schemas to JSON values for inclusion in the parent schema
         let mut gcp_json =

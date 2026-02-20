@@ -22,9 +22,9 @@ mod responses;
 use crate::provider::ConfigStoreProvider;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use reqwest::Client;
-use tracing::{info, info_span, Instrument};
+use tracing::{Instrument, info, info_span};
 
 use requests::{
     CreateParameterRequest, CreateParameterVersionRequest, UpdateParameterRequest,
@@ -35,7 +35,7 @@ use responses::{
     ListParametersResponse, Location, Parameter, RenderParameterVersionResponse,
 };
 
-use crate::provider::gcp::client::common::{determine_operation_type, OperationTracker};
+use crate::provider::gcp::client::common::{OperationTracker, determine_operation_type};
 use paths::prelude::{GcpOperation, PathBuilder};
 
 /// GCP Parameter Manager REST client

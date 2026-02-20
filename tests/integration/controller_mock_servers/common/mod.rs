@@ -208,8 +208,8 @@ async fn wait_for_server(
 
 /// Create a default SharedControllerConfig for tests
 /// Uses default values suitable for testing
-pub fn create_test_controller_config(
-) -> std::sync::Arc<tokio::sync::RwLock<controller::config::ControllerConfig>> {
+pub fn create_test_controller_config()
+-> std::sync::Arc<tokio::sync::RwLock<controller::config::ControllerConfig>> {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -363,18 +363,30 @@ pub fn create_azure_test_config(
 /// Set up environment variables for Pact mode with mock server endpoint
 /// Also initializes PactModeConfig singleton
 pub fn setup_pact_mode(provider: &str, endpoint: &str) {
-    env::set_var("PACT_MODE", "true");
-    env::set_var("__PACT_MODE_TEST__", "true"); // Allow re-initialization in tests
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("__PACT_MODE_TEST__", "true"); // Allow re-initialization in tests
+    }
 
     match provider {
         "gcp" => {
-            env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
+            // SAFETY: Helper called from single-threaded integration test context.
+            unsafe {
+                env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
+            }
         }
         "aws" => {
-            env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
+            // SAFETY: Helper called from single-threaded integration test context.
+            unsafe {
+                env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
+            }
         }
         "azure" => {
-            env::set_var("AZURE_KEY_VAULT_ENDPOINT", endpoint);
+            // SAFETY: Helper called from single-threaded integration test context.
+            unsafe {
+                env::set_var("AZURE_KEY_VAULT_ENDPOINT", endpoint);
+            }
         }
         _ => panic!("Unknown provider: {}", provider),
     }
@@ -392,18 +404,30 @@ pub fn setup_pact_mode(provider: &str, endpoint: &str) {
 
 /// Clean up environment variables and reset PactModeConfig
 pub fn cleanup_pact_mode(provider: &str) {
-    env::remove_var("PACT_MODE");
-    env::remove_var("__PACT_MODE_TEST__");
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::remove_var("PACT_MODE");
+        env::remove_var("__PACT_MODE_TEST__");
+    }
 
     match provider {
         "gcp" => {
-            env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+            // SAFETY: Helper called from single-threaded integration test context.
+            unsafe {
+                env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+            }
         }
         "aws" => {
-            env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+            // SAFETY: Helper called from single-threaded integration test context.
+            unsafe {
+                env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+            }
         }
         "azure" => {
-            env::remove_var("AZURE_KEY_VAULT_ENDPOINT");
+            // SAFETY: Helper called from single-threaded integration test context.
+            unsafe {
+                env::remove_var("AZURE_KEY_VAULT_ENDPOINT");
+            }
         }
         _ => {}
     }

@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use controller::crd::SecretManagerConfig;
-use kube::{api::Api, Client};
+use kube::{Client, api::Api};
 
 /// List all SecretManagerConfig resources
 pub async fn list_command(client: Client, namespace: Option<String>) -> Result<()> {
@@ -44,13 +44,10 @@ pub async fn list_command(client: Client, namespace: Option<String>) -> Result<(
             .status
             .as_ref()
             .and_then(|s| {
-                s.conditions.iter().find(|c| c.r#type == "Ready").map(|c| {
-                    if c.status == "True" {
-                        "True"
-                    } else {
-                        "False"
-                    }
-                })
+                s.conditions
+                    .iter()
+                    .find(|c| c.r#type == "Ready")
+                    .map(|c| if c.status == "True" { "True" } else { "False" })
             })
             .unwrap_or("Unknown");
 

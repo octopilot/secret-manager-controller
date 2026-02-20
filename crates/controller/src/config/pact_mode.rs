@@ -102,9 +102,13 @@ impl PactModeAPIOverride for ProviderPactConfig {
             return Ok(());
         }
 
-        // Set all environment variables to override API endpoint
+        // Set all environment variables to override API endpoint.
+        // SAFETY: Called only in Pact test mode under a test mutex that
+        // serialises all env mutations in test threads.
         for (key, value) in &self.env_vars {
-            std::env::set_var(key, value);
+            unsafe {
+                std::env::set_var(key, value);
+            }
         }
 
         // Validate endpoint if set
@@ -142,9 +146,11 @@ impl PactModeAPIOverride for ProviderPactConfig {
     }
 
     fn cleanup(&self) -> Result<()> {
-        // Remove environment variables
+        // SAFETY: See set_var above — runs under the test mutex.
         for key in self.env_vars.keys() {
-            std::env::remove_var(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
         }
         Ok(())
     }
@@ -193,7 +199,7 @@ impl PactModeConfig {
             // Default: Kubernetes service name for in-cluster, or localhost for local testing
             let aws_sm_endpoint = get_endpoint(
                 "AWS_SECRETS_MANAGER_ENDPOINT",
-                "http://aws-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
+                "http://aws-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234",
             );
             let mut aws_sm_env_vars = HashMap::new();
             aws_sm_env_vars.insert(
@@ -217,9 +223,13 @@ impl PactModeConfig {
             );
 
             // AWS Parameter Store - always register when PACT_MODE is enabled
-            let aws_ssm_endpoint = get_endpoint("AWS_SSM_ENDPOINT", 
-                &get_endpoint("AWS_ENDPOINT_URL_SSM", 
-                    "http://aws-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"));
+            let aws_ssm_endpoint = get_endpoint(
+                "AWS_SSM_ENDPOINT",
+                &get_endpoint(
+                    "AWS_ENDPOINT_URL_SSM",
+                    "http://aws-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234",
+                ),
+            );
             let mut aws_ssm_env_vars = HashMap::new();
             aws_ssm_env_vars.insert("AWS_SSM_ENDPOINT".to_string(), aws_ssm_endpoint.clone());
             aws_ssm_env_vars.insert("AWS_ENDPOINT_URL_SSM".to_string(), aws_ssm_endpoint.clone());
@@ -238,7 +248,7 @@ impl PactModeConfig {
             // GCP Secret Manager - always register when PACT_MODE is enabled
             let gcp_endpoint = get_endpoint(
                 "GCP_SECRET_MANAGER_ENDPOINT",
-                "http://gcp-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
+                "http://gcp-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234",
             );
             let mut gcp_env_vars = HashMap::new();
             gcp_env_vars.insert(
@@ -260,7 +270,7 @@ impl PactModeConfig {
             // Azure Key Vault - always register when PACT_MODE is enabled
             let azure_endpoint = get_endpoint(
                 "AZURE_KEY_VAULT_ENDPOINT",
-                "http://azure-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
+                "http://azure-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234",
             );
             let mut azure_env_vars = HashMap::new();
             azure_env_vars.insert(
@@ -282,7 +292,7 @@ impl PactModeConfig {
             // Azure App Configuration - always register when PACT_MODE is enabled
             let azure_app_config_endpoint = get_endpoint(
                 "AZURE_APP_CONFIGURATION_ENDPOINT",
-                "http://azure-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234"
+                "http://azure-mock-server.secret-manager-controller-pact-broker.svc.cluster.local:1234",
             );
             let mut azure_app_config_env_vars = HashMap::new();
             azure_app_config_env_vars.insert(

@@ -36,7 +36,8 @@ pub use provider::{
 };
 pub use source::{ConfigStoreType, ConfigsConfig, GitCredentialsRef, SecretsConfig, SourceRef};
 pub use spec::{
-    default_false, default_git_repository_pull_interval, default_reconcile_interval,
-    default_source_kind, default_true, SecretManagerConfig, SecretManagerConfigSpec,
+    SecretManagerConfig, SecretManagerConfigSpec, default_false,
+    default_git_repository_pull_interval, default_reconcile_interval, default_source_kind,
+    default_true,
 };
 pub use status::{Condition, ResourceSyncState, SecretManagerConfigStatus, SyncStatus};

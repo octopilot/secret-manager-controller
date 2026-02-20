@@ -156,7 +156,10 @@ pub async fn reload_sops_private_key_from_namespace(
                             reconciler
                                 .sops_capability_ready
                                 .store(true, std::sync::atomic::Ordering::Relaxed);
-                            info!("✅ SOPS capability restored - key added back to controller namespace '{}'", namespace);
+                            info!(
+                                "✅ SOPS capability restored - key added back to controller namespace '{}'",
+                                namespace
+                            );
                         }
 
                         info!(

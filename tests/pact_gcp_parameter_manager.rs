@@ -162,7 +162,9 @@ async fn test_gcp_add_parameter_version_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(
@@ -183,10 +185,12 @@ async fn test_gcp_add_parameter_version_contract() {
 
     assert_eq!(response.status(), 200);
     let body: serde_json::Value = response.json().await.expect("Failed to parse response");
-    assert!(body["name"]
-        .as_str()
-        .unwrap()
-        .contains("test-parameter-name"));
+    assert!(
+        body["name"]
+            .as_str()
+            .unwrap()
+            .contains("test-parameter-name")
+    );
 }
 
 #[tokio::test]
@@ -221,7 +225,9 @@ async fn test_gcp_get_parameter_version_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(&client, "GET", &mock_url, None)
@@ -232,10 +238,12 @@ async fn test_gcp_get_parameter_version_contract() {
     let body: serde_json::Value = response.json().await.expect("Failed to parse response");
     assert!(body["versions"].is_array());
     assert_eq!(body["versions"].as_array().unwrap().len(), 1);
-    assert!(body["versions"][0]["name"]
-        .as_str()
-        .unwrap()
-        .contains("test-parameter-name"));
+    assert!(
+        body["versions"][0]["name"]
+            .as_str()
+            .unwrap()
+            .contains("test-parameter-name")
+    );
 }
 
 #[tokio::test]
@@ -268,7 +276,9 @@ async fn test_gcp_get_parameter_version_not_found_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/nonexistent-parameter/versions");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/nonexistent-parameter/versions"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(&client, "GET", &mock_url, None)
@@ -353,7 +363,9 @@ async fn test_gcp_get_specific_parameter_version_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(&client, "GET", &mock_url, None)
@@ -362,10 +374,12 @@ async fn test_gcp_get_specific_parameter_version_contract() {
 
     assert_eq!(response.status(), 200);
     let body: serde_json::Value = response.json().await.expect("Failed to parse response");
-    assert!(body["name"]
-        .as_str()
-        .unwrap()
-        .contains("test-parameter-name"));
+    assert!(
+        body["name"]
+            .as_str()
+            .unwrap()
+            .contains("test-parameter-name")
+    );
     assert_eq!(body["payload"]["data"], "ZGIuZXhhbXBsZS5jb20=");
 }
 
@@ -566,7 +580,9 @@ async fn test_gcp_patch_parameter_version_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(
@@ -585,10 +601,12 @@ async fn test_gcp_patch_parameter_version_contract() {
 
     assert_eq!(response.status(), 200);
     let body: serde_json::Value = response.json().await.expect("Failed to parse response");
-    assert!(body["name"]
-        .as_str()
-        .unwrap()
-        .contains("test-parameter-name"));
+    assert!(
+        body["name"]
+            .as_str()
+            .unwrap()
+            .contains("test-parameter-name")
+    );
 }
 
 #[tokio::test]
@@ -614,7 +632,9 @@ async fn test_gcp_delete_parameter_version_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(&client, "DELETE", &mock_url, None)
@@ -650,7 +670,9 @@ async fn test_gcp_render_parameter_version_contract() {
     if base_url.ends_with('/') {
         base_url.pop();
     }
-    let mock_url = format!("{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890:render");
+    let mock_url = format!(
+        "{base_url}/v1/projects/test-project/locations/global/parameters/test-parameter-name/versions/v1234567890:render"
+    );
 
     let client = reqwest::Client::new();
     let response = make_request(&client, "GET", &mock_url, None)

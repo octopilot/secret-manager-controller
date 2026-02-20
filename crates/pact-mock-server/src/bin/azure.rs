@@ -12,13 +12,13 @@
 //! - PORT: Port to listen on (default: 1234)
 
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{delete, get, patch, post, put},
-    Router,
 };
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pact_mock_server::prelude::*;
 use pact_mock_server::secrets::common::errors::azure_error_codes;
 use paths::azure::routes::key_vault as azure_routes;
@@ -27,7 +27,7 @@ use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 
 /// Azure-specific application state
 #[derive(Clone)]

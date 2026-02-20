@@ -1,9 +1,9 @@
 [package]
 name = "pact-mock-server"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 resolver = "2"
-authors = ["Microscaler <info@microscaler.io>"]
+authors.workspace = true
 description = "Unified Pact Mock Server for GCP, AWS, and Azure Secret Manager APIs"
 license = "BSL-1.1"
 repository = "https://github.com/octopilot/secret-manager-controller"

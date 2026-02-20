@@ -7,19 +7,19 @@
 //! - Monitors pod/container status
 
 use anyhow::{Context, Result};
-use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
-use futures::{pin_mut, StreamExt};
+use axum::{Router, extract::State, http::StatusCode, response::Json, routing::get};
+use futures::{StreamExt, pin_mut};
 use k8s_openapi::api::core::v1::{ConfigMap, Pod};
-use kube::{api::Api, Client};
+use kube::{Client, api::Api};
 use kube_runtime::watcher::{self, Config};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
     process::Command,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -601,7 +601,10 @@ async fn watch_configmap(
                     }
                     sleep(Duration::from_secs(2)).await;
                 } else {
-                    warn!("⚠️  RBAC still not ready after {} attempts, continuing anyway - watcher will handle retries", check_attempts);
+                    warn!(
+                        "⚠️  RBAC still not ready after {} attempts, continuing anyway - watcher will handle retries",
+                        check_attempts
+                    );
                     break;
                 }
             }
@@ -649,7 +652,9 @@ async fn watch_configmap(
                                             );
                                         } else {
                                             pacts_published.store(false, Ordering::Relaxed);
-                                            warn!("⚠️  No pacts were published (no pact files found in ConfigMap)");
+                                            warn!(
+                                                "⚠️  No pacts were published (no pact files found in ConfigMap)"
+                                            );
                                         }
                                         if failed > 0 {
                                             warn!("⚠️  {} pact(s) failed to publish", failed);
@@ -661,7 +666,9 @@ async fn watch_configmap(
                                     }
                                 }
                             } else {
-                                warn!("Broker not ready, skipping re-publish (will retry on next change)");
+                                warn!(
+                                    "Broker not ready, skipping re-publish (will retry on next change)"
+                                );
                             }
                         }
                     }

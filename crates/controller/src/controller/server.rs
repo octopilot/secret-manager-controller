@@ -9,7 +9,7 @@
 //!
 //! The server runs on port 5000 by default (configurable via `METRICS_PORT` environment variable).
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Router};
+use axum::{Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use prometheus::{Encoder, TextEncoder};
 use std::sync::Arc;
 use tokio::net::TcpListener;

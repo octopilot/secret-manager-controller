@@ -9,7 +9,7 @@
 //! - SOPS error classification
 
 use controller::controller::parser::sops::error::{
-    classify_sops_error, SopsDecryptionFailureReason,
+    SopsDecryptionFailureReason, classify_sops_error,
 };
 use controller::controller::reconciler::status::calculate_progressive_backoff;
 
@@ -202,8 +202,8 @@ fn test_sops_error_classification_unknown() {
 
     // Test with a truly unknown message and exit code
     let _reason2 = classify_sops_error("completely unknown error", Some(99)); // Unknown exit code
-                                                                              // Should default to Unknown or fall through to message parsing
-                                                                              // The actual behavior depends on implementation, but it shouldn't panic
+    // Should default to Unknown or fall through to message parsing
+    // The actual behavior depends on implementation, but it shouldn't panic
 }
 
 #[test]

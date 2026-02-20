@@ -5,8 +5,8 @@
 use crate::controller::reconciler::types::Reconciler;
 use crate::crd::SecretManagerConfig;
 use anyhow::Result;
-use kube::api::PatchParams;
 use kube::Api;
+use kube::api::PatchParams;
 use tracing::debug;
 
 /// Check SOPS key availability in a namespace

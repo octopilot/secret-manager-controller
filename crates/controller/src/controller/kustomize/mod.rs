@@ -44,7 +44,7 @@ mod tests {
     mod parse_kustomize_output_tests {
         use super::*;
         use crate::controller::kustomize::parse::parse_secrets_from_yaml;
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
 
         #[test]
         fn test_parse_kustomize_output_single_secret() {

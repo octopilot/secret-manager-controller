@@ -4,12 +4,12 @@
 //! Downloads and extracts tar.gz artifacts from FluxCD source-controller.
 
 use crate::controller::reconciler::types::Reconciler;
-use crate::controller::reconciler::utils::{sanitize_path_component, SMC_BASE_PATH};
+use crate::controller::reconciler::utils::{SMC_BASE_PATH, sanitize_path_component};
 use crate::crd::SourceRef;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::time::Instant;
-use tracing::{info, info_span, warn, Instrument};
+use tracing::{Instrument, info, info_span, warn};
 
 use super::download::{
     cleanup_old_revisions, download_artifact, extract_artifact, verify_checksum,

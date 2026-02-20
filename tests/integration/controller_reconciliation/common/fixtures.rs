@@ -45,8 +45,11 @@ pub fn create_test_secret_manager_config_flux_with_options(
     trigger_update: bool,
 ) -> SecretManagerConfig {
     // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("GCP_SECRET_MANAGER_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("GCP_SECRET_MANAGER_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -100,8 +103,11 @@ pub fn create_test_secret_manager_config_argocd(
     environment: &str,
 ) -> SecretManagerConfig {
     // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("GCP_SECRET_MANAGER_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("GCP_SECRET_MANAGER_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -155,8 +161,11 @@ pub fn create_test_secret_manager_config_aws_flux(
     environment: &str,
 ) -> SecretManagerConfig {
     // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -209,8 +218,11 @@ pub fn create_test_secret_manager_config_aws_argocd(
     environment: &str,
 ) -> SecretManagerConfig {
     // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -263,8 +275,11 @@ pub fn create_test_secret_manager_config_azure_flux(
     environment: &str,
 ) -> SecretManagerConfig {
     // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -318,8 +333,11 @@ pub fn create_test_secret_manager_config_azure_argocd(
     environment: &str,
 ) -> SecretManagerConfig {
     // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {

@@ -4,10 +4,10 @@
 
 use crate::controller::reconciler::types::{Reconciler, ReconcilerError};
 use crate::crd::{ProviderConfig, SecretManagerConfig};
+use crate::provider::SecretManagerProvider;
 use crate::provider::aws::AwsSecretManager;
 use crate::provider::azure::AzureKeyVault;
 use crate::provider::gcp::create_gcp_provider;
-use crate::provider::SecretManagerProvider;
 use anyhow::Context;
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -53,7 +53,9 @@ pub async fn create_provider(
                             {
                                 Some(email) => (Some("WorkloadIdentity"), Some(email.to_string())),
                                 None => {
-                                    warn!("WorkloadIdentity specified but serviceAccountEmail is missing, using default");
+                                    warn!(
+                                        "WorkloadIdentity specified but serviceAccountEmail is missing, using default"
+                                    );
                                     (Some("WorkloadIdentity"), None)
                                 }
                             }

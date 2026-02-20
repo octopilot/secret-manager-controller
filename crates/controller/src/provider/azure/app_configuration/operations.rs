@@ -10,7 +10,7 @@ use crate::provider::ConfigStoreProvider;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::time::Instant;
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{Instrument, debug, info, info_span};
 
 /// Azure App Configuration provider operations
 pub struct AzureAppConfigurationOperations {

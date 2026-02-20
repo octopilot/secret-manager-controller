@@ -12,11 +12,11 @@
 //! - PORT: Port to listen on (default: 1234)
 
 use axum::{
+    Router,
     extract::{Path, Query, Request, State},
     http::{Method, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
-    Router,
 };
 // Use std::time for timestamp generation instead of chrono
 // base64 encoding is handled by the secret store
@@ -30,7 +30,7 @@ use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 
 /// Format Unix timestamp (seconds) to RFC3339 format (GCP API format)
 fn format_timestamp_rfc3339(timestamp: u64) -> String {
@@ -2035,7 +2035,7 @@ async fn render_parameter_version(
         if let Some(payload_obj) = version_data.data.get("payload") {
             if let Some(data) = payload_obj.get("data").and_then(|v| v.as_str()) {
                 // Decode base64
-                use base64::{engine::general_purpose, Engine as _};
+                use base64::{Engine as _, engine::general_purpose};
                 if let Ok(decoded) = general_purpose::STANDARD.decode(data) {
                     if let Ok(rendered_value) = String::from_utf8(decoded) {
                         return Json(json!({

@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use controller::crd::SecretManagerConfig;
-use kube::{core::CustomResourceExt, Client};
+use kube::{Client, core::CustomResourceExt};
 use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;

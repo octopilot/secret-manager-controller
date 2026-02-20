@@ -31,8 +31,8 @@ pub mod types;
 // Re-export public API
 pub use file_finder::find_application_files;
 pub use parsers::{
-    parse_properties, parse_secrets, parse_secrets_with_state, ParseSecretsError, ParsedSecrets,
-    SecretEntry,
+    ParseSecretsError, ParsedSecrets, SecretEntry, parse_properties, parse_secrets,
+    parse_secrets_with_state,
 };
 pub use types::ApplicationFiles;
 
@@ -136,7 +136,7 @@ data:
 
     mod find_application_files_tests {
         use super::super::file_finder::find_application_files;
-        use super::{fs, TempDir};
+        use super::{TempDir, fs};
 
         #[tokio::test]
         async fn test_find_application_files_monolith() {
@@ -215,7 +215,7 @@ data:
     mod parse_secrets_tests {
         use super::super::parsers::parse_secrets;
         use super::super::types::ApplicationFiles;
-        use super::{fs, TempDir};
+        use super::{TempDir, fs};
 
         #[tokio::test]
         async fn test_parse_secrets_env() {
@@ -270,7 +270,7 @@ data:
     mod parse_properties_tests {
         use super::super::parsers::parse_properties;
         use super::super::types::ApplicationFiles;
-        use super::{fs, TempDir};
+        use super::{TempDir, fs};
         use std::path::PathBuf;
 
         #[tokio::test]

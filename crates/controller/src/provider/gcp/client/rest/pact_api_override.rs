@@ -46,7 +46,11 @@ impl PactModeAPIOverride for GcpSecretManagerAPIOverride {
         if let Some(endpoint) = &pact_config.endpoint {
             // GCP uses HTTP client, so we set the environment variable
             // The client will read it during initialization
-            std::env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
+            // SAFETY: Pact override runs under a test mutex that serialises all
+            // env mutations; no other thread reads or writes env vars concurrently.
+            unsafe {
+                std::env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
+            }
 
             self.validate_endpoint(endpoint)?;
 
@@ -96,8 +100,10 @@ impl PactModeAPIOverride for GcpSecretManagerAPIOverride {
     }
 
     fn cleanup(&self) -> Result<()> {
-        // Remove GCP-specific environment variables
-        std::env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+        // SAFETY: See set_var above — runs under the test mutex.
+        unsafe {
+            std::env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+        }
         Ok(())
     }
 }

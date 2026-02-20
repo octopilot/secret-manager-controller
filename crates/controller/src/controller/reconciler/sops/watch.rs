@@ -5,7 +5,7 @@
 use crate::controller::reconciler::sops::load::reload_sops_private_key_from_namespace;
 use crate::controller::reconciler::sops::rbac::verify_rbac_for_sops_watch;
 use crate::controller::reconciler::types::Reconciler;
-use futures::{pin_mut, StreamExt};
+use futures::{StreamExt, pin_mut};
 use k8s_openapi::api::core::v1::Secret;
 use kube::Api;
 use kube_runtime::watcher;
@@ -40,9 +40,15 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                 );
                 warn!("⚠️  Controller will still work but SOPS key changes won't be hot-reloaded.");
                 warn!("⚠️  To enable SOPS key hot-reloading:");
-                warn!("     1. Verify RBAC is installed: kubectl get clusterrole secret-manager-controller");
-                warn!("     2. Verify ServiceAccount is bound: kubectl get clusterrolebinding secret-manager-controller");
-                warn!("     3. Test permissions: kubectl auth can-i list secrets --as=system:serviceaccount:octopilot-system:secret-manager-controller --all-namespaces");
+                warn!(
+                    "     1. Verify RBAC is installed: kubectl get clusterrole secret-manager-controller"
+                );
+                warn!(
+                    "     2. Verify ServiceAccount is bound: kubectl get clusterrolebinding secret-manager-controller"
+                );
+                warn!(
+                    "     3. Test permissions: kubectl auth can-i list secrets --as=system:serviceaccount:octopilot-system:secret-manager-controller --all-namespaces"
+                );
                 warn!("     4. If RBAC was created after pod started, restart the pod");
                 return;
             }

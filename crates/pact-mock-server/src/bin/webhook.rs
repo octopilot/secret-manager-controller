@@ -5,11 +5,11 @@
 //! (FluxCD, ArgoCD, and future-proofing) with segregated storage.
 
 use axum::{
+    Router,
     extract::{Json, Path},
     http::StatusCode,
     response::Json as ResponseJson,
-    routing::{get, post, MethodRouter},
-    Router,
+    routing::{MethodRouter, get, post},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

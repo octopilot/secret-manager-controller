@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_ssm::Client as SsmClient;
 use std::time::Instant;
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{Instrument, debug, info, info_span};
 
 /// AWS Parameter Store provider implementation
 pub struct AwsParameterStore {
@@ -60,8 +60,12 @@ impl AwsParameterStore {
                 Self::create_irsa_config(&region, role_arn, k8s_client).await?
             }
             None => {
-                info!("No auth configuration specified, defaulting to IRSA (IAM Roles for Service Accounts)");
-                info!("Ensure pod service account has annotation: eks.amazonaws.com/role-arn=<role-arn>");
+                info!(
+                    "No auth configuration specified, defaulting to IRSA (IAM Roles for Service Accounts)"
+                );
+                info!(
+                    "Ensure pod service account has annotation: eks.amazonaws.com/role-arn=<role-arn>"
+                );
                 // Default to IRSA - the AWS SDK will automatically discover the role from the pod's service account
                 Self::create_default_config(&region).await?
             }
@@ -104,7 +108,10 @@ impl AwsParameterStore {
         // 2. AWS SDK automatically discovers the role ARN from the pod's service account
         // 3. SDK uses the pod's identity token to assume the role
 
-        info!("IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}", role_arn);
+        info!(
+            "IRSA authentication: Ensure pod service account has annotation: eks.amazonaws.com/role-arn={}",
+            role_arn
+        );
 
         let mut builder = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_config::Region::new(region.to_string()));

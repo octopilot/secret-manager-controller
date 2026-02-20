@@ -25,7 +25,7 @@ pub fn parse_secrets_from_yaml(yaml_output: &str) -> HashMap<String, String> {
                 if let Some(data) = &secret.data {
                     for (key, value) in data {
                         // Decode base64 value
-                        use base64::{engine::general_purpose, Engine as _};
+                        use base64::{Engine as _, engine::general_purpose};
                         match general_purpose::STANDARD.decode(&value.0) {
                             Ok(decoded) => match String::from_utf8(decoded) {
                                 Ok(secret_value) => {

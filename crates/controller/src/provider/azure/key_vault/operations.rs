@@ -10,7 +10,7 @@ use azure_core::credentials::TokenRequestOptions;
 use azure_security_keyvault_secrets::models::SetSecretParameters;
 use serde_json::json;
 use std::time::Instant;
-use tracing::{debug, info, info_span, Instrument};
+use tracing::{Instrument, debug, info, info_span};
 
 use super::AzureKeyVault;
 

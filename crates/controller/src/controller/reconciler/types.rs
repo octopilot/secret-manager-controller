@@ -6,7 +6,7 @@ use crate::controller::backoff::FibonacciBackoff;
 use anyhow::Result;
 use kube::Client;
 use std::collections::HashMap;
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use thiserror::Error;
 use tokio::sync::Mutex as AsyncMutex;
 

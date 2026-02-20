@@ -116,7 +116,9 @@ pub fn init_otel(config: Option<&OtelConfig>) -> Result<Option<TracerProviderHan
 
             // Check for OTLP environment variables
             if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
-                info!("OTLP environment variables detected, but OTLP exporter implementation is pending");
+                info!(
+                    "OTLP environment variables detected, but OTLP exporter implementation is pending"
+                );
                 return Ok(None);
             }
 
@@ -144,47 +146,46 @@ fn init_datadog(
     // These are read by datadog-opentelemetry during initialization
     // Note: DD_API_KEY must already be present (checked before calling this function)
 
-    // DD_SERVICE - service name
-    // Use provided value, or existing env var, or default
-    if let Some(name) = service_name {
-        std::env::set_var("DD_SERVICE", name);
-    } else if std::env::var("DD_SERVICE").is_err() {
-        std::env::set_var("DD_SERVICE", "secret-manager-controller");
-    }
+    // SAFETY: Called once during process initialisation before the Tokio runtime
+    // spawns additional threads.  Datadog SDK reads these env vars at startup.
+    // Concurrent env mutation after init is not performed.
+    unsafe {
+        // DD_SERVICE - service name
+        if let Some(name) = service_name {
+            std::env::set_var("DD_SERVICE", name);
+        } else if std::env::var("DD_SERVICE").is_err() {
+            std::env::set_var("DD_SERVICE", "secret-manager-controller");
+        }
 
-    // DD_VERSION - use BUILD_GIT_HASH from build.rs as requested
-    // Use provided value, or existing env var, or build from BUILD_GIT_HASH
-    if let Some(version) = service_version {
-        std::env::set_var("DD_VERSION", version);
-    } else if std::env::var("DD_VERSION").is_err() {
-        // Use BUILD_GIT_HASH from build.rs for version tracking
-        let build_version = format!("{}-{}", env!("CARGO_PKG_VERSION"), env!("BUILD_GIT_HASH"));
-        std::env::set_var("DD_VERSION", build_version);
-    }
+        // DD_VERSION - use BUILD_GIT_HASH from build.rs for version tracking
+        if let Some(version) = service_version {
+            std::env::set_var("DD_VERSION", version);
+        } else if std::env::var("DD_VERSION").is_err() {
+            let build_version = format!("{}-{}", env!("CARGO_PKG_VERSION"), env!("BUILD_GIT_HASH"));
+            std::env::set_var("DD_VERSION", build_version);
+        }
 
-    // DD_ENV - environment (dev, prod, etc.)
-    // Only set if provided (don't override existing env var)
-    if let Some(env) = environment {
-        std::env::set_var("DD_ENV", env);
-    }
+        // DD_ENV - environment (dev, prod, etc.)
+        if let Some(env) = environment {
+            std::env::set_var("DD_ENV", env);
+        }
 
-    // DD_SITE - Datadog site
-    // Use provided value, or existing env var, or default
-    if let Some(dd_site) = site {
-        std::env::set_var("DD_SITE", dd_site);
-    } else if std::env::var("DD_SITE").is_err() {
-        std::env::set_var("DD_SITE", "datadoghq.com");
-    }
+        // DD_SITE - Datadog site
+        if let Some(dd_site) = site {
+            std::env::set_var("DD_SITE", dd_site);
+        } else if std::env::var("DD_SITE").is_err() {
+            std::env::set_var("DD_SITE", "datadoghq.com");
+        }
 
-    // DD_API_KEY - API key (should already be set from environment, but set if provided)
-    if let Some(key) = api_key {
-        std::env::set_var("DD_API_KEY", key);
-    }
+        // DD_API_KEY
+        if let Some(key) = api_key {
+            std::env::set_var("DD_API_KEY", key);
+        }
 
-    // Set DD_TRACE_AGENT_URL if not already set
-    // Defaults to Datadog Agent on localhost:8126
-    if std::env::var("DD_TRACE_AGENT_URL").is_err() {
-        std::env::set_var("DD_TRACE_AGENT_URL", "http://localhost:8126");
+        // DD_TRACE_AGENT_URL defaults to localhost:8126
+        if std::env::var("DD_TRACE_AGENT_URL").is_err() {
+            std::env::set_var("DD_TRACE_AGENT_URL", "http://localhost:8126");
+        }
     }
 
     info!(

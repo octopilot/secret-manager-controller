@@ -215,20 +215,24 @@ pub async fn create_test_kube_client() -> Result<Client, Box<dyn std::error::Err
 /// Set up environment variables for Pact mode
 /// Also initializes PactModeConfig singleton
 pub fn setup_pact_mode(provider: &str, endpoint: &str) {
-    env::set_var("PACT_MODE", "true");
-    env::set_var("__PACT_MODE_TEST__", "true"); // Allow re-initialization in tests
+    // SAFETY: Integration tests run single-threaded (--test-threads=1) and
+    // hold a mutex guard before calling this helper.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("__PACT_MODE_TEST__", "true");
 
-    match provider {
-        "gcp" => {
-            env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
+        match provider {
+            "gcp" => {
+                env::set_var("GCP_SECRET_MANAGER_ENDPOINT", endpoint);
+            }
+            "aws" => {
+                env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
+            }
+            "azure" => {
+                env::set_var("AZURE_KEY_VAULT_ENDPOINT", endpoint);
+            }
+            _ => {}
         }
-        "aws" => {
-            env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", endpoint);
-        }
-        "azure" => {
-            env::set_var("AZURE_KEY_VAULT_ENDPOINT", endpoint);
-        }
-        _ => {}
     }
 
     // Initialize PactModeConfig singleton
@@ -244,20 +248,23 @@ pub fn setup_pact_mode(provider: &str, endpoint: &str) {
 
 /// Clean up environment variables and reset PactModeConfig
 pub fn cleanup_pact_mode(provider: &str) {
-    env::remove_var("PACT_MODE");
-    env::remove_var("__PACT_MODE_TEST__");
+    // SAFETY: See setup_pact_mode — same single-threaded test context.
+    unsafe {
+        env::remove_var("PACT_MODE");
+        env::remove_var("__PACT_MODE_TEST__");
 
-    match provider {
-        "gcp" => {
-            env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+        match provider {
+            "gcp" => {
+                env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+            }
+            "aws" => {
+                env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
+            }
+            "azure" => {
+                env::remove_var("AZURE_KEY_VAULT_ENDPOINT");
+            }
+            _ => {}
         }
-        "aws" => {
-            env::remove_var("AWS_SECRETS_MANAGER_ENDPOINT");
-        }
-        "azure" => {
-            env::remove_var("AZURE_KEY_VAULT_ENDPOINT");
-        }
-        _ => {}
     }
 
     // Reset PactModeConfig state (clear providers map)
@@ -278,9 +285,11 @@ pub fn create_gcp_reconciliation_config(
     git_repo_name: &str,
     git_repo_namespace: &str,
 ) -> SecretManagerConfig {
-    // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("GCP_SECRET_MANAGER_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("GCP_SECRET_MANAGER_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -332,9 +341,11 @@ pub fn create_aws_reconciliation_config(
     git_repo_name: &str,
     git_repo_namespace: &str,
 ) -> SecretManagerConfig {
-    // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -385,9 +396,11 @@ pub fn create_azure_reconciliation_config(
     git_repo_name: &str,
     git_repo_namespace: &str,
 ) -> SecretManagerConfig {
-    // Set up Pact mode
-    env::set_var("PACT_MODE", "true");
-    env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
+    // SAFETY: Helper called from single-threaded integration test context.
+    unsafe {
+        env::set_var("PACT_MODE", "true");
+        env::set_var("AZURE_KEY_VAULT_ENDPOINT", mock_endpoint);
+    }
 
     SecretManagerConfig {
         metadata: kube::api::ObjectMeta {
@@ -432,8 +445,8 @@ pub fn create_azure_reconciliation_config(
 
 /// Create a default SharedControllerConfig for tests
 /// Uses default values suitable for testing
-pub fn create_test_controller_config(
-) -> std::sync::Arc<tokio::sync::RwLock<controller::config::ControllerConfig>> {
+pub fn create_test_controller_config()
+-> std::sync::Arc<tokio::sync::RwLock<controller::config::ControllerConfig>> {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -513,7 +526,7 @@ pub async fn verify_gcp_secret(
     secret_name: &str,
     expected_value: Option<&str>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use reqwest::Client;
 
     let client = Client::new();

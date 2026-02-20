@@ -7,7 +7,7 @@
 //!
 //! These limits apply to the decoded secret value (not the base64-encoded payload).
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 
 /// GCP Secret Manager size limit: 64KB
 pub const GCP_SECRET_SIZE_LIMIT: usize = 64 * 1024; // 65,536 bytes

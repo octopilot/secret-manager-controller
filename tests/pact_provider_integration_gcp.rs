@@ -21,8 +21,8 @@
 mod common;
 
 use common::init_rustls;
-use controller::provider::gcp::SecretManagerREST;
 use controller::provider::SecretManagerProvider;
+use controller::provider::gcp::SecretManagerREST;
 use pact_consumer::prelude::*;
 use serde_json::json;
 use std::env;
@@ -61,10 +61,14 @@ impl TestFixture {
         Self::cleanup_all();
         tokio::task::yield_now().await;
 
-        // Set up the new test environment
-        env::set_var("PACT_MODE", "true");
-        env::set_var("GCP_SECRET_MANAGER_ENDPOINT", &endpoint);
-        env::set_var("__PACT_MODE_TEST__", "true");
+        // Set up the new test environment.
+        // SAFETY: All tests in this file hold TEST_MUTEX before calling setup(),
+        // so env mutations are serialised — no concurrent reads or writes.
+        unsafe {
+            env::set_var("PACT_MODE", "true");
+            env::set_var("GCP_SECRET_MANAGER_ENDPOINT", &endpoint);
+            env::set_var("__PACT_MODE_TEST__", "true");
+        }
 
         // Small delay to ensure environment variables are visible
         tokio::task::yield_now().await;
@@ -123,9 +127,12 @@ impl TestFixture {
 
     /// Clean up all test-related environment variables and state
     fn cleanup_all() {
-        env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
-        env::remove_var("PACT_MODE");
-        env::remove_var("__PACT_MODE_TEST__");
+        // SAFETY: See setup() — called under TEST_MUTEX.
+        unsafe {
+            env::remove_var("GCP_SECRET_MANAGER_ENDPOINT");
+            env::remove_var("PACT_MODE");
+            env::remove_var("__PACT_MODE_TEST__");
+        }
 
         // Reset PactModeConfig if it exists
         // Note: We can't fully reset OnceLock, but we can clear the config
@@ -169,7 +176,7 @@ async fn setup_pact_environment(endpoint: String) -> TestFixture {
 
 /// Helper to base64 encode a string
 fn base64_encode(s: &str) -> String {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     general_purpose::STANDARD.encode(s.as_bytes())
 }
 

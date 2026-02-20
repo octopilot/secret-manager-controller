@@ -139,7 +139,10 @@ pub async fn store_secrets(
                                     operation = "update",
                                     update_count = sync_state.update_count,
                                     "✅ Updated secret '{}' from git (GitOps source of truth) - provider={}, environment={}, update_count={}",
-                                    secret_name, provider_name, config.spec.secrets.environment, sync_state.update_count
+                                    secret_name,
+                                    provider_name,
+                                    config.spec.secrets.environment,
+                                    sync_state.update_count
                                 );
                             } else {
                                 info!(
@@ -149,7 +152,10 @@ pub async fn store_secrets(
                                     operation = "create",
                                     update_count = sync_state.update_count,
                                     "✅ Created secret '{}' from git - provider={}, environment={}, update_count={}",
-                                    secret_name, provider_name, config.spec.secrets.environment, sync_state.update_count
+                                    secret_name,
+                                    provider_name,
+                                    config.spec.secrets.environment,
+                                    sync_state.update_count
                                 );
                             }
                         } else {
@@ -161,7 +167,11 @@ pub async fn store_secrets(
                                 exists = sync_state.exists,
                                 update_count = sync_state.update_count,
                                 "✅ Secret '{}' unchanged (no update needed) - provider={}, environment={}, exists={}, update_count={}",
-                                secret_name, provider_name, config.spec.secrets.environment, sync_state.exists, sync_state.update_count
+                                secret_name,
+                                provider_name,
+                                config.spec.secrets.environment,
+                                sync_state.exists,
+                                sync_state.update_count
                             );
                         }
                     }

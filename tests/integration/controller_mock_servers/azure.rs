@@ -499,10 +499,12 @@ mod tests {
             .await
             .expect("Failed to parse response");
         assert_eq!(error_json["error"]["code"], "BadParameter");
-        assert!(error_json["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("exceeds Azure limit"));
+        assert!(
+            error_json["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("exceeds Azure limit")
+        );
     }
 
     #[tokio::test]

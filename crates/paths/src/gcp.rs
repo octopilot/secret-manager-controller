@@ -194,7 +194,9 @@ pub mod parameter_manager {
     /// Render parameter version
     /// GET /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render
     pub fn render_version(project: &str, location: &str, parameter: &str, version: &str) -> String {
-        format!("/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render")
+        format!(
+            "/v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render"
+        )
     }
 
     /// Get location

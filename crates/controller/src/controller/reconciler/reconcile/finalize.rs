@@ -140,7 +140,11 @@ pub async fn finalize_reconciliation(
 
             error!(
                 "Failed to parse reconcileInterval '{}' for resource {}: {}. Using Fibonacci backoff: {}s (error count: {})",
-                config.spec.reconcile_interval, name, e, backoff_duration.as_secs(), error_count + 1
+                config.spec.reconcile_interval,
+                name,
+                e,
+                backoff_duration.as_secs(),
+                error_count + 1
             );
 
             observability::metrics::increment_requeues_total("duration-parsing-error");

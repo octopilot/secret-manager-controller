@@ -4,14 +4,14 @@
 //! tracing, metrics, server startup, and Kubernetes client setup.
 
 use crate::config::{
-    create_shared_config, start_configmap_watch, SharedControllerConfig, SharedServerConfig,
+    SharedControllerConfig, SharedServerConfig, create_shared_config, start_configmap_watch,
 };
-use crate::controller::reconciler::{reconcile, Reconciler, TriggerSource};
-use crate::controller::server::{start_server, ServerState};
+use crate::controller::reconciler::{Reconciler, TriggerSource, reconcile};
+use crate::controller::server::{ServerState, start_server};
 use crate::crd::SecretManagerConfig;
 use crate::observability;
 use anyhow::{Context, Result};
-use kube::{api::Api, api::ListParams, Client};
+use kube::{Client, api::Api, api::ListParams};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -102,7 +102,10 @@ pub async fn initialize() -> Result<InitializationResult> {
         {
             // If init fails, it might already be initialized by datadog-opentelemetry
             // This is fine - datadog-opentelemetry sets up its own subscriber
-            warn!("Tracing subscriber init returned error (may already be initialized by Datadog): {}", e);
+            warn!(
+                "Tracing subscriber init returned error (may already be initialized by Datadog): {}",
+                e
+            );
         }
     }
 
@@ -356,7 +359,10 @@ async fn reconcile_existing_resources(
                         }
                     );
                 }
-                info!("Reconciling {} existing SecretManagerConfig resources before starting watch...", list.items.len());
+                info!(
+                    "Reconciling {} existing SecretManagerConfig resources before starting watch...",
+                    list.items.len()
+                );
 
                 // Explicitly reconcile each existing resource
                 // This ensures resources created before controller deployment are processed
@@ -415,7 +421,9 @@ async fn reconcile_existing_resources(
                     list.items.len()
                 );
             } else {
-                info!("No existing SecretManagerConfig resources found, watch will pick up new resources");
+                info!(
+                    "No existing SecretManagerConfig resources found, watch will pick up new resources"
+                );
             }
 
             Ok(hot_reload_config)

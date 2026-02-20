@@ -12,7 +12,7 @@ use crate::provider::SecretManagerProvider;
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, info_span, warn, Instrument};
+use tracing::{Instrument, debug, error, info_span, warn};
 
 use super::properties::store_properties;
 use super::secrets::store_secrets;

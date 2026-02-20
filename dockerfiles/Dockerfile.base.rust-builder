@@ -16,7 +16,7 @@ ARG TARGETARCH
 # features (e.g. edition2024, stabilised in 1.85) always compile.
 # Pin to a specific stable version here if you need fully reproducible base images;
 # otherwise "stable" tracks the current stable release.
-FROM --platform=$BUILDPLATFORM rust:stable-bookworm
+FROM --platform=$BUILDPLATFORM rust:stable
 
 # Install build dependencies
 # pkg-config: Required for finding system libraries

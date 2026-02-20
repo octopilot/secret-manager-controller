@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use controller::crd::SecretManagerConfig;
-use kube::{api::Api, api::Patch, api::PatchParams, Client};
+use kube::{Client, api::Api, api::Patch, api::PatchParams};
 use serde_json::json;
 
 /// Suspend Git pulls for a SecretManagerConfig resource

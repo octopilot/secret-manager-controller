@@ -12,11 +12,11 @@
 //! - PORT: Port to listen on (default: 1234)
 
 use axum::{
+    Router,
     extract::{Request, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::post,
-    Router,
 };
 use pact_mock_server::prelude::*;
 use pact_mock_server::secrets::common::errors::aws_error_types;
@@ -27,7 +27,7 @@ use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 
 /// AWS-specific application state
 #[derive(Clone)]
