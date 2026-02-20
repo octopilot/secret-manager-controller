@@ -30,22 +30,33 @@
 allow_k8s_contexts(['kind-secret-manager-controller'])
 
 # Configure default registry for Kind cluster
-# Tilt will automatically push docker_build images to this registry
-# The registry is set up by scripts/setup_kind.py
-default_registry('localhost:5000')
+# The registry is the shared octopilot-registry (registry-tls, HTTPS) on port 5001.
+# Set up by scripts/setup_kind.py or already running from op run / dev_up.
+# Port 5001 avoids the macOS AirPlay Receiver conflict on port 5000.
+default_registry('localhost:5001')
+
+# Ensure the registry is reachable before any build starts.
+# If localhost:5001 is down the builds fail with a confusing i/o timeout error;
+# this resource surfaces the real problem immediately.
+local_resource(
+    'registry-health',
+    cmd='docker inspect octopilot-registry --format="{{.State.Running}}" 2>/dev/null | grep -q true || (echo "ERROR: octopilot-registry is not running. Start it with: docker run -d --restart=always -p 0.0.0.0:5001:5000 -v octopilot-registry-data:/var/lib/registry --name octopilot-registry ghcr.io/octopilot/registry-tls:latest" && exit 1)',
+    serve_cmd=None,
+    labels=['infrastructure'],
+)
 
 # Suppress warnings for images that Tilt correctly substitutes
-# Tilt expands 'mock-webhook' to 'localhost:5000/mock-webhook' but the custom_build
+# Tilt expands 'mock-webhook' to 'localhost:5001/mock-webhook' but the custom_build
 # is named 'mock-webhook', which Tilt correctly matches during substitution
 # docs-site is built with docker_build and Tilt will substitute it in the deployment
 # postgres-manager is built with custom_build and Tilt will substitute it in the deployment
-update_settings(suppress_unused_image_warnings=['localhost:5000/mock-webhook', 'docs-site'])
+update_settings(suppress_unused_image_warnings=['localhost:5001/mock-webhook', 'docs-site'])
 
 # Get the directory where this Tiltfile is located
 # Since the Tiltfile is in the root directory, use '.' for relative paths
 CONTROLLER_DIR = '.'
 CONTROLLER_NAME = 'secret-manager-controller'
-IMAGE_NAME = 'localhost:5000/secret-manager-controller'
+IMAGE_NAME = 'localhost:5001/secret-manager-controller'
 BINARY_NAME = 'secret-manager-controller'
 # Build for Linux x86_64 (cross-compile for container compatibility)
 # Use target path directly, not build_artifacts
@@ -288,7 +299,7 @@ local_resource(
 # Binaries are built by build-all-binaries and copied by copy-mock-server-binaries
 # Use custom_build for better dependency control
 # Note: Image name is 'pact-mock-server' (without registry prefix)
-# Tilt will automatically prepend default_registry('localhost:5000') when substituting
+# Tilt will automatically prepend default_registry('localhost:5001') when substituting
 custom_build(
     'pact-mock-server',
     'python3 scripts/tilt/docker_build_mock_server.py',
@@ -302,7 +313,7 @@ custom_build(
     ],
     # File dependencies in deps ensure binaries exist before build
     env={
-        'IMAGE_NAME': 'localhost:5000/pact-mock-server',
+        'IMAGE_NAME': 'localhost:5001/pact-mock-server',
     },
     tag='tilt',
     live_update=[
@@ -321,7 +332,7 @@ custom_build(
 
 # Build webhook server Docker image (separate from mock servers)
 # Note: Image name is 'mock-webhook' (without registry prefix)
-# Tilt will automatically prepend default_registry('localhost:5000') when substituting
+# Tilt will automatically prepend default_registry('localhost:5001') when substituting
 custom_build(
     'mock-webhook',
     'python3 scripts/tilt/docker_build_webhook.py',
@@ -332,7 +343,7 @@ custom_build(
     ],
     # File dependencies in deps ensure binaries exist before build
     env={
-        'IMAGE_NAME': 'localhost:5000/mock-webhook',
+        'IMAGE_NAME': 'localhost:5001/mock-webhook',
     },
     tag='tilt',
     live_update=[
@@ -344,7 +355,7 @@ custom_build(
 
 # Build postgres-manager Docker image (separate from mock servers)
 # Note: Image name is 'postgres-manager' (without registry prefix)
-# Tilt will automatically prepend default_registry('localhost:5000') when substituting
+# Tilt will automatically prepend default_registry('localhost:5001') when substituting
 custom_build(
     'postgres-manager',
     'python3 scripts/tilt/docker_build_postgres_manager.py',
@@ -443,8 +454,8 @@ k8s_resource(
         '1239:1239',  # Postgres manager health endpoint
     ],
     resource_deps=['populate-migrations-configmap'],  # Wait for ConfigMap to be populated
-    # Tilt automatically detects image dependency from k8s_yaml and substitutes 'localhost:5000/postgres-manager' 
-    # with the built image reference (localhost:5000/postgres-manager:tilt-{hash})
+    # Tilt automatically detects image dependency from k8s_yaml and substitutes 'localhost:5001/postgres-manager' 
+    # with the built image reference (localhost:5001/postgres-manager:tilt-{hash})
     # PostgreSQL is deployed via k8s_yaml above (pact-broker/k8s/postgres-deployment.yaml)
     # The postgres-manager sidecar watches ConfigMap and runs migrations automatically once postgres is ready
 )

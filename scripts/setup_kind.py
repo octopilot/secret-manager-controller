@@ -18,8 +18,15 @@ from pathlib import Path
 
 # Configuration
 CLUSTER_NAME = "secret-manager-controller"
-REGISTRY_NAME = "secret-manager-controller-registry"
-REGISTRY_PORT = "5000"
+# Use the shared octopilot-registry (registry-tls, HTTPS) on port 5001.
+# Port 5000 is avoided because macOS AirPlay Receiver occupies it on macOS 12+,
+# and a plain HTTP registry requires --insecure-registries Docker daemon config
+# that is fragile and frequently misconfigured.
+REGISTRY_NAME = "octopilot-registry"
+REGISTRY_PORT = "5001"
+REGISTRY_IMAGE = "ghcr.io/octopilot/registry-tls:latest"
+# registry-tls container serves TLS on internal port 5000, exposed as host port 5001.
+REGISTRY_CONTAINER_PORT = "5000"
 
 
 def log_info(msg):
@@ -90,54 +97,53 @@ def find_registry_on_port(port):
 
 
 def setup_registry():
-    """Setup local Docker registry.
-    
-    Checks if a registry is already running on port 5000 and uses it if found.
-    Otherwise creates a new registry container.
-    
+    """Setup shared octopilot-registry (registry-tls, HTTPS on port 5001).
+
+    Preference order:
+    1. octopilot-registry is already running on port 5001 — use it as-is.
+    2. octopilot-registry container exists but is stopped — start it.
+    3. Another registry is already running on port 5001 — adopt it.
+    4. Nothing on 5001 — create a fresh octopilot-registry container.
+
     Returns the name of the registry container to use.
     """
     global REGISTRY_NAME
-    
-    # First check if our named registry exists
-    result = run_command(f"docker ps -a --format '{{{{.Names}}}}'", check=False)
-    registry_exists = REGISTRY_NAME in result.stdout
-    
+
+    # Check if our named registry already exists (running or stopped)
+    all_result = run_command(f"docker ps -a --format '{{{{.Names}}}}'", check=False)
+    registry_exists = REGISTRY_NAME in all_result.stdout
+
     if registry_exists:
-        # Check if it's running
         running_result = run_command(f"docker ps --format '{{{{.Names}}}}'", check=False)
         if REGISTRY_NAME in running_result.stdout:
-            log_info(f"Local registry '{REGISTRY_NAME}' already running")
+            log_info(f"Registry '{REGISTRY_NAME}' already running on port {REGISTRY_PORT}")
             return REGISTRY_NAME
         else:
-            log_info(f"Registry '{REGISTRY_NAME}' exists but not running, starting it...")
+            log_info(f"Registry '{REGISTRY_NAME}' exists but stopped — starting it...")
             run_command(f"docker start {REGISTRY_NAME}", check=False)
             return REGISTRY_NAME
-    
-    # Check if any registry is already running on port 5000
+
+    # Check if any registry-like container is already running on port 5001
     existing_registry = find_registry_on_port(REGISTRY_PORT)
     if existing_registry:
-        log_info(f"Found existing registry '{existing_registry}' running on port {REGISTRY_PORT}")
-        log_info(f"Using existing registry instead of creating new one")
-        # Update REGISTRY_NAME to use the existing one (for network connection)
+        log_info(f"Found existing registry '{existing_registry}' on port {REGISTRY_PORT} — adopting it")
         REGISTRY_NAME = existing_registry
         return REGISTRY_NAME
-    
-    # No registry found, create a new one
-    log_info("Creating local Docker registry...")
-    # Bind to 127.0.0.1 only to avoid conflicts with macOS Control Center on port 5000
-    # Use a named volume for persistent storage (survives container restarts)
-    # This prevents losing images when the registry container is recreated
+
+    # No registry found — create one using the octopilot registry-tls image
+    log_info(f"Creating '{REGISTRY_NAME}' using {REGISTRY_IMAGE}...")
     volume_name = f"{REGISTRY_NAME}-data"
+    run_command(f"docker volume create {volume_name}", check=False)
     run_command(
-        f"docker volume create {volume_name}",
-        check=False  # Volume may already exist
+        f"docker run -d --restart=always "
+        f"-p 0.0.0.0:{REGISTRY_PORT}:{REGISTRY_CONTAINER_PORT} "
+        f"-v {volume_name}:/var/lib/registry "
+        f"--name {REGISTRY_NAME} {REGISTRY_IMAGE}"
     )
-    run_command(
-        f"docker run -d --restart=always -p 127.0.0.1:{REGISTRY_PORT}:5000 "
-        f"-v {volume_name}:/var/lib/registry --name {REGISTRY_NAME} registry:2"
+    log_info(
+        f"✅ Created registry '{REGISTRY_NAME}' on port {REGISTRY_PORT} "
+        f"(HTTPS/TLS) with persistent volume '{volume_name}'"
     )
-    log_info(f"✅ Created registry '{REGISTRY_NAME}' on port {REGISTRY_PORT} with persistent volume '{volume_name}'")
     return REGISTRY_NAME
 
 
@@ -201,57 +207,64 @@ def configure_containerd_registry():
         log_error("Could not determine registry IP address after retries")
         log_error("Registry may not be connected to kind network")
         log_error("Please run 'python3 scripts/fix_registry_config.py' to fix this")
-        # Don't exit - try to continue with container name (may work if DNS is configured)
-        registry_endpoint = f"http://{REGISTRY_NAME}:5000"
-        log_warn(f"Falling back to container name: {registry_endpoint}")
+        # Fallback to container name — may work if Docker DNS is configured
+        registry_endpoint = f"https://{REGISTRY_NAME}:{REGISTRY_CONTAINER_PORT}"
+        log_warn(f"Falling back to container name endpoint: {registry_endpoint}")
     else:
         log_info(f"Using registry IP: {registry_ip}")
-        registry_endpoint = f"http://{registry_ip}:5000"
-    
-    # Containerd config patch to add registry mirror
-    # Use IP address for reliable connectivity (avoids DNS resolution issues)
+        # registry-tls serves TLS on its internal container port (5000)
+        registry_endpoint = f"https://{registry_ip}:{REGISTRY_CONTAINER_PORT}"
+
+    mirror_host = f"localhost:{REGISTRY_PORT}"
+
+    # Containerd config patch:
+    # 1. Mirror localhost:5001 to the registry container's HTTPS endpoint
+    # 2. Skip TLS verification for the self-signed certificate
+    # Use IP address for reliable connectivity (avoids DNS resolution issues in Kind)
     containerd_patch = f"""
-[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."{mirror_host}"]
   endpoint = ["{registry_endpoint}"]
+[plugins."io.containerd.grpc.v1.cri".registry.configs."{registry_ip}:{REGISTRY_CONTAINER_PORT}".tls]
+  insecure_skip_verify = true
 """
-    
+
     for node in nodes:
         log_info(f"Configuring containerd on node: {node}")
-        
+
         # Read current containerd config
         read_cmd = f"docker exec {node} cat /etc/containerd/config.toml"
         result = run_command(read_cmd, check=False, capture_output=True)
-        
+
         if result.returncode != 0:
             log_error(f"Could not read containerd config on {node}, skipping registry configuration")
             continue
-        
+
         config_content = result.stdout
-        
+
         # Check if registry mirror is already configured with the correct endpoint
         if f'endpoint = ["{registry_endpoint}"]' in config_content:
             log_info(f"Registry mirror already configured correctly on {node}")
             continue
-        
-        # Remove existing localhost:5000 mirror config if present (to avoid duplicates)
+
+        # Remove any existing localhost:5000 or localhost:5001 mirror config
+        # to avoid stale entries from previous setups
         lines = config_content.split('\n')
         new_lines = []
         skip_until_end = False
         for i, line in enumerate(lines):
-            if '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]' in line:
-                # Skip this section
+            if (
+                '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]' in line
+                or '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]' in line
+            ):
                 skip_until_end = True
                 continue
             if skip_until_end:
                 if line.strip().startswith('[') and 'registry.mirrors' in line:
-                    # Next section started, stop skipping
                     skip_until_end = False
                     new_lines.append(line)
                 elif line.strip() and not line.strip().startswith('endpoint') and not line.strip().startswith('  '):
-                    # Non-indented line, stop skipping
                     skip_until_end = False
                     new_lines.append(line)
-                # Otherwise continue skipping
                 continue
             new_lines.append(line)
         

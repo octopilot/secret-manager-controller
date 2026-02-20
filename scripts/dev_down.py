@@ -2,8 +2,9 @@
 """
 Development environment shutdown script.
 
-Stops Tilt, Kind cluster, and local registry for local development.
-Replaces embedded shell script in justfile.
+Stops Tilt and the Kind cluster for local development.
+Does NOT stop octopilot-registry — it is shared infrastructure used by
+multiple projects (op run, other Tilt setups) and is managed independently.
 """
 
 import subprocess
@@ -11,8 +12,9 @@ import sys
 from pathlib import Path
 
 
-# Configuration (matches setup_kind.py)
-REGISTRY_NAME = "secret-manager-controller-registry"
+# octopilot-registry is shared — dev_down deliberately does not touch it.
+# To stop it manually: docker stop octopilot-registry
+REGISTRY_NAME = "octopilot-registry"
 
 
 def log_info(msg):
@@ -68,47 +70,20 @@ def stop_kind():
 
 
 def stop_registry():
-    """Stop and remove local Docker registry."""
-    log_info("Stopping local Docker registry...")
-    
-    # Check if registry container exists
-    result = run_command(f"docker ps -a --format '{{{{.Names}}}}'", check=False, capture_output=True)
-    if REGISTRY_NAME not in result.stdout:
-        log_info("Registry container does not exist")
-        return
-    
-    # Stop the container if it's running
-    result = run_command(f"docker ps --format '{{{{.Names}}}}'", check=False, capture_output=True)
-    if REGISTRY_NAME in result.stdout:
-        log_info(f"Stopping registry container '{REGISTRY_NAME}'...")
-        stop_result = run_command(f"docker stop {REGISTRY_NAME}", check=False, capture_output=True)
-        if stop_result.returncode == 0:
-            log_info("✅ Registry container stopped")
-        else:
-            log_warn(f"Failed to stop registry: {stop_result.stderr}")
-    
-    # Remove the container
-    log_info(f"Removing registry container '{REGISTRY_NAME}'...")
-    remove_result = run_command(f"docker rm {REGISTRY_NAME}", check=False, capture_output=True)
-    if remove_result.returncode == 0:
-        log_info("✅ Registry container removed")
-    else:
-        if "No such container" in remove_result.stderr:
-            log_info("Registry container already removed")
-        else:
-            log_warn(f"Failed to remove registry: {remove_result.stderr}")
-    
-    # Remove the registry volume if it exists
-    volume_name = f"{REGISTRY_NAME}-data"
-    log_info(f"Removing registry volume '{volume_name}'...")
-    volume_result = run_command(f"docker volume rm {volume_name}", check=False, capture_output=True)
-    if volume_result.returncode == 0:
-        log_info("✅ Registry volume removed")
-    else:
-        if "No such volume" in volume_result.stderr:
-            log_info("Registry volume already removed or does not exist")
-        else:
-            log_warn(f"Failed to remove registry volume: {volume_result.stderr}")
+    """No-op: octopilot-registry is shared infrastructure and is not stopped here.
+
+    The registry is used by multiple local development setups (op run, other Tilt
+    sessions). Stopping it here would break those workflows unexpectedly.
+
+    To stop the registry manually:
+        docker stop octopilot-registry
+    To remove it entirely:
+        docker stop octopilot-registry && docker rm octopilot-registry
+    """
+    log_info(
+        f"Skipping registry teardown — '{REGISTRY_NAME}' is shared infrastructure. "
+        "Stop it manually if needed: docker stop octopilot-registry"
+    )
 
 
 def main():
