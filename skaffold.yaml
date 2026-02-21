@@ -5,14 +5,14 @@ metadata:
 
 # ── Why Dockerfiles, not buildpacks ──────────────────────────────────────────
 #
-# This workspace has two Rust crates sharing a common 'paths' library crate:
+# This workspace has two Rust crates.  The shared 'smc-paths' library is a
+# git dependency (https://github.com/octopilot/smc-paths), not an in-repo crate:
 #
-#   crates/controller/      → 4 binaries (secret-manager-controller, crdgen,
-#                              msmctl, debug-sops)
+#   crates/controller/       → 4 binaries (secret-manager-controller, crdgen,
+#                               msmctl, debug-sops)
 #   crates/pact-mock-server/ → 6 binaries (gcp-mock-server, aws-mock-server,
-#                              azure-mock-server, webhook, manager,
-#                              postgres-manager)
-#   crates/paths/           → shared library (no binary)
+#                               azure-mock-server, webhook, manager,
+#                               postgres-manager)
 #
 # Cloud Native Buildpacks produce exactly one binary per image invocation.
 # The pact-mock-server image bundles multiple binaries (GCP + AWS + Azure

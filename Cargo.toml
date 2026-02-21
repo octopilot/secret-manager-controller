@@ -2,9 +2,7 @@
 members = [
     "crates/controller",
     "crates/pact-mock-server",
-    # crates/paths is kept on disk for the [patch] override below but is no longer
-    # a workspace member — it now lives at https://github.com/octopilot/smc-paths
-    "crates/paths",
+    # smc-paths lives at https://github.com/octopilot/smc-paths (git dependency)
 ]
 resolver = "2"
 
@@ -75,7 +73,7 @@ categories = ["development-tools", "testing"]
 # Test dependencies on workspace members
 controller = { path = "crates/controller" }
 pact-mock-server = { path = "crates/pact-mock-server" }
-smc-paths = { git = "https://github.com/octopilot/smc-paths", rev = "01784df" }
+smc-paths = { git = "https://github.com/octopilot/smc-paths", rev = "d810d73" }
 
 # Common test dependencies (used by integration and unit tests)
 serde_json = "1.0"
@@ -99,9 +97,11 @@ reqwest = { version = "0.12.24", default-features = false, features = ["json", "
 [lints]
 workspace = true
 
-# ── Local development patch ───────────────────────────────────────────────────
-# When working on smc-paths alongside this repo, cargo resolves the git dep to
-# the local checkout instead of fetching from GitHub.  Remove (or comment out)
-# this section when you no longer need to edit smc-paths locally.
-[patch.'https://github.com/octopilot/smc-paths']
-smc-paths = { path = "crates/paths" }
+# ── Local development patch (optional) ───────────────────────────────────────
+# When actively developing smc-paths alongside this repo, uncomment and point
+# to your local checkout so Cargo resolves from disk instead of GitHub:
+#
+# [patch.'https://github.com/octopilot/smc-paths']
+# smc-paths = { path = "../smc-paths" }
+#
+# Remove / comment out when no longer needed.

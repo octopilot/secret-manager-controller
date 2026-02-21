@@ -6317,6 +6317,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "smc-paths"
 version = "0.1.0"
+source = "git+https://github.com/octopilot/smc-paths?rev=d810d73#d810d73c837e75ba121d7ff9a04470bcb78890af"
 
 [[package]]
 name = "socket2"
