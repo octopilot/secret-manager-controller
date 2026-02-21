@@ -141,7 +141,7 @@ sha2 = "0.10"
 # By adding reqwest as a direct dependency with rustls features, Cargo's feature
 # unification will ensure all transitive dependencies use rustls instead of OpenSSL
 # Note: We must ensure rustls-tls-webpki-roots is included to avoid system cert issues
-reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12.25", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
 
 [build-dependencies]
 # Build script dependencies
@@ -159,7 +159,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 pact_consumer = "1.4"
 # HTTP client for Pact tests (to make requests to mock server)
 # Force rustls to avoid OpenSSL dependency
-reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12.25", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["full"] }
 
 [lints]
