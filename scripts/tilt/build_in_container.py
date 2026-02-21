@@ -181,6 +181,11 @@ def main() -> None:
 
     build_cmd = (
         f"docker run --rm "
+        # Force x86_64: the target is x86_64-unknown-linux-musl.  Without this,
+        # on Apple Silicon Docker pulls the arm64 image and musl-gcc targets arm64,
+        # causing crates with x86_64 assembly (e.g. ring) to fail at compile time.
+        # On Linux x86_64 CI this is a no-op (already the native platform).
+        f"--platform linux/amd64 "
         f"-v '{workspace}:/workspace' "
         f"-w /workspace "
         f"-v {CARGO_REGISTRY_VOLUME}:/root/.cargo/registry "
@@ -237,6 +242,7 @@ def main() -> None:
     print("📋 Generating SecretManagerConfig CRD...")
     crd_cmd = (
         f"docker run --rm "
+        f"--platform linux/amd64 "  # must match the build platform
         f"-v '{workspace}:/workspace' "
         f"-w /workspace "
         f"{RUST_BUILDER_IMAGE} "
