@@ -61,7 +61,7 @@ from pathlib import Path
 #   Until that image is rebuilt and pushed, the official image is the safe default.
 RUST_BUILDER_IMAGE = os.environ.get(
     "OP_RUST_BUILDER",
-    "rust:stable",   # latest stable Rust on Debian bookworm; supports edition2024 (1.85+)
+    "rust:latest",   # tracks current stable; edition2024 requires 1.85+ (met by latest)
 )
 
 # Cargo target — musl for static binaries compatible with alpine-based dev images.
