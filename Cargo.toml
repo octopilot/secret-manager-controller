@@ -92,7 +92,7 @@ tokio = { version = "1", features = ["full"] }
 pact_consumer = "1.4"
 # HTTP client for Pact tests (to make requests to mock server)
 # Force rustls to avoid OpenSSL dependency
-reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12.25", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
 
 [lints]
 workspace = true
