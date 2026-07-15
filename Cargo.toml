@@ -10,7 +10,8 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 authors = ["Microscaler <info@microscaler.io>"]
-license = "BSL-1.1"
+# PolyForm Shield 1.0.0 is not a standard SPDX identifier, so reference the file.
+license-file = "LICENSE"
 
 # Workspace-level lint configuration
 # Individual crates can override these if needed
@@ -63,7 +64,7 @@ name = "secret-manager-controller-tests"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license.workspace = true
+license-file.workspace = true
 description = "Integration and contract tests for secret-manager-controller"
 repository = "https://github.com/octopilot/secret-manager-controller"
 keywords = ["kubernetes", "testing", "integration-tests", "pact"]
