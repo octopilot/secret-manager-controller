@@ -52,8 +52,25 @@ __pycache__/
 *.pyzw
 *.pyzwz
 *.pyzwzw
-*.pyzwzwztests/integration/fixtures/
+*.pyzwzwz
+
+# Test fixtures
+tests/integration/fixtures/
 
 # Build artifacts
 docs-site/dist/
 docs-site/node_modules/
+
+# Coverage output
+lcov.info
+*.info
+
+# Logs (extra extensions)
+*.logs
+
+# macOS AppleDouble metadata
+._*
+
+# Stray test binaries (compiled debug executables committed by mistake)
+test_gcp_debug
+test_gcp_simple
