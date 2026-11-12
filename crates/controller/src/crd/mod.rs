@@ -8,7 +8,7 @@
 //! ## Module Structure
 //!
 //! - `spec.rs` - Main CRD specification and default values
-//! - `provider.rs` - Cloud provider configuration (GCP, AWS, Azure)
+//! - `provider.rs` - Provider configuration (GCP, AWS, Azure, OpenBao)
 //! - `source.rs` - Source references and secrets/configs configuration
 //! - `status.rs` - Status types for tracking reconciliation state
 //! - `otel.rs` - OpenTelemetry configuration
@@ -32,7 +32,7 @@ pub use notifications::{
 pub use otel::OtelConfig;
 pub use provider::{
     AwsAuthConfig, AwsConfig, AzureAuthConfig, AzureConfig, GcpAuthConfig, GcpConfig,
-    ProviderConfig,
+    OpenBaoAuthConfig, OpenBaoConfig, ProviderConfig, SecretKeyRef,
 };
 pub use source::{ConfigStoreType, ConfigsConfig, GitCredentialsRef, SecretsConfig, SourceRef};
 pub use spec::{

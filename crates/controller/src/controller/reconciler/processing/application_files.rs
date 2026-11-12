@@ -303,6 +303,7 @@ pub async fn process_application_files(
             ProviderConfig::Gcp(_) => "gcp",
             ProviderConfig::Aws(_) => "aws",
             ProviderConfig::Azure(_) => "azure",
+            ProviderConfig::OpenBao(_) => "openbao",
         };
 
         let publish_span = info_span!(

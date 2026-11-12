@@ -22,11 +22,11 @@ CLUSTER_NAME = "secret-manager-controller"
 # Kind v1.35+ ships containerd v2 which has breaking changes in registry
 # config. Revisit when the tooling ecosystem stabilises around containerd v2.
 KIND_NODE_IMAGE = "kindest/node:v1.34.3"
-# Use the shared octopilot-registry (registry-tls, HTTPS) on port 5001.
+# Use the shared registry-tls container (HTTPS) on port 5001.
 # Port 5000 is avoided because macOS AirPlay Receiver occupies it on macOS 12+,
 # and a plain HTTP registry requires --insecure-registries Docker daemon config
 # that is fragile and frequently misconfigured.
-REGISTRY_NAME = "octopilot-registry"
+REGISTRY_NAME = "registry-tls"
 REGISTRY_PORT = "5001"
 REGISTRY_IMAGE = "ghcr.io/octopilot/registry-tls:latest"
 # registry-tls container serves TLS on internal port 5000, exposed as host port 5001.
@@ -101,13 +101,13 @@ def find_registry_on_port(port):
 
 
 def setup_registry():
-    """Setup shared octopilot-registry (registry-tls, HTTPS on port 5001).
+    """Setup shared registry-tls container (HTTPS on port 5001).
 
     Preference order:
-    1. octopilot-registry is already running on port 5001 — use it as-is.
-    2. octopilot-registry container exists but is stopped — start it.
+    1. registry-tls is already running on port 5001 — use it as-is.
+    2. registry-tls container exists but is stopped — start it.
     3. Another registry is already running on port 5001 — adopt it.
-    4. Nothing on 5001 — create a fresh octopilot-registry container.
+    4. Nothing on 5001 — create a fresh registry-tls container.
 
     Returns the name of the registry container to use.
     """
@@ -134,7 +134,7 @@ def setup_registry():
         REGISTRY_NAME = existing_registry
         return REGISTRY_NAME
 
-    # No registry found — create one using the octopilot registry-tls image
+    # No registry found — create one using the registry-tls image
     log_info(f"Creating '{REGISTRY_NAME}' using {REGISTRY_IMAGE}...")
     volume_name = f"{REGISTRY_NAME}-data"
     run_command(f"docker volume create {volume_name}", check=False)

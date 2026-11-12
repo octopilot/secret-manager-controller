@@ -91,6 +91,39 @@ pub fn validate_provider_config(provider: &ProviderConfig) -> Result<()> {
             // Reference: https://azure.microsoft.com/en-us/explore/global-infrastructure/geographies/
             validate_azure_location(&azure.location)?;
         }
+        ProviderConfig::OpenBao(openbao) => {
+            // OpenBao is a single in-cluster endpoint; no region/location to validate.
+            if openbao.address.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "provider.openbao.address is required but is empty"
+                ));
+            }
+            if !(openbao.address.starts_with("http://") || openbao.address.starts_with("https://")) {
+                return Err(anyhow::anyhow!(
+                    "provider.openbao.address '{}' must be an http(s) URL",
+                    openbao.address
+                ));
+            }
+            if openbao.mount.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "provider.openbao.mount is required but is empty"
+                ));
+            }
+            match &openbao.auth {
+                Some(crate::crd::OpenBaoAuthConfig::Kubernetes { role, .. }) => {
+                    if role.trim().is_empty() {
+                        return Err(anyhow::anyhow!(
+                            "provider.openbao.auth.role is required but is empty"
+                        ));
+                    }
+                }
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "provider.openbao.auth is required (Kubernetes auth with a role)"
+                    ));
+                }
+            }
+        }
     }
     Ok(())
 }

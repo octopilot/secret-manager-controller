@@ -123,7 +123,8 @@ struct UpdateSecretRequest {
 
 #[derive(Debug, Deserialize)]
 struct UpdateSecretSpec {
-    /// The resource name of the secret
+    /// The resource name of the secret (required by API shape; may be unused in handler).
+    #[allow(dead_code)]
     name: String,
     /// Labels to update (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2015,8 +2016,9 @@ async fn delete_parameter_version(
     }
 }
 
-/// RENDER parameter version
+/// RENDER parameter version (reserved for future route).
 /// Path: /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render
+#[allow(dead_code)]
 async fn render_parameter_version(
     State(app_state): State<GcpAppState>,
     Path((project, location, parameter, version)): Path<(String, String, String, String)>,

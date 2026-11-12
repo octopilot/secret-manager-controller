@@ -30,7 +30,7 @@
 allow_k8s_contexts(['kind-secret-manager-controller'])
 
 # Configure default registry for Kind cluster
-# The registry is the shared octopilot-registry (registry-tls, HTTPS) on port 5001.
+# The registry is the shared registry-tls container (HTTPS) on port 5001.
 # Set up by scripts/setup_kind.py or already running from op run / dev_up.
 # Port 5001 avoids the macOS AirPlay Receiver conflict on port 5000.
 default_registry('localhost:5001')
@@ -40,7 +40,7 @@ default_registry('localhost:5001')
 # this resource surfaces the real problem immediately.
 local_resource(
     'registry-health',
-    cmd='docker inspect octopilot-registry --format="{{.State.Running}}" 2>/dev/null | grep -q true || (echo "ERROR: octopilot-registry is not running. Start it with: docker run -d --restart=always -p 0.0.0.0:5001:5000 -v octopilot-registry-data:/var/lib/registry --name octopilot-registry ghcr.io/octopilot/registry-tls:latest" && exit 1)',
+    cmd='docker inspect registry-tls --format="{{.State.Running}}" 2>/dev/null | grep -q true || (echo "ERROR: registry-tls is not running. Start it with: docker run -d --restart=always -p 0.0.0.0:5001:5000 -v registry-tls-data:/var/lib/registry --name registry-tls ghcr.io/octopilot/registry-tls:latest" && exit 1)',
     labels=['infrastructure'],
 )
 
