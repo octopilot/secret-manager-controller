@@ -60,6 +60,17 @@ service:
   # Serves /metrics, /healthz and /readyz.
   port: 5000
 
+flux:
+  # Flux installs NetworkPolicies that let only pods in its own namespace reach
+  # source-controller. The controller downloads source artifacts from it, so with Flux
+  # sources it needs this: a NetworkPolicy, created in the Flux namespace, that admits
+  # the controller's pods to source-controller's artifact port. Without it every
+  # SecretManagerConfig fails with "Failed to download artifact".
+  # Off by default so the chart installs on clusters without Flux.
+  sourceControllerAccess:
+    enabled: false
+    namespace: flux-system
+
 # Google Cloud Managed Service for Prometheus (monitoring.googleapis.com/v1 PodMonitoring).
 podMonitoring:
   enabled: false

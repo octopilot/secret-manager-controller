@@ -4,8 +4,12 @@ kind: Pod
 metadata:
   name: {{ include "smc.fullname" . }}-test-health
   namespace: {{ .Release.Namespace }}
+  # Not the selector labels: the Service must never pick the test pod as an endpoint.
   labels:
-    {{- include "smc.labels" . | nindent 4 }}
+    helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/name: {{ include "smc.name" . }}-test
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     helm.sh/hook: test
     helm.sh/hook-delete-policy: before-hook-creation

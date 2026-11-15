@@ -1,0 +1,27 @@
+{{- if .Values.flux.sourceControllerAccess.enabled }}
+# Admits the controller to source-controller's artifact server. Flux's own policies
+# allow ingress only from inside the Flux namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "allow-%s-%s" .Release.Namespace (include "smc.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Values.flux.sourceControllerAccess.namespace }}
+  labels:
+    {{- include "smc.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: source-controller
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "smc.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: http
+          protocol: TCP
+{{- end }}
