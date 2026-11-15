@@ -1,89 +1,82 @@
-# Production Dockerfile for Secret Manager Controller
-# Multi-stage build that compiles the Rust binary inside Docker
-# This is used for production builds with docker buildx / op build.
+# syntax=docker/dockerfile:1
 #
-# RUST_BUILDER is injected by Skaffold when this image is built via skaffold.yaml
-# (which declares rust-builder-base-image as a required dependency with the alias
-# RUST_BUILDER).  When building standalone (e.g. direct docker build), the default
-# falls back to the published ghcr.io image.
+# Release image of secret-manager-controller, built by the Octopilot pipeline
+# (skaffold.yaml) and by `docker build -f dockerfiles/Dockerfile.controller .`.
+#
+# Self-contained: it needs no base image of ours to be published first. Every input
+# is pinned: images by tag and digest, sops and kustomize by version and sha256. To
+# update one, change the version and its digest or checksums together.
+#
+# The controller shells out to sops (with gpg) to decrypt and to kustomize for
+# kustomize-mode sources, so the runtime image is Debian, not distroless.
 
-ARG REGISTRY_ORG=octopilot
-ARG BUILDPLATFORM=linux/amd64
-# Allow Skaffold to inject the locally-built rust-builder-base-image reference.
-# Default falls back to the published ghcr.io image for standalone docker builds.
-ARG RUST_BUILDER=ghcr.io/${REGISTRY_ORG}/rust-builder-base-image:latest
+ARG RUST_IMAGE=rust:1.97.0-bookworm@sha256:8fa55b2f3ddf97471ab6a767bfa3f37e6bad0986ba823e75fea57e2a2a5c3073
+ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
-# Stage 1: Build the Rust binary
-FROM --platform=$BUILDPLATFORM ${RUST_BUILDER} AS builder
+# ── tools: sops and kustomize, checksum-verified ─────────────────────────────
+FROM ${RUNTIME_IMAGE} AS tools
+ARG TARGETARCH
+ARG SOPS_VERSION=3.13.3
+ARG SOPS_SHA256_AMD64=e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+ARG SOPS_SHA256_ARM64=53b0abacd38ef1b12a66d6c100956691b9cefce018d91f81e73ddf7438b94d77
+ARG KUSTOMIZE_VERSION=5.8.3
+ARG KUSTOMIZE_SHA256_AMD64=cb9e31198d3f63b44848bd0afc4c8efc56e6cfef9c93a4a39a211940e6decd61
+ARG KUSTOMIZE_SHA256_ARM64=9867b76482cfc6d25b546abc1d2b5a32bd137505aba640649b4b378f64f6d68f
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    arch="${TARGETARCH:-amd64}"; \
+    case "${arch}" in \
+        amd64) sops_sha="${SOPS_SHA256_AMD64}"; kustomize_sha="${KUSTOMIZE_SHA256_AMD64}" ;; \
+        arm64) sops_sha="${SOPS_SHA256_ARM64}"; kustomize_sha="${KUSTOMIZE_SHA256_ARM64}" ;; \
+        *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/sops \
+        "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.${arch}"; \
+    echo "${sops_sha}  /usr/local/bin/sops" | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/sops; \
+    curl -fsSL -o /tmp/kustomize.tar.gz \
+        "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_${arch}.tar.gz"; \
+    echo "${kustomize_sha}  /tmp/kustomize.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/kustomize.tar.gz -C /usr/local/bin kustomize; \
+    rm /tmp/kustomize.tar.gz
 
-# Build arguments for build.rs
-ARG BUILD_GIT_HASH=unknown
-ARG BUILD_TIMESTAMP
-ARG BUILD_DATETIME
-
-# Base image already has:
-# - Rust toolchain (1.82)
-# - Build dependencies (pkg-config, libssl-dev, git, curl)
-# - Git configuration (safe.directory, init.defaultBranch)
-# - Working directory (/build)
-# - Environment variables (CARGO_NET_GIT_FETCH_WITH_CLI, RUST_BACKTRACE)
-
-# Copy workspace Cargo files first for better layer caching
+# ── builder ──────────────────────────────────────────────────────────────────
+FROM ${RUST_IMAGE} AS builder
+WORKDIR /build
+# The root manifest is also the tests package, so tests/ must be present for cargo to
+# load the workspace; config/ is embedded by msmctl (include_str!).
 COPY Cargo.toml Cargo.lock ./
-
-# Copy crate Cargo files
-COPY crates/controller/Cargo.toml ./crates/controller/
-COPY crates/paths/Cargo.toml ./crates/paths/
-
-# Copy build script (needed for build-time git hash)
-COPY crates/controller/build.rs ./crates/controller/
-
-# Copy source code
-COPY crates/controller/src ./crates/controller/src
-COPY crates/paths/src ./crates/paths/src
+COPY crates ./crates
 COPY config ./config
-
-# Build the binary in release mode with optimizations.
-# --mount=type=cache keeps the cargo registry and compiled artifacts between
-# builds so op build / docker buildx build is fast after the first run.
-# The binary is copied out of the cached target dir before the cache is
-# unmounted; otherwise it disappears when this RUN layer completes.
-RUN --mount=type=cache,target=/root/.cargo/registry \
-    --mount=type=cache,target=/root/.cargo/git \
+COPY tests ./tests
+ARG BUILD_GIT_HASH=unknown
+# The binary is copied out of the cached target dir, which is not part of the layer.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    BUILD_GIT_HASH=${BUILD_GIT_HASH} \
-    BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
-    BUILD_DATETIME=${BUILD_DATETIME} \
-    CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    RUSTFLAGS="-C link-arg=-s" \
-    cargo build --release --locked --bin secret-manager-controller && \
-    strip target/release/secret-manager-controller && \
-    cp target/release/secret-manager-controller /build/smc-release
+    BUILD_GIT_HASH="${BUILD_GIT_HASH}" \
+    cargo build --release --locked -p controller --bin secret-manager-controller \
+    && cp target/release/secret-manager-controller /build/secret-manager-controller
 
-# Stage 2: Runtime image
-# Uses pre-built base image with all dependencies to avoid GPG issues and speed up builds
-FROM ghcr.io/${REGISTRY_ORG}/secret-manager-controller-base-image:latest
-
-# Base image already has:
-# - git, curl, gnupg, ca-certificates
-# - kustomize (v5.8.0)
-# - sops (v3.8.1)
-# - /app directory with proper permissions
-# - Environment variables (RUST_BACKTRACE, RUST_LOG)
-
-# WORKDIR is already set to /app in base image
-
-# Copy binary from builder stage (placed outside the BuildKit cache mount)
-COPY --from=builder /build/smc-release /app/secret-manager-controller
-RUN chmod +x /app/secret-manager-controller
-
-# Expose metrics port
+# ── runtime ──────────────────────────────────────────────────────────────────
+FROM ${RUNTIME_IMAGE}
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git gnupg \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 smc \
+    && useradd --uid 65532 --gid 65532 --create-home --home-dir /home/smc --shell /usr/sbin/nologin smc
+COPY --from=tools /usr/local/bin/sops /usr/local/bin/kustomize /usr/local/bin/
+COPY --from=builder /build/secret-manager-controller /app/secret-manager-controller
+# Fails the build if a tool the controller shells out to does not run.
+RUN sops --version --disable-version-check && kustomize version && gpg --version | head -1
+USER 65532:65532
+WORKDIR /app
+# gpg keeps its temporary keyrings under HOME; mount it writable when the root
+# filesystem is read-only. Source artifacts are unpacked under /tmp/smc.
+ENV HOME=/home/smc \
+    RUST_BACKTRACE=1 \
+    RUST_LOG=info
 EXPOSE 5000
-
-# Set runtime environment
-ENV RUST_BACKTRACE=1
-ENV RUST_LOG=info
-
-# Run the controller
 ENTRYPOINT ["/app/secret-manager-controller"]
-

@@ -143,6 +143,10 @@ sha2 = "0.10"
 # Note: We must ensure rustls-tls-webpki-roots is included to avoid system cert issues
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls", "rustls-tls-webpki-roots"] }
 
+# jemalloc returns freed memory to the OS promptly; glibc malloc holds on to it.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.7"
+
 [build-dependencies]
 # Build script dependencies
 chrono = "0.4"

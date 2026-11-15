@@ -1,0 +1,7 @@
+# Build context of Dockerfile.controller: only what the build copies.
+*
+!Cargo.toml
+!Cargo.lock
+!crates
+!config
+!tests
