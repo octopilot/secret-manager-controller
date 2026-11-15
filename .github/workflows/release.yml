@@ -27,5 +27,8 @@ jobs:
       mode: text
       bump: ${{ inputs.bump }}
       file: VERSION
+      # The chart is released with the image: Chart.yaml gets the same version, and its
+      # appVersion names the image.
+      charts: helm/secret-manager-controller
     secrets:
       repo_token: ${{ secrets.REPO_PAT }}

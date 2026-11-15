@@ -17,6 +17,7 @@ on:
     # not apply path filters to tag pushes, so every v* tag builds and releases.
     paths-ignore:
       - VERSION
+      - helm/secret-manager-controller/Chart.yaml # stamped by the release commit
       - "**/*.md"
       - docs/**
       - docs-site/**
@@ -44,8 +45,10 @@ jobs:
     uses: octopilot/actions/.github/workflows/pipeline.yml@main
     with:
       integration: false
-      # Same op as sesame-idam: it passes Skaffold buildArgs to Dockerfile builds.
-      op_version: v1.2.2
+      # The op release PriceWhisperer runs on.
+      op_version: v1.2.6
+      # Keep the artifacts of the last three runs.
+      keep_artifacts: 3
       # Integration artifacts: ttl.sh, the pipeline's default (integration_registry
       # empty). Released images: ghcr.io/octopilot.
       release_to_ghcr: true
