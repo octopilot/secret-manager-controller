@@ -68,7 +68,9 @@ struct GcpAppState {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CreateSecretRequest {
-    #[serde(rename = "secretId")]
+    /// Filled from the `secretId` query parameter. A `secretId` in the body is rejected,
+    /// as the real API does (the body is a Secret, which has no such field).
+    #[serde(rename = "secretId", default)]
     secret_id: String,
     replication: Replication,
     #[serde(default)]
@@ -193,8 +195,23 @@ async fn get_secret_value_access(
         project, secret
     );
 
-    // Try to retrieve latest version from in-memory store
-    if let Some(version) = app_state.secrets.get_latest(&project, &secret).await {
+    // "latest" is the most recently created version, whatever its state. Reading a
+    // disabled one fails with FAILED_PRECONDITION, as in Secret Manager.
+    let latest = app_state
+        .secrets
+        .list_versions(&project, &secret)
+        .await
+        .and_then(|versions| versions.last().cloned());
+    if latest.as_ref().is_some_and(|version| !version.enabled) {
+        return gcp_error_response(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Secret Version [projects/{project}/secrets/{secret}/versions/latest] is in DISABLED state."
+            ),
+            Some("FAILED_PRECONDITION"),
+        );
+    }
+    if let Some(version) = latest {
         info!(
             "  Found secret version {} in store: projects/{}/secrets/{}",
             version.version_id, project, secret
@@ -258,8 +275,6 @@ async fn get_secret_value_access(
 /// - GET /v1/projects/{project}/secrets/{secret}/versions (list versions)
 /// - GET /v1/projects/{project}/locations/{location}/parameters/{parameter}/versions/{version}:render
 /// - POST /v1/projects/{project}/secrets/{secret}:addVersion
-/// - POST /v1/projects/{project}/secrets/{secret}:disable
-/// - POST /v1/projects/{project}/secrets/{secret}:enable
 /// - POST /v1/projects/{project}/secrets/{secret}/versions/{version}:disable
 /// - POST /v1/projects/{project}/secrets/{secret}/versions/{version}:enable
 async fn handle_colon_routes(State(app_state): State<GcpAppState>, request: Request) -> Response {
@@ -564,49 +579,13 @@ async fn handle_colon_routes(State(app_state): State<GcpAppState>, request: Requ
                 );
             }
         } else {
-            // Secret disable: /v1/projects/{project}/secrets/{secret}:disable
-            let secret_part = parts.get(5).unwrap_or(&"unknown");
-            let secret = secret_part
-                .split(':')
-                .next()
-                .unwrap_or("unknown")
-                .to_string();
-
-            info!("  DISABLE SECRET: project={}, secret={}", project, secret);
-            info!(
-                "  📍 Request path: POST /v1/projects/{}/secrets/{}:disable",
-                project, secret
+            // Secret Manager has no secret-level :disable; only a version can be disabled.
+            // Answer as the real API does, so a client calling it fails here too.
+            return gcp_error_response(
+                StatusCode::NOT_FOUND,
+                format!("Method not found: POST {}", path),
+                Some("NOT_FOUND"),
             );
-
-            if app_state.secrets.disable_secret(&project, &secret).await {
-                let response = SecretResponse {
-                    name: PathBuilder::new()
-                        .gcp_operation(GcpOperation::GetSecret)
-                        .project(&project)
-                        .secret(&secret)
-                        .build_response_name()
-                        .unwrap_or_else(|_| format!("projects/{}/secrets/{}", project, secret)),
-                    payload: None,
-                    replication: None,
-                    create_time: None,
-                    labels: None,
-                };
-                return Json(response).into_response();
-            } else {
-                return gcp_error_response(
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "Secret not found: {}",
-                        PathBuilder::new()
-                            .gcp_operation(GcpOperation::GetSecret)
-                            .project(&project)
-                            .secret(&secret)
-                            .build_response_name()
-                            .unwrap_or_else(|_| format!("projects/{}/secrets/{}", project, secret))
-                    ),
-                    Some("NOT_FOUND"),
-                );
-            }
         }
     }
 
@@ -667,50 +646,52 @@ async fn handle_colon_routes(State(app_state): State<GcpAppState>, request: Requ
                 );
             }
         } else {
-            // Secret enable: /v1/projects/{project}/secrets/{secret}:enable
-            let secret_part = parts.get(5).unwrap_or(&"unknown");
-            let secret = secret_part
-                .split(':')
-                .next()
-                .unwrap_or("unknown")
-                .to_string();
-
-            info!("  ENABLE SECRET: project={}, secret={}", project, secret);
-            info!(
-                "  📍 Request path: POST /v1/projects/{}/secrets/{}:enable",
-                project, secret
+            // Secret Manager has no secret-level :enable; only a version can be enabled.
+            // Answer as the real API does, so a client calling it fails here too.
+            return gcp_error_response(
+                StatusCode::NOT_FOUND,
+                format!("Method not found: POST {}", path),
+                Some("NOT_FOUND"),
             );
-
-            if app_state.secrets.enable_secret(&project, &secret).await {
-                let response = SecretResponse {
-                    name: PathBuilder::new()
-                        .gcp_operation(GcpOperation::GetSecret)
-                        .project(&project)
-                        .secret(&secret)
-                        .build_response_name()
-                        .unwrap_or_else(|_| format!("projects/{}/secrets/{}", project, secret)),
-                    payload: None,
-                    replication: None,
-                    create_time: None,
-                    labels: None,
-                };
-                return Json(response).into_response();
-            } else {
-                return gcp_error_response(
-                    StatusCode::NOT_FOUND,
-                    format!(
-                        "Secret not found: {}",
-                        PathBuilder::new()
-                            .gcp_operation(GcpOperation::GetSecret)
-                            .project(&project)
-                            .secret(&secret)
-                            .build_response_name()
-                            .unwrap_or_else(|_| format!("projects/{}/secrets/{}", project, secret))
-                    ),
-                    Some("NOT_FOUND"),
-                );
-            }
         }
+    }
+
+    // Handle GET request for one version's metadata:
+    // /v1/projects/{project}/secrets/{secret}/versions/{version} ("latest" is an alias)
+    if method == Method::GET && path.contains("/versions/") && !path.contains(':') {
+        let parts: Vec<&str> = path.split('/').collect();
+        let project = parts.get(3).unwrap_or(&"unknown").to_string();
+        let secret = parts.get(5).unwrap_or(&"unknown").to_string();
+        let wanted = parts.get(7).unwrap_or(&"unknown").to_string();
+
+        let versions = app_state
+            .secrets
+            .list_versions(&project, &secret)
+            .await
+            .unwrap_or_default();
+        let version = if wanted == "latest" {
+            versions.last()
+        } else {
+            versions.iter().find(|v| v.version_id == wanted)
+        };
+        return match version {
+            Some(version) => Json(json!({
+                "name": format!(
+                    "projects/{}/secrets/{}/versions/{}",
+                    project, secret, version.version_id
+                ),
+                "createTime": format_timestamp_rfc3339(version.created_at),
+                "state": if version.enabled { "ENABLED" } else { "DISABLED" },
+            }))
+            .into_response(),
+            None => gcp_error_response(
+                StatusCode::NOT_FOUND,
+                format!(
+                    "Secret Version [projects/{project}/secrets/{secret}/versions/{wanted}] not found."
+                ),
+                Some("NOT_FOUND"),
+            ),
+        };
     }
 
     // Handle GET request to list versions
@@ -887,8 +868,27 @@ async fn list_secret_versions(
 async fn create_secret(
     State(app_state): State<GcpAppState>,
     Path(project): Path<String>,
-    Json(body): Json<CreateSecretRequest>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+    Json(mut body): Json<CreateSecretRequest>,
 ) -> Response {
+    if !body.secret_id.is_empty() {
+        return gcp_error_response(
+            StatusCode::BAD_REQUEST,
+            "Invalid JSON payload received. Unknown name \"secretId\": Cannot find field."
+                .to_string(),
+            Some("INVALID_ARGUMENT"),
+        );
+    }
+    match query.get("secretId").filter(|id| !id.is_empty()) {
+        Some(secret_id) => body.secret_id = secret_id.clone(),
+        None => {
+            return gcp_error_response(
+                StatusCode::BAD_REQUEST,
+                "Secret ID must be provided: the secretId query parameter is required".to_string(),
+                Some("INVALID_ARGUMENT"),
+            );
+        }
+    }
     info!(
         provider = "gcp",
         project = project,
@@ -2220,8 +2220,6 @@ async fn main() {
         // PATCH /v1/projects/{project}/secrets/{secret} - Update secret metadata
         // DELETE /v1/projects/{project}/secrets/{secret} - Delete secret
         // POST /v1/projects/{project}/secrets/{secret}:addVersion - Add version (must come before SECRET route)
-        // POST /v1/projects/{project}/secrets/{secret}:enable - Enable secret (must come before SECRET route)
-        // POST /v1/projects/{project}/secrets/{secret}:disable - Disable secret (must come before SECRET route)
         // These routes with colons must be handled by the fallback handler, but we need to ensure
         // they're not matched by the SECRET route first. The fallback will catch them.
         // GET /v1/projects/{project}/secrets/{secret} - Get secret metadata

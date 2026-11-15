@@ -217,10 +217,10 @@ async fn test_gcp_provider_create_secret_with_pact() {
         i.request
             .method("POST")
             .path("/v1/projects/test-project/secrets")
+            .query_param("secretId", "test-secret-name")
             .header("authorization", "Bearer test-token")
             .header("content-type", "application/json")
             .json_body(json!({
-                "secretId": "test-secret-name",
                 "replication": {
                     "automatic": {}
                 },
@@ -734,10 +734,10 @@ async fn test_gcp_provider_error_handling_forbidden() {
         i.request
             .method("POST")
             .path("/v1/projects/test-project/secrets")
+            .query_param("secretId", "test-secret-name")
             .header("authorization", "Bearer test-token")
             .header("content-type", "application/json")
             .json_body(json!({
-                "secretId": "test-secret-name",
                 "replication": {
                     "automatic": {}
                 },

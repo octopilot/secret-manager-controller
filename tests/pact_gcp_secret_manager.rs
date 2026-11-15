@@ -57,10 +57,10 @@ async fn test_gcp_create_secret_contract() {
         i.request
             .method("POST")
             .path("/v1/projects/test-project/secrets".to_string())
+            .query_param("secretId", "test-secret-name")
             .header("authorization", "Bearer test-token")
             .header("content-type", "application/json")
             .json_body(json!({
-                "secretId": "test-secret-name",
                 "replication": {
                     "automatic": {}
                 },
@@ -89,7 +89,8 @@ async fn test_gcp_create_secret_contract() {
         base_url.pop();
     }
     // Path always starts with /
-    let mock_url = format!("{base_url}/v1/projects/test-project/secrets");
+    // secretId is a query parameter of projects.secrets.create; the body is the Secret.
+    let mock_url = format!("{base_url}/v1/projects/test-project/secrets?secretId=test-secret-name");
 
     // Make the actual HTTP request to verify the contract
     let client = reqwest::Client::new();
@@ -98,7 +99,6 @@ async fn test_gcp_create_secret_contract() {
         "POST",
         &mock_url,
         Some(json!({
-            "secretId": "test-secret-name",
             "replication": {
                 "automatic": {}
             },

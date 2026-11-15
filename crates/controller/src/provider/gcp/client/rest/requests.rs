@@ -25,8 +25,9 @@ pub struct CreateSecretRequest {
     /// This will be combined with the project ID to form the full resource name:
     /// `projects/{project}/secrets/{secret_id}`
     ///
-    /// Note: GCP API expects camelCase "secretId" in JSON
-    #[serde(rename = "secretId")]
+    /// Sent as the `secretId` query parameter, never in the body: the body is a
+    /// `Secret` resource, which has no such field, and the API rejects unknown fields.
+    #[serde(skip)]
     pub secret_id: String,
     /// Replication configuration for the secret
     pub replication: Replication,

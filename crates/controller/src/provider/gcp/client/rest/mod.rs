@@ -105,6 +105,8 @@ impl SecretManagerREST {
 
         // Create HTTP client with rustls (already configured in Cargo.toml)
         let http_client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
             .build()
             .context("Failed to create HTTP client")?;
 

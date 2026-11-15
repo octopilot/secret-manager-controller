@@ -14,7 +14,7 @@ use std::time::Instant;
 use tracing::{Instrument, debug, info, info_span};
 
 use super::requests::{AddVersionRequest, CreateSecretRequest};
-use super::responses::AccessSecretVersionResponse;
+use super::responses::{AccessSecretVersionResponse, SecretVersionMetadata};
 use crate::provider::gcp::client::common::{OperationTracker, determine_operation_type};
 use crate::provider::gcp::client::rest::SecretManagerREST;
 use smc_paths::prelude::{GcpOperation, PathBuilder};
@@ -89,13 +89,22 @@ impl SecretManagerProvider for SecretManagerREST {
                     path
                 );
 
+                // secretId is a query parameter of projects.secrets.create; the body is the Secret.
+                let path = format!("{path}?secretId={}", create_request.secret_id);
                 let response = self_ref
                     .make_request("POST", &path, Some(serde_json::to_value(&create_request)?))
                     .send()
                     .await
                     .context("Failed to create secret")?;
 
-                if !response.status().is_success() {
+                // 409: the secret exists but has no readable latest version (none yet, or the
+                // latest was destroyed). Adding a version below is what is wanted.
+                if response.status() == reqwest::StatusCode::CONFLICT {
+                    debug!(
+                        "GCP secret {} already exists without a readable version; adding one",
+                        secret_name
+                    );
+                } else if !response.status().is_success() {
                     let status = response.status();
                     let error_text = response.text().await.unwrap_or_default();
                     tracker.record_error(None, &error_text);
@@ -267,6 +276,18 @@ impl SecretManagerProvider for SecretManagerREST {
                 }
                 status => {
                     let error_text = response.text().await.unwrap_or_default();
+                    // Latest version disabled or destroyed: there is no readable value.
+                    if status == reqwest::StatusCode::BAD_REQUEST
+                        && error_text.contains("FAILED_PRECONDITION")
+                    {
+                        span_clone.record("operation.success", true);
+                        span_clone.record("operation.found", false);
+                        debug!(
+                            "Latest version of GCP secret {} is not enabled; treating as no value",
+                            secret_name
+                        );
+                        return Ok(None);
+                    }
                     span_clone.record("operation.success", false);
                     span_clone.record("error.message", error_text.clone());
                     span_clone.record("operation.duration_ms", start.elapsed().as_millis() as u64);
@@ -310,70 +331,98 @@ impl SecretManagerProvider for SecretManagerREST {
     }
 
     async fn disable_secret(&self, secret_name: &str) -> Result<bool> {
-        info!("Disabling GCP secret: {}", secret_name);
-
-        // Use PathBuilder for type-safe path construction
-        let path = PathBuilder::new()
-            .gcp_operation(GcpOperation::DisableSecret)
-            .project(self.project_id())
-            .secret(secret_name)
-            .build_http_path()
-            .context("Failed to build disable secret path")?;
-        let response = self
-            .make_request("POST", &path, None)
-            .send()
-            .await
-            .context("Failed to disable secret")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-
-            // If secret doesn't exist, return false (not an error)
-            if status == 404 {
-                debug!("Secret {} does not exist, cannot disable", secret_name);
-                return Ok(false);
-            }
-
-            self.handle_error_response(status, error_text)
-                .context(format!("Failed to disable GCP secret: {}", secret_name))?;
-            unreachable!()
-        }
-
-        Ok(true)
+        self.set_latest_version_state(secret_name, false).await
     }
 
     async fn enable_secret(&self, secret_name: &str) -> Result<bool> {
-        info!("Enabling GCP secret: {}", secret_name);
+        self.set_latest_version_state(secret_name, true).await
+    }
+}
 
-        // Use PathBuilder for type-safe path construction
+impl SecretManagerREST {
+    /// Metadata of the latest version of a secret; `None` when the secret or a version
+    /// does not exist.
+    async fn latest_version(&self, secret_name: &str) -> Result<Option<SecretVersionMetadata>> {
         let path = PathBuilder::new()
-            .gcp_operation(GcpOperation::EnableSecret)
+            .gcp_operation(GcpOperation::GetVersion)
             .project(self.project_id())
             .secret(secret_name)
+            .version("latest")
             .build_http_path()
-            .context("Failed to build enable secret path")?;
+            .context("Failed to build get version path")?;
         let response = self
-            .make_request("POST", &path, None)
+            .make_request("GET", &path, None)
             .send()
             .await
-            .context("Failed to enable secret")?;
+            .context("Failed to get latest secret version")?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            self.handle_error_response(status, error_text)
+                .context(format!(
+                    "Failed to get latest version of GCP secret: {secret_name}"
+                ))?;
+            unreachable!()
+        }
+        let version: SecretVersionMetadata = response
+            .json()
+            .await
+            .context("Failed to parse secret version metadata")?;
+        Ok(Some(version))
+    }
+
+    /// Enable or disable the latest version of a secret. Secret Manager has no
+    /// secret-level enable or disable: the state belongs to each version.
+    ///
+    /// Returns `true` when the state was changed, `false` when the secret has no
+    /// version, the version is already in the wanted state, or it is destroyed.
+    async fn set_latest_version_state(&self, secret_name: &str, enable: bool) -> Result<bool> {
+        let Some(version) = self.latest_version(secret_name).await? else {
+            debug!("GCP secret {} has no version to change", secret_name);
+            return Ok(false);
+        };
+        let (wanted_from, operation, verb) = if enable {
+            ("DISABLED", GcpOperation::EnableVersion, "enable")
+        } else {
+            ("ENABLED", GcpOperation::DisableVersion, "disable")
+        };
+        if version.state != wanted_from {
+            return Ok(false);
+        }
+        let version_id = version.version_id().ok_or_else(|| {
+            anyhow::anyhow!("GCP returned a version without an id: {}", version.name)
+        })?;
+
+        info!(
+            "GCP secret {}: {} version {}",
+            secret_name, verb, version_id
+        );
+        let path = PathBuilder::new()
+            .gcp_operation(operation)
+            .project(self.project_id())
+            .secret(secret_name)
+            .version(version_id)
+            .build_http_path()
+            .context("Failed to build version state path")?;
+        let response = self
+            .make_request("POST", &path, Some(serde_json::json!({})))
+            .send()
+            .await
+            .with_context(|| format!("Failed to {verb} secret version"))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-
-            // If secret doesn't exist, return false (not an error)
-            if status == 404 {
-                debug!("Secret {} does not exist, cannot enable", secret_name);
-                return Ok(false);
-            }
-
             self.handle_error_response(status, error_text)
-                .context(format!("Failed to enable GCP secret: {}", secret_name))?;
+                .context(format!(
+                    "Failed to {verb} version {version_id} of GCP secret: {secret_name}"
+                ))?;
             unreachable!()
         }
-
         Ok(true)
     }
 }

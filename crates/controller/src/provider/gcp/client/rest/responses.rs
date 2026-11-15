@@ -155,3 +155,22 @@ pub struct TokenResponse {
     #[allow(dead_code)] // Field is required for deserialization but not used after parsing
     pub expires_in: u64,
 }
+
+/// Metadata of a secret version, as returned by
+/// `GET /v1/projects/{project}/secrets/{secret}/versions/{version}`.
+#[derive(Debug, Deserialize)]
+pub struct SecretVersionMetadata {
+    /// Resource name: `projects/{number}/secrets/{secret}/versions/{id}`
+    pub name: String,
+    /// `ENABLED`, `DISABLED` or `DESTROYED`
+    #[serde(default)]
+    pub state: String,
+}
+
+impl SecretVersionMetadata {
+    /// The numeric version id, taken from the end of the resource name.
+    #[must_use]
+    pub fn version_id(&self) -> Option<&str> {
+        self.name.rsplit('/').next().filter(|id| !id.is_empty())
+    }
+}
