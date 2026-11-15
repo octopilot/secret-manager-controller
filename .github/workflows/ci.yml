@@ -5,7 +5,9 @@ name: Release images
 # and copies that exact image, by digest, to ghcr.io/octopilot/secret-manager-controller.
 #
 # Public repository: this workflow has no pull_request trigger, so nothing here runs
-# for a fork. Pull requests get pr.yml, which has no credentials.
+# for a fork and the self-hosted runners only ever run code from main and v* tags.
+# Pull requests get pr.yml on GitHub-hosted runners with no credentials, and workflow
+# runs of outside contributors need approval (repository setting).
 on:
   push:
     branches: [main]
@@ -46,4 +48,19 @@ jobs:
       # Integration artifacts: ttl.sh, the pipeline's default (integration_registry
       # empty). Released images: ghcr.io/octopilot.
       release_to_ghcr: true
-    secrets: inherit
+      # ms02 ARC runners, the octopilot org's scale set (shared-gitops-k8s-cluster,
+      # runner group ms02: this repository only). push/tag/dispatch only, see the
+      # header. They reach the release-notes model and share the sccache store.
+      runner: '["self-hosted", "linux", "x64", "octopilot"]'
+      sccache: true
+      # The image build and push stay on a GitHub-hosted runner: ms02's uplink is
+      # slow and PriceWhisperer's releases need it.
+      artifacts_runner: ubuntu-24.04
+      # Release notes from our own model through the Cylon LLM gateway on ms02, as
+      # PriceWhisperer does (key: secret RELEASE_NOTES_API_KEY). If it is down the
+      # notes fall back to GitHub's generated ones and the release goes ahead.
+      release_notes_provider: openai
+      release_notes_base_url: http://10.177.76.236/v1
+      release_notes_model: Qwen/Qwen3.8-27B-FP8
+    secrets:
+      RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}

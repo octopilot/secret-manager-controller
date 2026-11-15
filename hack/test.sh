@@ -29,7 +29,15 @@ if ! command -v sops >/dev/null 2>&1; then
   chmod 0755 "$bin/sops"
   export PATH="$bin:$PATH"
 fi
-command -v gpg >/dev/null 2>&1 || { echo "gpg is not installed" >&2; exit 1; }
+if ! command -v gpg >/dev/null 2>&1; then
+  # Minimal self-hosted runner images have no gpg; CI runners have passwordless sudo.
+  if [ -n "${CI:-}" ] && command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq && sudo apt-get install -y -qq gnupg
+  else
+    echo "gpg is not installed" >&2
+    exit 1
+  fi
+fi
 sops --version --disable-version-check | head -1
 
 # With sops in place, a test that would skip for want of it fails instead.
