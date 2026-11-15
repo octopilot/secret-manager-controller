@@ -98,14 +98,19 @@ database:
 }
 
 /// The tests below assert how a sops failure is classified, so they need the sops
-/// binary. Where it is not installed (GitHub-hosted runners) they are skipped, so they
-/// only run on machines that have sops, such as a developer machine.
+/// binary. Without it they are skipped, unless SMC_REQUIRE_SOPS is set, as
+/// hack/test.sh does after installing sops: CI must never skip them.
 fn sops_missing() -> bool {
     let missing = std::process::Command::new("sops")
         .arg("--version")
+        .arg("--disable-version-check")
         .output()
         .is_err();
     if missing {
+        assert!(
+            std::env::var_os("SMC_REQUIRE_SOPS").is_none(),
+            "sops is required (SMC_REQUIRE_SOPS) but is not installed"
+        );
         eprintln!("skipped: sops is not installed");
     }
     missing

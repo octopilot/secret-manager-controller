@@ -1,0 +1,7 @@
+# The toolchain every build uses: CI, pull requests, developer machines, and the
+# release image (dockerfiles/Dockerfile.controller pins the same version).
+# Rust newer than this rejects sqlx-postgres 0.7.4 (a dependency of the pact mock
+# server through sea-orm 0.12); raise it together with that upgrade.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]

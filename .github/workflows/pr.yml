@@ -29,8 +29,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
-      - name: cargo test
-        run: cargo test --workspace --locked --lib --bins --tests
+      - name: Tests (installs the pinned sops)
+        run: ./hack/test.sh
       - name: CRD manifest matches the Rust types
         run: |
           cargo run --locked -p controller --bin crdgen > /tmp/crd.yaml

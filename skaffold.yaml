@@ -18,3 +18,8 @@ build:
       context: .
       docker:
         dockerfile: dockerfiles/Dockerfile.controller
+        buildArgs:
+          # Not an image build argument: BP_TEST_* under buildArgs declare the
+          # pipeline's test leg for a docker artifact. hack/test.sh installs the
+          # pinned sops, which the sops tests need, then runs the tests.
+          BP_TEST_COMMAND: ./hack/test.sh
