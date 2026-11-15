@@ -1,8 +1,9 @@
 name: Release images
 
 # Octopilot pipeline. main: lint, test and an integration build of the controller
-# image (ttl.sh). A v* tag (Trigger Release, release.yml) creates the GitHub Release
-# and copies that exact image, by digest, to ghcr.io/octopilot/secret-manager-controller.
+# image and its Helm chart (ttl.sh). A v* tag (Trigger Release, release.yml) creates
+# the GitHub Release and publishes that exact image, by digest, and the chart to
+# ghcr.io/octopilot (secret-manager-controller, secret-manager-controller-chart).
 #
 # Public repository: this workflow has no pull_request trigger, so nothing here runs
 # for a fork and the self-hosted runners only ever run code from main and v* tags.

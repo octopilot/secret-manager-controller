@@ -2,8 +2,9 @@
 # pipeline (.github/workflows/ci.yml). Tilt does not read this file: the dev images
 # (pact mock servers, docs site, postgres manager) are built by the Tiltfile.
 #
-# One artifact: the controller. It is a Dockerfile build, not a buildpack, because
-# the controller shells out to sops, gpg and kustomize, which the image must carry.
+# Two artifacts: the controller image and its Helm chart. The image is a Dockerfile
+# build, not a buildpack, because the controller shells out to sops, gpg and
+# kustomize, which the image must carry.
 # Integration builds go to ttl.sh; a v* tag copies the tested image by digest to
 # ghcr.io/octopilot/secret-manager-controller:<version>.
 apiVersion: skaffold/v4beta7
@@ -23,3 +24,10 @@ build:
           # pipeline's test leg for a docker artifact. hack/test.sh installs the
           # pinned sops, which the sops tests need, then runs the tests.
           BP_TEST_COMMAND: ./hack/test.sh
+    # The Helm chart (helm buildpack), pushed as an OCI chart:
+    #   oci://ghcr.io/octopilot/secret-manager-controller-chart/secret-manager-controller
+    # Chart.yaml carries the release version, so chart X.Y.Z deploys image vX.Y.Z.
+    - image: ghcr.io/octopilot/secret-manager-controller-chart
+      context: helm/secret-manager-controller
+      buildpacks:
+        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-a954ea2

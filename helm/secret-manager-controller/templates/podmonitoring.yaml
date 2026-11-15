@@ -1,0 +1,17 @@
+{{- if .Values.podMonitoring.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "smc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "smc.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "smc.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.podMonitoring.interval }}
+{{- end }}

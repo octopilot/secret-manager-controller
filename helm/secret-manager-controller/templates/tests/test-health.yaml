@@ -1,0 +1,44 @@
+# helm test: the controller is up, ready (its watches started) and serving metrics.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "smc.fullname" . }}-test-health
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "smc.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: test
+      image: {{ .Values.tests.image }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 32Mi
+      command: ["sh", "-ec"]
+      args:
+        - |
+          base="http://{{ include "smc.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}"
+          for path in /healthz /readyz; do
+            echo "GET ${path}"
+            curl -fsS --max-time 5 --retry 10 --retry-delay 3 --retry-all-errors -o /dev/null "${base}${path}"
+          done
+          echo "GET /metrics"
+          curl -fsS --max-time 5 "${base}/metrics" | grep -q '^secret_manager_' \
+            || { echo "no secret_manager_* metrics served" >&2; exit 1; }
+          echo ok

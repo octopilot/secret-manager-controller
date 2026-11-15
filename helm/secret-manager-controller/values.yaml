@@ -1,0 +1,91 @@
+# secret-manager-controller
+#
+# One controller per cluster. It has no leader election, so replicas stays 1 and the
+# Deployment is recreated, never surged.
+
+image:
+  repository: ghcr.io/octopilot/secret-manager-controller
+  # "" = v<appVersion>, the image released with this chart.
+  tag: ""
+  # Pin by digest (sha256:...). When set it is used instead of the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  # "" = the release's full name.
+  name: ""
+  # The cloud identity the controller runs as. No key is ever mounted.
+  #   GKE Workload Identity: iam.gke.io/gcp-service-account: <gsa>@<project>.iam.gserviceaccount.com
+  #   EKS IRSA:              eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>
+  #   AKS Workload Identity: azure.workload.identity/client-id: <client-id>
+  annotations: {}
+
+rbac:
+  create: true
+
+# RUST_LOG of the controller.
+logLevel: info
+
+# Controller settings, rendered into the ConfigMap the controller reads. Keys set here
+# are added to, or replace, the defaults in templates/configmap.yaml, for example:
+#   config:
+#     sops_private_key_secret_name: sops-private-key
+#     min_reconcile_interval_secs: "600"
+config: {}
+
+# Extra environment variables for the controller container (list of name/value or
+# name/valueFrom), for example OTEL_EXPORTER_OTLP_ENDPOINT.
+extraEnv: []
+
+# Requests are what Autopilot bills; the controller is idle between reconciles.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Source artifacts are unpacked under /tmp/smc, keyed by revision. An emptyDir: the
+# cache is rebuilt from source-controller after a restart.
+cache:
+  sizeLimit: 1Gi
+
+service:
+  # Serves /metrics, /healthz and /readyz.
+  port: 5000
+
+# Google Cloud Managed Service for Prometheus (monitoring.googleapis.com/v1 PodMonitoring).
+podMonitoring:
+  enabled: false
+  interval: 30s
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+# The image runs as uid 65532 and writes only to /tmp and its home, both emptyDirs.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# helm test: checks the controller answers /healthz and /readyz and serves its metrics.
+tests:
+  image: curlimages/curl:8.10.1

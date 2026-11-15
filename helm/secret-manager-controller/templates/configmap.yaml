@@ -1,0 +1,29 @@
+{{- $defaults := dict
+  "metrics_port" (toString .Values.service.port)
+  "server_startup_timeout_secs" "10"
+  "server_poll_interval_ms" "50"
+  "reconciliation_error_requeue_secs" "60"
+  "backoff_start_ms" "1000"
+  "backoff_max_ms" "30000"
+  "watch_restart_delay_secs" "5"
+  "watch_restart_delay_after_end_secs" "1"
+  "min_gitrepository_pull_interval_secs" "60"
+  "min_reconcile_interval_secs" "60"
+  "sops_private_key_secret_name" "sops-private-key"
+  "sops_key_watch_enabled" "true"
+  "log_level" "INFO"
+  "log_format" "json"
+  "log_enable_color" "false"
+  "enable_metrics" "true"
+-}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "smc.configMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "smc.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := mergeOverwrite $defaults (deepCopy .Values.config) }}
+  {{ $key }}: {{ $value | toString | quote }}
+  {{- end }}

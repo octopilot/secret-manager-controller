@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "smc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "smc.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{ .Values.service.port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "smc.selectorLabels" . | nindent 4 }}
