@@ -42,6 +42,9 @@ pub async fn sync_secrets(
     ReconcilerError,
 > {
     let mut secrets_synced = 0;
+    // First permanent failure. The other services are still synced, then the reconcile
+    // is reported as failed instead of Ready.
+    let mut first_failure: Option<anyhow::Error> = None;
     let mut all_synced_secrets = std::collections::HashMap::new();
     let mut all_synced_properties = std::collections::HashMap::new();
 
@@ -231,21 +234,24 @@ pub async fn sync_secrets(
                             app_files.service_name, error_msg
                         );
                         observability::metrics::increment_reconciliation_errors();
-                        // Update status to indicate failure for this service
-                        let _ = update_status_phase(
-                            ctx,
-                            config,
-                            "PartialFailure",
-                            Some(&format!(
-                                "Failed to process service {}: {}",
-                                app_files.service_name, error_msg
-                            )),
-                        )
-                        .await;
+                        if first_failure.is_none() {
+                            first_failure = Some(e.context(format!(
+                                "Failed to process service {}",
+                                app_files.service_name
+                            )));
+                        }
                     }
                 }
             }
         }
+    }
+
+    if let Some(e) = first_failure {
+        return Ok((
+            SyncResult::Error(ReconcilerError::ReconciliationFailed(e)),
+            all_synced_secrets,
+            all_synced_properties,
+        ));
     }
 
     Ok((

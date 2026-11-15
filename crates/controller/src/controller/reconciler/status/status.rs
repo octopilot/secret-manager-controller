@@ -22,22 +22,8 @@ pub async fn update_status(
     synced_secrets: &std::collections::HashMap<String, ResourceSyncState>,
     synced_properties: &std::collections::HashMap<String, ResourceSyncState>,
 ) -> Result<()> {
-    // CRITICAL: Check if status actually changed before updating
-    let current_secrets_synced = config
-        .status
-        .as_ref()
-        .and_then(|s| s.secrets_synced)
-        .unwrap_or(0);
-
-    if current_secrets_synced == secrets_synced
-        && config.status.as_ref().and_then(|s| s.phase.as_deref()) == Some("Ready")
-    {
-        debug!(
-            "Skipping status update - secrets_synced and phase unchanged: secrets_synced={}",
-            secrets_synced
-        );
-        return Ok(());
-    }
+    // Always written: it carries last_reconcile_time and next_reconcile_time, which the
+    // watch loop uses to schedule the next periodic run.
 
     let api: kube::Api<SecretManagerConfig> = kube::Api::namespaced(
         reconciler.client.clone(),

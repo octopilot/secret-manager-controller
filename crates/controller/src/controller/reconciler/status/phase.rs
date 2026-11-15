@@ -17,20 +17,18 @@ pub async fn update_status_phase(
     phase: &str,
     message: Option<&str>,
 ) -> Result<()> {
-    // CRITICAL: Check if status actually changed before updating
-    // This prevents unnecessary status updates that trigger watch events
-    let current_phase = config.status.as_ref().and_then(|s| s.phase.as_deref());
-    let current_description = config
-        .status
-        .as_ref()
-        .and_then(|s| s.description.as_deref());
-
-    // Only update if phase or description actually changed
-    if current_phase == Some(phase) && current_description == message.as_deref() {
-        debug!(
-            "Skipping status update - phase and description unchanged: phase={:?}, description={:?}",
-            phase, message
-        );
+    // A resource that is Ready for its current spec stays Ready while a periodic re-sync
+    // runs: the progress phases are not written over it. Flipping Ready to False on every
+    // interval makes the condition useless for alerting and wakes the controller for
+    // nothing. Every other phase (Failed, Pending, ...) is always written: `config` is the
+    // snapshot from the start of the reconcile, so comparing against it would skip
+    // writes that are needed.
+    let is_progress_phase = matches!(phase, "Started" | "Cloning" | "Updating");
+    let ready_for_current_spec = config.status.as_ref().is_some_and(|s| {
+        s.phase.as_deref() == Some("Ready") && s.observed_generation == config.metadata.generation
+    });
+    if is_progress_phase && ready_for_current_spec {
+        debug!("Keeping Ready during periodic re-sync (not writing phase {phase})");
         return Ok(());
     }
 

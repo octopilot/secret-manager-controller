@@ -271,8 +271,10 @@ pub async fn reconcile(
     let artifact_path = match resolve_artifact_path(&config, &ctx).await {
         Ok(ArtifactPathResult::Path(path)) => path,
         Ok(ArtifactPathResult::AwaitChange) => {
-            // Need to wait for resource - return await_change
-            return Ok(Action::await_change());
+            // The source is not there yet. await_change() would wait for a change to this
+            // resource, which never comes: check again later (the GitRepository watch
+            // also triggers as soon as it appears).
+            return Ok(Action::requeue(std::time::Duration::from_secs(60)));
         }
         Ok(ArtifactPathResult::Error(e)) => return Err(e),
         Err(e) => return Err(e),
@@ -343,21 +345,9 @@ pub async fn reconcile(
             .await;
             return Ok(Action::requeue(std::time::Duration::from_secs(30)));
         }
-        Ok((SyncResult::Error(e), synced_secrets, synced_properties)) => {
-            // Update status with synced_secrets and synced_properties even on error (preserve push state)
-            let current_count = config
-                .status
-                .as_ref()
-                .and_then(|s| s.secrets_synced)
-                .unwrap_or(0);
-            let _ = update_status(
-                &ctx,
-                &config,
-                current_count,
-                &synced_secrets,
-                &synced_properties,
-            )
-            .await;
+        Ok((SyncResult::Error(e), _synced_secrets, _synced_properties)) => {
+            // update_status writes Ready; a failed sync is reported as Failed.
+            let _ = update_status_phase(&ctx, &config, "Failed", Some(&e.to_string())).await;
             return Err(e);
         }
         Err(e) => return Err(e),

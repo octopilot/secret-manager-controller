@@ -4,14 +4,19 @@
 //! reconciliation when changes are detected.
 
 use crate::config::SharedControllerConfig;
+use crate::controller::reconciler::status::update_status_phase;
+use crate::controller::reconciler::validation::parse_kubernetes_duration;
 use crate::controller::reconciler::{Reconciler, TriggerSource, reconcile};
 use crate::controller::server::ServerState;
 use crate::crd::SecretManagerConfig;
 use crate::runtime::error_policy::{handle_reconciliation_error, handle_watch_stream_error};
 use futures::StreamExt;
-use kube::api::Api;
+use kube::api::{Api, ApiResource, DynamicObject};
+use kube::core::GroupVersionKind;
+use kube::runtime::reflector::ObjectRef;
 use kube_runtime::{Controller, controller::Action, watcher};
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, OnceLock};
 use tracing::{debug, error, info, warn};
 
 /// Run the controller watch loop
@@ -80,55 +85,76 @@ pub async fn run_watch_loop(
         let _watch_guard = watch_span.enter();
 
         info!("Starting controller watch loop...");
-        let controller_future =
-            Controller::new(configs.clone(), watcher::Config::default().any_semantic())
-                .shutdown_on_signal()
-                .run(
-                    |obj, ctx| {
-                        create_reconcile_fn(obj, ctx, controller_config_for_reconcile.clone())
-                    },
-                    |obj, error, ctx| handle_reconciliation_error(obj, error, ctx),
-                    reconciler.clone(),
-                )
-                .filter_map(move |x| {
-                    let backoff = backoff_clone.clone();
-                    let config_clone = controller_config_for_filter.clone();
-                    async move {
-                        match &x {
-                            Ok(_) => {
-                                // Successful event, reset backoff on success
-                                // Reload config in case it changed
-                                let config = config_clone.read().await;
-                                let backoff_start = config.backoff_start_ms;
-                                drop(config);
-                                backoff.store(backoff_start, std::sync::atomic::Ordering::Relaxed);
-                                debug!("watch.event.success");
-                                Some(x)
-                            }
-                            Err(e) => {
-                                // Convert the controller error to a string for classification
-                                let error_string = format!("{e:?}");
-                                // Reload config in case it changed
-                                let config = config_clone.read().await;
-                                let max_backoff = config.backoff_max_ms;
-                                let watch_restart_delay = config.watch_restart_delay_secs;
-                                drop(config);
-                                match handle_watch_stream_error(
-                                    &error_string,
-                                    &backoff,
-                                    max_backoff,
-                                    watch_restart_delay,
-                                )
-                                .await
-                                {
-                                    Some(_) => Some(x), // Continue with this event
-                                    None => None,       // Filter out to allow restart
-                                }
+        let mut controller =
+            Controller::new(configs.clone(), watcher::Config::default().any_semantic());
+        // Pair with Flux source-controller: a new artifact on a GitRepository triggers the
+        // SecretManagerConfigs that reference it, instead of waiting for reconcileInterval.
+        // Skipped when the cluster has no Flux source API (for example ArgoCD only).
+        let client = configs.clone().into_client();
+        if flux_git_repository_available(&client).await {
+            info!("Watching Flux GitRepository artifacts (source.toolkit.fluxcd.io/v1)");
+            let ar = flux_git_repository_resource();
+            let store = controller.store();
+            controller = controller.watches_with(
+                Api::<DynamicObject>::all_with(client, &ar),
+                ar,
+                watcher::Config::default(),
+                move |git_repository: DynamicObject| {
+                    configs_for_new_artifact(&git_repository, &store.state())
+                },
+            );
+        } else {
+            warn!(
+                "Flux GitRepository API (source.toolkit.fluxcd.io/v1) not found: \
+                 source changes are picked up on reconcileInterval only"
+            );
+        }
+        let controller_future = controller
+            .shutdown_on_signal()
+            .run(
+                |obj, ctx| create_reconcile_fn(obj, ctx, controller_config_for_reconcile.clone()),
+                |obj, error, ctx| handle_reconciliation_error(obj, error, ctx),
+                reconciler.clone(),
+            )
+            .filter_map(move |x| {
+                let backoff = backoff_clone.clone();
+                let config_clone = controller_config_for_filter.clone();
+                async move {
+                    match &x {
+                        Ok(_) => {
+                            // Successful event, reset backoff on success
+                            // Reload config in case it changed
+                            let config = config_clone.read().await;
+                            let backoff_start = config.backoff_start_ms;
+                            drop(config);
+                            backoff.store(backoff_start, std::sync::atomic::Ordering::Relaxed);
+                            debug!("watch.event.success");
+                            Some(x)
+                        }
+                        Err(e) => {
+                            // Convert the controller error to a string for classification
+                            let error_string = format!("{e:?}");
+                            // Reload config in case it changed
+                            let config = config_clone.read().await;
+                            let max_backoff = config.backoff_max_ms;
+                            let watch_restart_delay = config.watch_restart_delay_secs;
+                            drop(config);
+                            match handle_watch_stream_error(
+                                &error_string,
+                                &backoff,
+                                max_backoff,
+                                watch_restart_delay,
+                            )
+                            .await
+                            {
+                                Some(_) => Some(x), // Continue with this event
+                                None => None,       // Filter out to allow restart
                             }
                         }
                     }
-                })
-                .for_each(|_| futures::future::ready(()));
+                }
+            })
+            .for_each(|_| futures::future::ready(()));
 
         // Run controller - check for shutdown before and after
         controller_future.await;
@@ -276,10 +302,14 @@ fn create_reconcile_fn(
         // 1. Always reconcile if observed_generation is 0 (first reconciliation)
         // 2. Always reconcile if manual trigger annotation is present (msmctl reconcile)
         // 3. Always reconcile if this is a periodic reconciliation (requeue-triggered)
+        // A new artifact on the referenced GitRepository (see configs_for_new_artifact).
+        let is_source_trigger = take_source_trigger(&namespace, &name);
+
         if generation == observed_generation
             && observed_generation > 0
             && !is_manual_trigger
             && !is_periodic_reconcile
+            && !is_source_trigger
         {
             debug!(
                 resource.name = name.as_str(),
@@ -288,8 +318,19 @@ fn create_reconcile_fn(
                 observed_generation = observed_generation,
                 "Skipping reconciliation - only status changed, spec unchanged (no manual trigger, not periodic)"
             );
-            // Return Action::await_change() to wait for next spec change
-            return Ok(Action::await_change());
+            // Not due yet. This run was most likely caused by our own status update, and
+            // kube-runtime drops the requeue a reconcile returns when another run of the
+            // same object is already pending. Returning await_change() here therefore ended
+            // periodic reconciliation after the first success: schedule the periodic run.
+            return Ok(Action::requeue(time_until_next_reconcile(&obj)));
+        }
+
+        if is_source_trigger {
+            info!(
+                resource.name = name.as_str(),
+                resource.namespace = namespace.as_str(),
+                "Source artifact changed - reconciling"
+            );
         }
 
         if is_periodic_reconcile {
@@ -353,7 +394,7 @@ fn create_reconcile_fn(
         );
 
         let result = reconcile(
-            obj,
+            obj.clone(),
             reconciler.clone(),
             trigger_source,
             controller_config_for_reconcile.clone(),
@@ -366,9 +407,195 @@ fn create_reconcile_fn(
             }
             Err(e) => {
                 error!(resource.name = name.as_str(), error = %e, "watch.event.reconciliation_failed");
+                // Whatever failed, the resource must not keep showing Ready.
+                if let Err(status_err) =
+                    update_status_phase(&reconciler, &obj, "Failed", Some(&e.to_string())).await
+                {
+                    warn!(resource.name = name.as_str(), error = %status_err, "Failed to record Failed status");
+                }
             }
         }
 
         result
+    }
+}
+
+/// The Flux `GitRepository` API resource. v1 is the only version served since Flux 2.8.
+fn flux_git_repository_resource() -> ApiResource {
+    ApiResource::from_gvk(&GroupVersionKind {
+        group: "source.toolkit.fluxcd.io".to_string(),
+        version: "v1".to_string(),
+        kind: "GitRepository".to_string(),
+    })
+}
+
+/// Whether the cluster serves the Flux `GitRepository` API.
+async fn flux_git_repository_available(client: &kube::Client) -> bool {
+    let gvk = GroupVersionKind {
+        group: "source.toolkit.fluxcd.io".to_string(),
+        version: "v1".to_string(),
+        kind: "GitRepository".to_string(),
+    };
+    kube::discovery::pinned_kind(client, &gvk).await.is_ok()
+}
+
+/// Configs (`namespace/name`) whose source produced a new artifact and that must
+/// reconcile even though their spec is unchanged and their interval has not elapsed.
+fn source_triggers() -> &'static Mutex<HashSet<String>> {
+    static TRIGGERS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    TRIGGERS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Last artifact revision seen per GitRepository (`namespace/name`).
+fn seen_revisions() -> &'static Mutex<HashMap<String, String>> {
+    static SEEN: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    SEEN.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Take (and clear) the source trigger of a config.
+fn take_source_trigger(namespace: &str, name: &str) -> bool {
+    source_triggers()
+        .lock()
+        .is_ok_and(|mut triggers| triggers.remove(&format!("{namespace}/{name}")))
+}
+
+/// The artifact revision of a GitRepository, if it has produced an artifact.
+fn artifact_revision(git_repository: &DynamicObject) -> Option<&str> {
+    git_repository
+        .data
+        .get("status")?
+        .get("artifact")?
+        .get("revision")?
+        .as_str()
+}
+
+/// Whether `revision` differs from the last one recorded for the GitRepository `key`.
+/// Records it. The first revision seen counts as new, so a commit that landed while
+/// the controller was down is synced at startup.
+fn is_new_revision(key: &str, revision: &str) -> bool {
+    let Ok(mut seen) = seen_revisions().lock() else {
+        return true;
+    };
+    if seen.get(key).is_some_and(|last| last == revision) {
+        return false;
+    }
+    seen.insert(key.to_string(), revision.to_string());
+    true
+}
+
+/// Whether a config takes its source from the GitRepository `namespace/name`.
+fn references_git_repository(config: &SecretManagerConfig, namespace: &str, name: &str) -> bool {
+    let source = &config.spec.source_ref;
+    source.kind == "GitRepository" && source.name == name && source.namespace == namespace
+}
+
+/// Mapper of the GitRepository watch: when the artifact revision changed, mark and
+/// return every SecretManagerConfig that references the GitRepository.
+fn configs_for_new_artifact(
+    git_repository: &DynamicObject,
+    configs: &[Arc<SecretManagerConfig>],
+) -> Vec<ObjectRef<SecretManagerConfig>> {
+    let (Some(name), Some(namespace)) = (
+        git_repository.metadata.name.as_deref(),
+        git_repository.metadata.namespace.as_deref(),
+    ) else {
+        return Vec::new();
+    };
+    let Some(revision) = artifact_revision(git_repository) else {
+        return Vec::new();
+    };
+    if !is_new_revision(&format!("{namespace}/{name}"), revision) {
+        return Vec::new();
+    }
+
+    let referencing: Vec<&Arc<SecretManagerConfig>> = configs
+        .iter()
+        .filter(|config| references_git_repository(config, namespace, name))
+        .collect();
+    if let Ok(mut triggers) = source_triggers().lock() {
+        for config in &referencing {
+            triggers.insert(format!(
+                "{}/{}",
+                config.metadata.namespace.as_deref().unwrap_or("default"),
+                config.metadata.name.as_deref().unwrap_or("unknown")
+            ));
+        }
+    }
+    referencing
+        .into_iter()
+        .map(|config| ObjectRef::from_obj(config.as_ref()))
+        .collect()
+}
+
+/// Time until the next periodic reconciliation of a config: until
+/// `status.nextReconcileTime`, else one `reconcileInterval`. Never less than a second.
+fn time_until_next_reconcile(config: &SecretManagerConfig) -> std::time::Duration {
+    let interval = parse_kubernetes_duration(&config.spec.reconcile_interval)
+        .unwrap_or(std::time::Duration::from_secs(60));
+    let remaining = config
+        .status
+        .as_ref()
+        .and_then(|status| status.next_reconcile_time.as_deref())
+        .and_then(|next| chrono::DateTime::parse_from_rfc3339(next).ok())
+        .map(|next| next.with_timezone(&chrono::Utc) - chrono::Utc::now())
+        .and_then(|remaining| remaining.to_std().ok())
+        .unwrap_or(interval);
+    remaining.clamp(
+        std::time::Duration::from_secs(1),
+        interval.max(std::time::Duration::from_secs(1)),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn git_repository(namespace: &str, name: &str, revision: Option<&str>) -> DynamicObject {
+        let mut object =
+            DynamicObject::new(name, &flux_git_repository_resource()).within(namespace);
+        if let Some(revision) = revision {
+            object.data = serde_json::json!({ "status": { "artifact": { "revision": revision } } });
+        }
+        object
+    }
+
+    #[test]
+    fn artifact_revision_reads_status() {
+        assert_eq!(
+            artifact_revision(&git_repository(
+                "flux-system",
+                "repo",
+                Some("main@sha1:abc")
+            )),
+            Some("main@sha1:abc")
+        );
+        assert_eq!(
+            artifact_revision(&git_repository("flux-system", "repo", None)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_revision_is_new_once() {
+        assert!(is_new_revision("test-ns/once", "main@sha1:1"));
+        assert!(!is_new_revision("test-ns/once", "main@sha1:1"));
+        assert!(is_new_revision("test-ns/once", "main@sha1:2"));
+    }
+
+    #[test]
+    fn source_trigger_is_taken_once() {
+        source_triggers()
+            .lock()
+            .expect("lock")
+            .insert("test-ns/taken".to_string());
+        assert!(take_source_trigger("test-ns", "taken"));
+        assert!(!take_source_trigger("test-ns", "taken"));
+    }
+
+    #[test]
+    fn git_repository_without_artifact_triggers_nothing() {
+        let refs =
+            configs_for_new_artifact(&git_repository("flux-system", "no-artifact", None), &[]);
+        assert!(refs.is_empty());
     }
 }

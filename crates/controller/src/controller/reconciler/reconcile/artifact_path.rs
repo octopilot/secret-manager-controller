@@ -116,25 +116,8 @@ pub async fn resolve_artifact_path(
                             Some("GitRepository not found, waiting for creation"),
                         )
                         .await;
-                        // Return await_change() to wait for watch event instead of blocking timer loop
-                        // This prevents the kube-rs controller deadlock where timer-based reconcilers
-                        // stop firing after hitting a requeue in an error branch.
-                        //
-                        // How reconciliation resumes:
-                        // 1. Periodic timer-based reconciliation continues to work - the controller's
-                        //    timer mechanism will trigger reconciliation based on reconcile_interval
-                        //    even when Action::await_change() is returned, allowing periodic checks
-                        //    for the GitRepository to appear.
-                        // 2. When FluxCD creates the GitRepository, it updates the GitRepository's
-                        //    status field. While the controller watches SecretManagerConfig (not
-                        //    GitRepository), periodic reconciliation will detect the GitRepository
-                        //    on the next scheduled check.
-                        // 3. Manual reconciliation triggers (via annotation) will also work,
-                        //    allowing immediate retry when the GitRepository is created.
-                        //
-                        // This approach ensures timer-based reconciliation continues working for
-                        // all resources, preventing the deadlock while still allowing periodic
-                        // checks for missing dependencies.
+                        // The caller requeues; the GitRepository watch also triggers a
+                        // reconcile as soon as the GitRepository appears with an artifact.
                         return Ok(ArtifactPathResult::AwaitChange);
                     }
 

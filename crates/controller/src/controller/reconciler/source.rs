@@ -7,22 +7,18 @@ use crate::crd::SourceRef;
 use anyhow::{Context, Result};
 use tracing::{debug, info};
 
-/// Start watching for GitRepository and ArgoCD Application changes
-/// Note: The main controller watch already handles SecretManagerConfig changes.
-/// During reconciliation, the controller fetches the latest GitRepository/Application,
-/// so source changes are automatically picked up on the next reconciliation cycle.
-/// This function is a placeholder for future enhancement to directly watch source resources.
+/// Log how source changes reach the controller.
+///
+/// Flux: the controller watches `GitRepository` objects and reconciles the
+/// SecretManagerConfigs that reference one as soon as its artifact revision changes
+/// (`runtime::watch_loop`). ArgoCD `Application` sources have no watch yet and are
+/// picked up on `reconcileInterval`.
 pub fn start_source_watch(
     _reconciler: std::sync::Arc<Reconciler>,
     _configs_api: kube::Api<crate::crd::SecretManagerConfig>,
 ) {
-    // Currently, the main controller watch handles SecretManagerConfig changes,
-    // and during reconciliation, it fetches the latest GitRepository/Application.
-    // This ensures source changes are picked up without restarting the controller.
-    // Future enhancement: Directly watch GitRepository and Application resources
-    // and trigger reconciliation of referencing SecretManagerConfig resources.
     info!(
-        "Source watch: SecretManagerConfig resources are watched by main controller, source changes are picked up during reconciliation"
+        "Source changes: Flux GitRepository artifacts are watched; ArgoCD Applications are polled on reconcileInterval"
     );
 }
 
@@ -39,7 +35,7 @@ pub async fn suspend_git_repository(
 
     let ar = ApiResource::from_gvk(&kube::core::GroupVersionKind {
         group: "source.toolkit.fluxcd.io".to_string(),
-        version: "v1beta2".to_string(),
+        version: "v1".to_string(),
         kind: "GitRepository".to_string(),
     });
 

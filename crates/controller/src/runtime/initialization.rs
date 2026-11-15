@@ -193,9 +193,8 @@ pub async fn initialize() -> Result<InitializationResult> {
         info!("Hot-reload disabled (default) - configuration changes require pod restart");
     }
 
-    // Note: GitRepository and ArgoCD Application changes are handled by the main controller watch.
-    // When SecretManagerConfig resources are reconciled, they fetch the latest source,
-    // ensuring source changes are picked up without restarting the controller.
+    // Flux GitRepository artifacts are watched by the controller (runtime::watch_loop);
+    // ArgoCD Application sources are picked up on reconcileInterval.
     // SOPS secrets are watched separately for hot-reloading.
 
     // Server is already marked as ready by start_server() once it binds
