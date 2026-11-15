@@ -27,7 +27,7 @@ pub async fn get_flux_git_repository(
     source_ref: &SourceRef,
 ) -> Result<serde_json::Value> {
     // Use Kubernetes API to get GitRepository
-    // GitRepository is a CRD from source.toolkit.fluxcd.io/v1beta2
+    // GitRepository is a CRD from source.toolkit.fluxcd.io/v1 (v1beta2 was removed in Flux 2.8)
     use kube::api::ApiResource;
 
     let span = info_span!(
@@ -41,7 +41,7 @@ pub async fn get_flux_git_repository(
     async move {
         let ar = ApiResource::from_gvk(&kube::core::GroupVersionKind {
             group: "source.toolkit.fluxcd.io".to_string(),
-            version: "v1beta2".to_string(),
+            version: "v1".to_string(),
             kind: "GitRepository".to_string(),
         });
 

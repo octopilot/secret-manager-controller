@@ -26,7 +26,7 @@ pub async fn ensure_fluxcd_alert(
     // Get Alert API
     let gvk = GroupVersionKind {
         group: "notification.toolkit.fluxcd.io".to_string(),
-        version: "v1beta2".to_string(),
+        version: "v1beta3".to_string(),
         kind: "Alert".to_string(),
     };
 
@@ -77,7 +77,7 @@ pub async fn ensure_fluxcd_alert(
     }
 
     let alert = serde_json::json!({
-        "apiVersion": "notification.toolkit.fluxcd.io/v1beta2",
+        "apiVersion": "notification.toolkit.fluxcd.io/v1beta3",
         "kind": "Alert",
         "metadata": alert_metadata,
         "spec": alert_spec
@@ -137,7 +137,7 @@ pub async fn remove_fluxcd_alert(
     // Get Alert API
     let gvk = GroupVersionKind {
         group: "notification.toolkit.fluxcd.io".to_string(),
-        version: "v1beta2".to_string(),
+        version: "v1beta3".to_string(),
         kind: "Alert".to_string(),
     };
 
