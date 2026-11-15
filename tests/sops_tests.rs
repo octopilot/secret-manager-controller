@@ -97,6 +97,20 @@ database:
     assert!(!is_sops_encrypted(plain_env));
 }
 
+/// The tests below assert how a sops failure is classified, so they need the sops
+/// binary. Where it is not installed (GitHub-hosted runners) they are skipped, so they
+/// only run on machines that have sops, such as a developer machine.
+fn sops_missing() -> bool {
+    let missing = std::process::Command::new("sops")
+        .arg("--version")
+        .output()
+        .is_err();
+    if missing {
+        eprintln!("skipped: sops is not installed");
+    }
+    missing
+}
+
 #[tokio::test]
 async fn test_decrypt_dotenv_file() {
     let sops_key = get_test_sops_key();
@@ -181,6 +195,9 @@ async fn test_decrypt_yaml_file() {
 
 #[tokio::test]
 async fn test_decrypt_without_key_fails() {
+    if sops_missing() {
+        return;
+    }
     let test_dir = get_test_files_dir();
     let file_path = test_dir.join("application.secrets.env");
 
@@ -213,6 +230,9 @@ async fn test_decrypt_without_key_fails() {
 
 #[tokio::test]
 async fn test_decrypt_with_wrong_key_fails() {
+    if sops_missing() {
+        return;
+    }
     let test_dir = get_test_files_dir();
     let file_path = test_dir.join("application.secrets.env");
 
@@ -433,6 +453,9 @@ fn test_error_classification_with_exit_codes() {
 
 #[tokio::test]
 async fn test_decrypt_corrupted_file_fails() {
+    if sops_missing() {
+        return;
+    }
     // Test that corrupted SOPS content fails gracefully
     let corrupted_content = r#"sops:
     version: 3.8.0
@@ -463,6 +486,9 @@ DATABASE_URL: ENC[INVALID_FORMAT]
 
 #[tokio::test]
 async fn test_decrypt_unsupported_format_fails() {
+    if sops_missing() {
+        return;
+    }
     // Test that unsupported formats fail gracefully
     let unsupported_content = "This is not a valid SOPS format at all - just random text";
 
@@ -489,6 +515,9 @@ async fn test_decrypt_unsupported_format_fails() {
 
 #[tokio::test]
 async fn test_decrypt_with_malformed_key_fails() {
+    if sops_missing() {
+        return;
+    }
     let test_dir = get_test_files_dir();
     let file_path = test_dir.join("application.secrets.env");
 

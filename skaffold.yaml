@@ -1,96 +1,20 @@
-apiVersion: skaffold/v4beta1
+# Release shape, read by Octopilot's detect-contexts and built by `op` in the
+# pipeline (.github/workflows/ci.yml). Tilt does not read this file: the dev images
+# (pact mock servers, docs site, postgres manager) are built by the Tiltfile.
+#
+# One artifact: the controller. It is a Dockerfile build, not a buildpack, because
+# the controller shells out to sops, gpg and kustomize, which the image must carry.
+# Integration builds go to ttl.sh; a v* tag copies the tested image by digest to
+# ghcr.io/octopilot/secret-manager-controller:<version>.
+apiVersion: skaffold/v4beta7
 kind: Config
 metadata:
   name: secret-manager-controller
-
-# ── Why Dockerfiles, not buildpacks ──────────────────────────────────────────
-#
-# This workspace has two Rust crates.  The shared 'smc-paths' library is a
-# git dependency (https://github.com/octopilot/smc-paths), not an in-repo crate:
-#
-#   crates/controller/       → 4 binaries (secret-manager-controller, crdgen,
-#                               msmctl, debug-sops)
-#   crates/pact-mock-server/ → 6 binaries (gcp-mock-server, aws-mock-server,
-#                               azure-mock-server, webhook, manager,
-#                               postgres-manager)
-#
-# Cloud Native Buildpacks produce exactly one binary per image invocation.
-# The pact-mock-server image bundles multiple binaries (GCP + AWS + Azure
-# mock servers) into a single container, which requires a Dockerfile.
-#
-# Since the multi-binary requirement forces at least one Dockerfile, and all
-# artifacts share the same root workspace context, using Dockerfiles for all
-# artifacts is simpler and more consistent than mixing buildpack and
-# Dockerfile artifacts.
-#
-# The production Dockerfiles use BuildKit --mount=type=cache for the cargo
-# compile step, so op build / skaffold build is fast after the first run.
-
 build:
   local:
     useBuildkit: true
   artifacts:
-
-    # ── 1. Rust builder base image ────────────────────────────────────────
-    # Must be listed first.  All Rust compilation stages depend on this image.
-    # It pre-installs the Rust toolchain, musl target, system build tools
-    # (pkg-config, libssl-dev, musl-tools), and pre-fetches Cargo dependencies
-    # so that downstream multi-stage builds start with a warm registry cache.
-    #
-    # Skaffold injects the locally-built reference of this image into every
-    # artifact that declares `requires: [{image: rust-builder-base-image,
-    # alias: RUST_BUILDER}]`.  That alias becomes a Docker build-arg which
-    # overrides the default `FROM ghcr.io/octopilot/rust-builder-base-image`
-    # fallback in each Dockerfile.
-    - image: rust-builder-base-image
-      context: .
-      docker:
-        dockerfile: dockerfiles/Dockerfile.base.rust-builder
-
-    # ── 2. Secret Manager Controller ─────────────────────────────────────
-    # Multi-stage: compiles secret-manager-controller from source.
-    # Depends on rust-builder-base-image (injected via RUST_BUILDER build-arg).
-    - image: secret-manager-controller
+    - image: ghcr.io/octopilot/secret-manager-controller
       context: .
       docker:
         dockerfile: dockerfiles/Dockerfile.controller
-        buildArgs:
-          REGISTRY_ORG: "{{.REGISTRY_ORG | default \"octopilot\"}}"
-      requires:
-        - image: rust-builder-base-image
-          alias: RUST_BUILDER
-
-    # ── 3. Pact Mock Servers ──────────────────────────────────────────────
-    # Bundles gcp-mock-server, aws-mock-server, azure-mock-server, webhook,
-    # and the manager sidecar into a single image.
-    # Uses the multi-stage .build Dockerfile (compiles from source with
-    # BuildKit cache mounts).  The plain Dockerfile.pact-mock-server is
-    # kept for Tilt dev-loop binary injection.
-    # Depends on rust-builder-base-image (injected via RUST_BUILDER build-arg).
-    - image: pact-mock-server
-      context: .
-      docker:
-        dockerfile: dockerfiles/Dockerfile.pact-mock-server.build
-        buildArgs:
-          REGISTRY_ORG: "{{.REGISTRY_ORG | default \"octopilot\"}}"
-      requires:
-        - image: rust-builder-base-image
-          alias: RUST_BUILDER
-
-    # ── 4. Mock Webhook ───────────────────────────────────────────────────
-    - image: mock-webhook
-      context: .
-      docker:
-        dockerfile: dockerfiles/Dockerfile.pact-webhook.optimized
-
-    # ── 5. Postgres Manager ───────────────────────────────────────────────
-    - image: postgres-manager
-      context: .
-      docker:
-        dockerfile: dockerfiles/Dockerfile.postgres-manager.optimized
-
-    # ── 6. Documentation Site ─────────────────────────────────────────────
-    - image: docs-site
-      context: .
-      docker:
-        dockerfile: dockerfiles/Dockerfile.docs-site
