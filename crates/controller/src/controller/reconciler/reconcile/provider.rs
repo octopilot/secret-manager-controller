@@ -113,6 +113,19 @@ pub async fn create_provider(
                 }
             }
         }
+        ProviderConfig::OpenBao(openbao_config) => {
+            match crate::provider::openbao::create_openbao_provider(openbao_config, &ctx.client)
+                .await
+            {
+                Ok(openbao_provider) => openbao_provider,
+                Err(e) => {
+                    error!("Failed to create OpenBao client: {}", e);
+                    return Err(ReconcilerError::ReconciliationFailed(
+                        e.context("Failed to create OpenBao client"),
+                    ));
+                }
+            }
+        }
     };
 
     Ok(provider)

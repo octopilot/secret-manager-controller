@@ -68,6 +68,11 @@ pub async fn status_command(client: Client, name: String, namespace: Option<Stri
             println!("  Type: Azure");
             println!("  Vault Name: {}", azure.vault_name);
         }
+        controller::crd::ProviderConfig::OpenBao(openbao) => {
+            println!("  Type: OpenBao");
+            println!("  Address: {}", openbao.address);
+            println!("  Mount: {}", openbao.mount);
+        }
     }
 
     // Source ref

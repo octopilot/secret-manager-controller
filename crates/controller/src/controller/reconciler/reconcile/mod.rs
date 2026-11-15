@@ -52,6 +52,7 @@ pub async fn reconcile(
         ProviderConfig::Gcp(_) => "gcp",
         ProviderConfig::Aws(_) => "aws",
         ProviderConfig::Azure(_) => "azure",
+        ProviderConfig::OpenBao(_) => "openbao",
     };
     let span = tracing::span!(
         tracing::Level::INFO,
@@ -298,6 +299,7 @@ pub async fn reconcile(
             ProviderConfig::Gcp(_) => "Reconciling properties to Parameter Manager",
             ProviderConfig::Aws(_) => "Reconciling properties to Parameter Store",
             ProviderConfig::Azure(_) => "Reconciling properties to App Configuration",
+            ProviderConfig::OpenBao(_) => "Reconciling properties to OpenBao",
         }
     } else {
         // Syncing to secret stores (sensitive values)
@@ -305,6 +307,7 @@ pub async fn reconcile(
             ProviderConfig::Gcp(_) => "Reconciling secrets to Secret Manager",
             ProviderConfig::Aws(_) => "Reconciling secrets to Secrets Manager",
             ProviderConfig::Azure(_) => "Reconciling secrets to Key Vault",
+            ProviderConfig::OpenBao(_) => "Reconciling secrets to OpenBao",
         }
     };
 

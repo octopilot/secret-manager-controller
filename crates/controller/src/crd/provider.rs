@@ -1,6 +1,6 @@
 //! # Provider Configuration
 //!
-//! Cloud provider configuration types for GCP, AWS, and Azure.
+//! Provider configuration types for GCP, AWS, Azure, and OpenBao.
 
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,9 @@ pub enum ProviderConfig {
     /// Microsoft Azure Key Vault
     #[serde(rename = "azure")]
     Azure(AzureConfig),
+    /// In-cluster OpenBao (KV v2)
+    #[serde(rename = "openbao")]
+    OpenBao(OpenBaoConfig),
 }
 
 impl JsonSchema for ProviderConfig {
@@ -35,6 +38,7 @@ impl JsonSchema for ProviderConfig {
         let gcp_schema = GcpConfig::json_schema(schema_gen);
         let aws_schema = AwsConfig::json_schema(schema_gen);
         let azure_schema = AzureConfig::json_schema(schema_gen);
+        let openbao_schema = OpenBaoConfig::json_schema(schema_gen);
 
         // Convert schemas to JSON values for inclusion in the parent schema
         let mut gcp_json =
@@ -43,6 +47,8 @@ impl JsonSchema for ProviderConfig {
             serde_json::to_value(&aws_schema).unwrap_or_else(|_| serde_json::json!({}));
         let mut azure_json =
             serde_json::to_value(&azure_schema).unwrap_or_else(|_| serde_json::json!({}));
+        let openbao_json =
+            serde_json::to_value(&openbao_schema).unwrap_or_else(|_| serde_json::json!({}));
 
         // Manually add pattern validation to location/region fields
         // This is done by modifying the schema JSON after generation
@@ -87,17 +93,19 @@ impl JsonSchema for ProviderConfig {
             "properties": {
                 "type": {
                     "type": "string",
-                    "enum": ["gcp", "aws", "azure"],
-                    "description": "Provider type (optional, ignored during deserialization - use gcp/aws/azure fields instead)"
+                    "enum": ["gcp", "aws", "azure", "openbao"],
+                    "description": "Provider type (optional, ignored during deserialization - use gcp/aws/azure/openbao fields instead)"
                 },
                 "gcp": gcp_json,
                 "aws": aws_json,
-                "azure": azure_json
+                "azure": azure_json,
+                "openbao": openbao_json
             },
             "oneOf": [
                 {"required": ["gcp"]},
                 {"required": ["aws"]},
-                {"required": ["azure"]}
+                {"required": ["azure"]},
+                {"required": ["openbao"]}
             ]
         });
         Schema::try_from(schema_value).expect("Failed to create Schema for ProviderConfig")
@@ -118,7 +126,8 @@ impl<'de> serde::Deserialize<'de> for ProviderConfig {
             type Value = ProviderConfig;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a provider config object with gcp, aws, or azure field")
+                formatter
+                    .write_str("a provider config object with gcp, aws, azure, or openbao field")
             }
 
             fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
@@ -128,6 +137,7 @@ impl<'de> serde::Deserialize<'de> for ProviderConfig {
                 let mut gcp: Option<GcpConfig> = None;
                 let mut aws: Option<AwsConfig> = None;
                 let mut azure: Option<AzureConfig> = None;
+                let mut openbao: Option<OpenBaoConfig> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
@@ -153,6 +163,12 @@ impl<'de> serde::Deserialize<'de> for ProviderConfig {
                             }
                             azure = Some(map.next_value()?);
                         }
+                        "openbao" => {
+                            if openbao.is_some() {
+                                return Err(de::Error::duplicate_field("openbao"));
+                            }
+                            openbao = Some(map.next_value()?);
+                        }
                         "type" => {
                             // Ignore the "type" field - it's redundant
                             let _: serde::de::IgnoredAny = map.next_value()?;
@@ -164,11 +180,14 @@ impl<'de> serde::Deserialize<'de> for ProviderConfig {
                     }
                 }
 
-                match (gcp, aws, azure) {
-                    (Some(config), None, None) => Ok(ProviderConfig::Gcp(config)),
-                    (None, Some(config), None) => Ok(ProviderConfig::Aws(config)),
-                    (None, None, Some(config)) => Ok(ProviderConfig::Azure(config)),
-                    (None, None, None) => Err(de::Error::missing_field("gcp, aws, or azure")),
+                match (gcp, aws, azure, openbao) {
+                    (Some(config), None, None, None) => Ok(ProviderConfig::Gcp(config)),
+                    (None, Some(config), None, None) => Ok(ProviderConfig::Aws(config)),
+                    (None, None, Some(config), None) => Ok(ProviderConfig::Azure(config)),
+                    (None, None, None, Some(config)) => Ok(ProviderConfig::OpenBao(config)),
+                    (None, None, None, None) => {
+                        Err(de::Error::missing_field("gcp, aws, azure, or openbao"))
+                    }
                     _ => Err(de::Error::custom("multiple provider types specified")),
                 }
             }
@@ -348,5 +367,139 @@ impl JsonSchema for AzureAuthConfig {
             "required": ["authType", "clientId"]
         });
         Schema::try_from(schema_value).expect("Failed to create Schema for AzureAuthConfig")
+    }
+}
+
+/// OpenBao configuration for the KV v2 secrets engine.
+///
+/// Unlike the cloud providers, OpenBao is a single in-cluster endpoint with no
+/// region/location concept, so no `location` field is present.
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenBaoConfig {
+    /// OpenBao API base URL, e.g. `https://openbao.openbao.svc:8200`.
+    pub address: String,
+    /// KV v2 mount name. Defaults to `secret`.
+    #[serde(default = "default_openbao_mount")]
+    pub mount: String,
+    /// Optional OpenBao namespace (sent as `X-Vault-Namespace`).
+    #[serde(default)]
+    pub namespace: Option<String>,
+    /// Optional reference to a Kubernetes Secret holding a custom CA for TLS.
+    #[serde(default)]
+    pub tls_ca_secret_ref: Option<SecretKeyRef>,
+    /// Authentication configuration. Kubernetes auth is required.
+    #[serde(default)]
+    pub auth: Option<OpenBaoAuthConfig>,
+}
+
+/// Default OpenBao KV v2 mount name.
+pub fn default_openbao_mount() -> String {
+    "secret".to_string()
+}
+
+/// Reference to a single key within a Kubernetes Secret.
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretKeyRef {
+    /// Name of the Kubernetes Secret.
+    pub name: String,
+    /// Key within the Secret's data.
+    pub key: String,
+}
+
+/// OpenBao authentication configuration.
+///
+/// Only the Kubernetes auth method is supported (recommended for in-cluster
+/// workloads): the controller's ServiceAccount JWT is exchanged for a
+/// short-lived OpenBao token.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", tag = "authType")]
+pub enum OpenBaoAuthConfig {
+    /// Authenticate via the OpenBao Kubernetes auth method.
+    Kubernetes {
+        /// OpenBao Kubernetes auth role bound to the controller ServiceAccount.
+        role: String,
+        /// Path to the projected ServiceAccount token. Defaults to the standard
+        /// in-pod token path when omitted.
+        #[serde(default, rename = "serviceAccountTokenPath")]
+        service_account_token_path: Option<String>,
+    },
+}
+
+impl JsonSchema for OpenBaoAuthConfig {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("OpenBaoAuthConfig")
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+        // Single schema (not oneOf) to avoid nullable issues, matching the other
+        // provider auth configs.
+        let schema_value = serde_json::json!({
+            "type": "object",
+            "description": "OpenBao authentication configuration - only supports the Kubernetes auth method",
+            "properties": {
+                "authType": {
+                    "type": "string",
+                    "enum": ["kubernetes"],
+                    "description": "Authentication type: 'kubernetes' for the OpenBao Kubernetes auth method"
+                },
+                "role": {
+                    "type": "string",
+                    "description": "OpenBao Kubernetes auth role bound to the controller ServiceAccount"
+                },
+                "serviceAccountTokenPath": {
+                    "type": "string",
+                    "description": "Path to the projected ServiceAccount token (defaults to the standard in-pod path)"
+                }
+            },
+            "required": ["authType", "role"]
+        });
+        Schema::try_from(schema_value).expect("Failed to create Schema for OpenBaoAuthConfig")
+    }
+}
+
+#[cfg(test)]
+mod openbao_tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_openbao_with_default_mount() {
+        let yaml = r"
+openbao:
+  address: https://openbao.openbao.svc:8200
+  auth:
+    authType: kubernetes
+    role: secret-manager-controller
+";
+        let cfg: ProviderConfig = serde_yaml::from_str(yaml).expect("deserialize openbao");
+        match cfg {
+            ProviderConfig::OpenBao(ob) => {
+                assert_eq!(ob.address, "https://openbao.openbao.svc:8200");
+                assert_eq!(ob.mount, "secret"); // defaulted
+                match ob.auth {
+                    Some(OpenBaoAuthConfig::Kubernetes { role, .. }) => {
+                        assert_eq!(role, "secret-manager-controller");
+                    }
+                    None => panic!("expected kubernetes auth"),
+                }
+            }
+            _ => panic!("expected OpenBao variant"),
+        }
+    }
+
+    #[test]
+    fn rejects_multiple_provider_types() {
+        let yaml = r"
+openbao:
+  address: https://openbao:8200
+gcp:
+  projectId: my-project
+  location: us-central1
+";
+        match serde_yaml::from_str::<ProviderConfig>(yaml) {
+            Ok(_) => panic!("multiple provider types should be rejected"),
+            Err(_) => {}
+        }
     }
 }

@@ -48,6 +48,8 @@ pub async fn store_properties(
             // Location is required in the config (enforced by CRD validation)
             azure_config.location.clone()
         }
+        // OpenBao is a single endpoint with no region/location.
+        ProviderConfig::OpenBao(_) => String::new(),
     };
 
     // Initialize synced_properties map from existing status (preserve state across reconciliations)
@@ -331,6 +333,14 @@ pub async fn store_properties(
                         }
                     }
                 }
+            }
+            ProviderConfig::OpenBao(_) => {
+                // Config store (application.properties routing) for OpenBao is a
+                // post-MVP item (see OB-14). Secrets sync via SecretManagerProvider;
+                // per-key config routing is not implemented yet.
+                return Err(anyhow::anyhow!(
+                    "Config store (application.properties) routing is not yet supported for the OpenBao provider (planned in OB-14). Disable spec.configs or use application.secrets for OpenBao."
+                ));
             }
         }
 

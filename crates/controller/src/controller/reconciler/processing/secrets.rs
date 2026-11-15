@@ -61,6 +61,8 @@ pub async fn store_secrets(
             // Location is required in the config (enforced by CRD validation)
             azure_config.location.clone()
         }
+        // OpenBao is a single endpoint with no region/location.
+        ProviderConfig::OpenBao(_) => String::new(),
     };
 
     // Process all secrets (both enabled and disabled)

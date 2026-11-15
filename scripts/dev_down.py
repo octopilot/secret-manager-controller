@@ -3,7 +3,7 @@
 Development environment shutdown script.
 
 Stops Tilt and the Kind cluster for local development.
-Does NOT stop octopilot-registry — it is shared infrastructure used by
+Does NOT stop registry-tls — it is shared infrastructure used by
 multiple projects (op run, other Tilt setups) and is managed independently.
 """
 
@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 
-# octopilot-registry is shared — dev_down deliberately does not touch it.
-# To stop it manually: docker stop octopilot-registry
-REGISTRY_NAME = "octopilot-registry"
+# registry-tls is shared — dev_down deliberately does not touch it.
+# To stop it manually: docker stop registry-tls
+REGISTRY_NAME = "registry-tls"
 
 
 def log_info(msg):
@@ -70,19 +70,19 @@ def stop_kind():
 
 
 def stop_registry():
-    """No-op: octopilot-registry is shared infrastructure and is not stopped here.
+    """No-op: registry-tls is shared infrastructure and is not stopped here.
 
     The registry is used by multiple local development setups (op run, other Tilt
     sessions). Stopping it here would break those workflows unexpectedly.
 
     To stop the registry manually:
-        docker stop octopilot-registry
+        docker stop registry-tls
     To remove it entirely:
-        docker stop octopilot-registry && docker rm octopilot-registry
+        docker stop registry-tls && docker rm registry-tls
     """
     log_info(
         f"Skipping registry teardown — '{REGISTRY_NAME}' is shared infrastructure. "
-        "Stop it manually if needed: docker stop octopilot-registry"
+        f"Stop it manually if needed: docker stop {REGISTRY_NAME}"
     )
 
 

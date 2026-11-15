@@ -29,6 +29,7 @@ Secret Manager Controller reads SOPS-encrypted secrets from Git, decrypts them s
 - ✔ **Google Secret Manager**
 - ✔ **AWS Secrets Manager**
 - ✔ **Azure Key Vault**
+- ✔ **OpenBao** (in-cluster, KV v2)
 
 This enables:
 - ✅ **Serverless migration** — Unlock workloads previously blocked by secret management
@@ -67,6 +68,7 @@ See the [Installation Guide](https://octopilot.github.io/secret-manager-controll
 - [GCP Setup](https://octopilot.github.io/secret-manager-controller/#/user/guides/gcp-setup) - Google Cloud Platform configuration
 - [AWS Setup](https://octopilot.github.io/secret-manager-controller/#/user/guides/aws-setup) - Amazon Web Services configuration
 - [Azure Setup](https://octopilot.github.io/secret-manager-controller/#/user/guides/azure-setup) - Microsoft Azure configuration
+- [OpenBao Setup](https://octopilot.github.io/secret-manager-controller/#/user/guides/openbao-setup) - In-cluster OpenBao (KV v2) configuration
 
 ### API Reference
 - [CRD Reference](https://octopilot.github.io/secret-manager-controller/#/user/api-reference/crd-reference) - Complete CRD documentation
@@ -79,7 +81,7 @@ See the [Installation Guide](https://octopilot.github.io/secret-manager-controll
 ## Features
 
 - **GitOps-Agnostic** - Works with FluxCD, ArgoCD, or any GitOps tool
-- **Multi-Cloud Support** - GCP, AWS, and Azure from one controller
+- **Multi-Cloud Support** - GCP, AWS, Azure, and in-cluster OpenBao from one controller
 - **SOPS Integration** - Automatically decrypts SOPS-encrypted secrets
 - **Kustomize Support** - Extracts secrets from Kustomize-built configurations
 - **Workload Identity** - Uses Workload Identity/IRSA by default (no credential management)

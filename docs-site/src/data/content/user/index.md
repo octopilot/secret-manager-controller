@@ -238,6 +238,8 @@ Ready to unify your secret management? Get started in minutes:
 - **[Architecture Overview](./architecture/overview.md)** - Understand how it works
 - **[Serverless Integration](./architecture/serverless-integration.md)** - Deploy to CloudRun, Lambda, Functions
 - **[GitOps Integration](./guides/gitops-integration.md)** - Integrate with FluxCD or ArgoCD
+- **[Flux to SMC + ESO Migration](./guides/flux-smc-eso-migration.md)** - Migrate from Flux in-cluster SOPS decrypt
+- **[Helm and ESO Naming](./guides/helm-eso-naming.md)** - Align Helm envFrom with ExternalSecret targets
 - **[SOPS Setup](./guides/sops-setup.md)** - Encrypt secrets in Git
 
 ---

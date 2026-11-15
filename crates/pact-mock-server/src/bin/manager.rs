@@ -124,7 +124,8 @@ async fn check_port_available(host: &str, port: u16) -> Result<bool> {
     }
 }
 
-/// Check if a pod is running
+/// Check if a pod is running (reserved for future use).
+#[allow(dead_code)]
 async fn check_pod_running(client: &Client, namespace: &str, pod_name: &str) -> Result<bool> {
     let pods: Api<Pod> = Api::namespaced(client.clone(), namespace);
     match pods.get(pod_name).await {

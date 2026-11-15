@@ -259,6 +259,8 @@ spec:
 
 ## Next Steps
 
+- [Migrate Flux decrypt to SMC + ESO](./flux-smc-eso-migration.md) — recommended for Kubernetes + serverless
+- [Helm and ESO naming](./helm-eso-naming.md) — align chart envFrom with ESO targets
 - [SOPS Setup](./sops-setup.md) - Encrypt secrets in Git
 - [Provider Setup Guides](./aws-setup.md) - Configure cloud providers
 - [Configuration Reference](../getting-started/configuration.md) - Complete configuration guide

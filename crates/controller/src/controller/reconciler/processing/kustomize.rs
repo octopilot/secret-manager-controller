@@ -33,6 +33,7 @@ pub async fn process_kustomize_secrets(
         ProviderConfig::Gcp(_) => "gcp",
         ProviderConfig::Aws(_) => "aws",
         ProviderConfig::Azure(_) => "azure",
+        ProviderConfig::OpenBao(_) => "openbao",
     };
 
     // Extract environment and location from config
@@ -55,6 +56,8 @@ pub async fn process_kustomize_secrets(
             // Location is required in the config (enforced by CRD validation)
             azure_config.location.clone()
         }
+        // OpenBao is a single endpoint with no region/location.
+        ProviderConfig::OpenBao(_) => String::new(),
     };
 
     let publish_span = info_span!(

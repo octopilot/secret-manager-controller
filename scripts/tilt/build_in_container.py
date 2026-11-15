@@ -32,6 +32,11 @@ cached via the named volumes.
 
 Usage (from repo root):
   python3 scripts/tilt/build_in_container.py [--release] [--skip-crd]
+
+If the linker is killed (exit 101, "ld terminated with signal 9 [Killed]"),
+increase Docker memory (e.g. Docker Desktop → Resources → Memory) or run with:
+  SMC_DOCKER_MEMORY=6g python3 scripts/tilt/build_in_container.py
+  CARGO_BUILD_JOBS=1 python3 scripts/tilt/build_in_container.py  # fewer parallel jobs
 """
 
 import argparse
@@ -179,6 +184,15 @@ def main() -> None:
     # binaries are visible on the host.
     profile_flag = "--release" if args.release else ""
 
+    # Limit parallelism so the linker has enough memory (ld can be killed with
+    # signal 9 when linking large crates like controller/crdgen). Override with
+    # CARGO_BUILD_JOBS if needed. If the build is still killed, increase Docker
+    # memory (e.g. Docker Desktop → Settings → Resources) or set
+    # SMC_DOCKER_MEMORY=6g (or higher).
+    jobs = os.environ.get("CARGO_BUILD_JOBS", "2")
+    memory = os.environ.get("SMC_DOCKER_MEMORY", "")
+    memory_flag = f"--memory={memory} " if memory else ""
+
     build_cmd = (
         f"docker run --rm "
         # Force x86_64: the target is x86_64-unknown-linux-musl.  Without this,
@@ -186,6 +200,7 @@ def main() -> None:
         # causing crates with x86_64 assembly (e.g. ring) to fail at compile time.
         # On Linux x86_64 CI this is a no-op (already the native platform).
         f"--platform linux/amd64 "
+        f"{memory_flag}"
         f"-v '{workspace}:/workspace' "
         f"-w /workspace "
         f"-v {CARGO_REGISTRY_VOLUME}:/root/.cargo/registry "
@@ -195,6 +210,7 @@ def main() -> None:
         f"-e BUILD_DATETIME='{info['datetime']}' "
         f"-e BUILD_GIT_HASH='{info['git_hash']}' "
         f"-e CARGO_NET_GIT_FETCH_WITH_CLI=true "
+        f"-e CARGO_BUILD_JOBS={jobs} "
         f"{RUST_BUILDER_IMAGE} "
         f"sh -c '"
         # Install musl-tools and add the musl Rust target.
