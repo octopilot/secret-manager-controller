@@ -64,6 +64,13 @@ impl TestFixture {
             env::set_var("PACT_MODE", "true");
             env::set_var("AWS_SECRETS_MANAGER_ENDPOINT", &endpoint);
             env::set_var("__PACT_MODE_TEST__", "true");
+            // The AWS SDK signs every request, so it needs credentials even for the
+            // mock. Without them it waits on the instance metadata service and sends
+            // nothing: these tests failed wherever a kube client exists (and are
+            // skipped where none does). Static dummies; no metadata lookup.
+            env::set_var("AWS_ACCESS_KEY_ID", "test");
+            env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+            env::set_var("AWS_EC2_METADATA_DISABLED", "true");
         }
 
         // Small delay to ensure environment variables are visible
@@ -129,6 +136,9 @@ impl TestFixture {
             env::remove_var("AWS_ENDPOINT_URL_SECRETSMANAGER");
             env::remove_var("PACT_MODE");
             env::remove_var("__PACT_MODE_TEST__");
+            env::remove_var("AWS_ACCESS_KEY_ID");
+            env::remove_var("AWS_SECRET_ACCESS_KEY");
+            env::remove_var("AWS_EC2_METADATA_DISABLED");
         }
 
         // Reset PactModeConfig if it exists
