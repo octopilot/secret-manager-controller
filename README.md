@@ -49,6 +49,35 @@ kubectl apply -k https://github.com/octopilot/secret-manager-controller/config/
 
 See the [Installation Guide](https://octopilot.github.io/secret-manager-controller/#/user/getting-started/installation) for detailed setup instructions.
 
+## SOPS keys
+
+The controller decrypts with the `sops` binary. Put the private key in a Secret named
+`sops-private-key` (key `private-key`) in the namespace of your `SecretManagerConfig`s,
+or in the controller's own namespace to share it with every namespace that has none:
+
+- **age**: the identity (`AGE-SECRET-KEY-1...`), as it appears in an age key file. Comment
+  lines and several identities are fine.
+- **GPG**: the ASCII-armored private key.
+
+A namespace's key is used only for the configs in that namespace. One key per namespace:
+files encrypted to an age recipient and files encrypted to a GPG key cannot be decrypted
+by the same namespace's configs.
+
+Name the files to sync with `spec.secrets.files` when they are not
+`deployment-configuration/profiles/<env>/application.secrets.env`:
+
+```yaml
+spec:
+  secrets:
+    environment: dev
+    prefix: myapp-dev
+    files:
+      - deployment-configuration/profiles/dev/myapp/runtime/application.secrets.env
+```
+
+Kustomize mode (`kustomizePath`) does not decrypt SOPS files and fails if its output
+contains ciphertext; use `files` for encrypted secrets.
+
 ## Documentation
 
 📚 **Comprehensive documentation is available at: [octopilot.github.io/secret-manager-controller](https://octopilot.github.io/secret-manager-controller)**

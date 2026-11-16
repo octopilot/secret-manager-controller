@@ -27,6 +27,7 @@ pub async fn store_secrets(
 )> {
     let mut count = 0;
     let mut updated_count = 0;
+    let mut overwritten_count = 0;
     let mut disabled_count = 0;
     let mut enabled_count = 0;
     let mut drift_detected = false;
@@ -151,6 +152,7 @@ pub async fn store_secrets(
                             sync_state.update_count += 1;
                             updated_count += 1;
                             if secret_exists {
+                                overwritten_count += 1;
                                 info!(
                                     provider = provider_name,
                                     secret_name = secret_name,
@@ -241,10 +243,20 @@ pub async fn store_secrets(
 
     if updated_count > 0 {
         observability::metrics::increment_secrets_updated(i64::from(updated_count));
-        warn!(
-            "Updated {} secrets from git (GitOps source of truth). Manual changes in cloud provider were overwritten.",
-            updated_count
-        );
+        // Creating a secret overwrites nothing: only a changed value of an existing secret
+        // can have replaced a manual edit in the provider.
+        if overwritten_count > 0 {
+            warn!(
+                "Updated {} existing secret(s) from git (GitOps source of truth): any manual change in the provider was overwritten.",
+                overwritten_count
+            );
+        }
+        if updated_count > overwritten_count {
+            info!(
+                "Created {} secret(s) from git",
+                updated_count - overwritten_count
+            );
+        }
     }
 
     if disabled_count > 0 {
