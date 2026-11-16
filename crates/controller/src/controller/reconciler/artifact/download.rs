@@ -361,7 +361,9 @@ pub async fn cleanup_old_revisions(parent_dir: &Path) -> Result<()> {
 
     while let Some(entry) = dir_entries.next_entry().await? {
         let path = entry.path();
-        if path.is_dir() {
+        // Dot-directories are artifacts still being fetched, not cached revisions.
+        let in_progress = entry.file_name().to_string_lossy().starts_with('.');
+        if path.is_dir() && !in_progress {
             // Get modification time to determine age
             let metadata = tokio::fs::metadata(&path).await?;
             let modified = metadata

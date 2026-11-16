@@ -162,20 +162,20 @@ pub async fn get_flux_artifact_path(
         .join(&sanitized_name)
         .join(&revision_dir);
 
-    // Check if artifact is already cached (directory exists and is not empty)
-    if cache_path.exists() && cache_path.is_dir() {
-        // Verify cache is valid by checking if it contains files
-        if let Ok(mut entries) = std::fs::read_dir(&cache_path) {
-            if entries.next().is_some() {
-                info!(
-                    "Using cached FluxCD artifact at {} (revision: {}, dir: {})",
-                    cache_path.display(),
-                    revision,
-                    revision_dir
-                );
-                return Ok(cache_path);
-            }
-        }
+    // Every SecretManagerConfig that points at this source shares this directory, and a
+    // new revision triggers them all at once. One of them fetches the artifact while the
+    // others wait, then find it cached.
+    let lock = artifact_lock(&cache_path);
+    let _fetching = lock.lock().await;
+
+    if is_complete_cache(&cache_path) {
+        info!(
+            "Using cached FluxCD artifact at {} (revision: {}, dir: {})",
+            cache_path.display(),
+            revision,
+            revision_dir
+        );
+        return Ok(cache_path);
     }
 
     info!(
@@ -183,30 +183,42 @@ pub async fn get_flux_artifact_path(
         artifact_url, revision, revision_dir
     );
 
-    // Download tar.gz file to temporary location
-    let temp_tar = cache_path.join("artifact.tar.gz");
-    let (_temp_file, _downloaded_size) = download_artifact(&artifact_url, &temp_tar).await?;
+    // Download and unpack beside the cache directory and move the result into place in
+    // one step, so the cache directory only ever exists complete.
+    let staging_dir = cache_path.with_file_name(format!(".{revision_dir}.staging"));
+    let temp_tar = cache_path.with_file_name(format!(".{revision_dir}.tar.gz"));
+    let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+    let _ = tokio::fs::remove_file(&temp_tar).await;
 
-    // Verify checksum if provided by FluxCD
-    // FluxCD provides digest in artifact status (e.g., "sha256:...")
-    if let Some(digest_str) = status.get("digest").and_then(|d| d.as_str()) {
-        verify_checksum(&temp_tar, digest_str)?;
+    let fetched = async {
+        download_artifact(&artifact_url, &temp_tar).await?;
+
+        // Verify checksum if provided by FluxCD
+        // FluxCD provides digest in artifact status (e.g., "sha256:...")
+        if let Some(digest_str) = status.get("digest").and_then(|d| d.as_str()) {
+            verify_checksum(&temp_tar, digest_str)?;
+        }
+
+        // Verify file is a valid tar.gz by checking magic bytes
+        verify_tar_gz_format(&temp_tar)?;
+
+        extract_artifact(&temp_tar, &staging_dir).await?;
+
+        // A directory left by an interrupted fetch of an earlier version is replaced.
+        let _ = tokio::fs::remove_dir_all(&cache_path).await;
+        tokio::fs::rename(&staging_dir, &cache_path)
+            .await
+            .context(format!(
+                "Failed to move extracted artifact into {}",
+                cache_path.display()
+            ))
     }
+    .await;
 
-    // Verify file is a valid tar.gz by checking magic bytes
-    verify_tar_gz_format(&temp_tar)?;
-
-    // Extract artifact
-    extract_artifact(&temp_tar, &cache_path).await?;
-
-    // Clean up temporary tar file after successful extraction
-    if let Err(e) = tokio::fs::remove_file(&temp_tar).await {
-        warn!(
-            "Failed to remove temporary tar file {}: {}",
-            temp_tar.display(),
-            e
-        );
-        // Don't fail reconciliation if cleanup fails
+    let _ = tokio::fs::remove_file(&temp_tar).await;
+    if let Err(e) = fetched {
+        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+        return Err(e);
     }
 
     // Clean up old revisions - keep only the 3 newest revisions per namespace/name
@@ -231,4 +243,62 @@ pub async fn get_flux_artifact_path(
     );
 
     Ok(cache_path)
+}
+
+/// One lock per cache directory, so concurrent reconciles of configs sharing a source
+/// do not download and unpack the same artifact on top of each other.
+fn artifact_lock(cache_path: &std::path::Path) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks.entry(cache_path.to_path_buf()).or_default().clone()
+}
+
+/// A cache directory is complete when it holds extracted files and no download in
+/// progress: versions before 0.1.6 downloaded `artifact.tar.gz` into the directory itself.
+fn is_complete_cache(cache_path: &std::path::Path) -> bool {
+    if cache_path.join("artifact.tar.gz").exists() {
+        return false;
+    }
+    std::fs::read_dir(cache_path).is_ok_and(|mut entries| entries.next().is_some())
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::{artifact_lock, is_complete_cache};
+
+    #[test]
+    fn a_directory_with_a_download_in_it_is_not_a_cache() {
+        let dir = std::env::temp_dir().join(format!("smc-cache-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!is_complete_cache(&dir), "missing directory");
+        std::fs::create_dir_all(&dir).expect("create");
+        assert!(!is_complete_cache(&dir), "empty directory");
+        std::fs::write(dir.join("artifact.tar.gz"), b"partial").expect("write");
+        assert!(!is_complete_cache(&dir), "download in progress");
+        std::fs::remove_file(dir.join("artifact.tar.gz")).expect("remove");
+        std::fs::write(dir.join("application.secrets.env"), b"A=1").expect("write");
+        assert!(is_complete_cache(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn fetches_of_one_source_take_turns() {
+        let path = std::path::Path::new("/tmp/smc/flux-artifact/ns/repo/main-sha-abc1234");
+        let first = artifact_lock(path);
+        let held = first.lock().await;
+        let second = artifact_lock(path);
+        assert!(second.try_lock().is_err(), "same directory, same lock");
+        let other = artifact_lock(std::path::Path::new(
+            "/tmp/smc/flux-artifact/ns/other/main-sha-abc1234",
+        ));
+        assert!(other.try_lock().is_ok(), "another source is not held up");
+        drop(held);
+        assert!(second.try_lock().is_ok());
+    }
 }
