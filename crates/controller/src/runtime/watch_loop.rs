@@ -6,7 +6,7 @@
 use crate::config::SharedControllerConfig;
 use crate::controller::reconciler::status::update_status_phase;
 use crate::controller::reconciler::validation::parse_kubernetes_duration;
-use crate::controller::reconciler::{Reconciler, TriggerSource, reconcile};
+use crate::controller::reconciler::{Reconciler, TriggerSource, reconcile, retry};
 use crate::controller::server::ServerState;
 use crate::crd::SecretManagerConfig;
 use crate::runtime::error_policy::{handle_reconciliation_error, handle_watch_stream_error};
@@ -304,13 +304,19 @@ fn create_reconcile_fn(
         // 3. Always reconcile if this is a periodic reconciliation (requeue-triggered)
         // A new artifact on the referenced GitRepository (see configs_for_new_artifact).
         let is_source_trigger = take_source_trigger(&namespace, &name);
+        // A retry asked for by an earlier run that failed or had to wait.
+        let is_retry = retry::take_if_due(&namespace, &name);
 
-        if generation == observed_generation
-            && observed_generation > 0
-            && !is_manual_trigger
-            && !is_periodic_reconcile
-            && !is_source_trigger
-        {
+        let reason = reconcile_reason(
+            generation,
+            observed_generation,
+            is_manual_trigger,
+            is_source_trigger,
+            is_retry,
+            is_periodic_reconcile,
+        );
+
+        if reason.is_none() {
             debug!(
                 resource.name = name.as_str(),
                 resource.namespace = namespace.as_str(),
@@ -322,8 +328,24 @@ fn create_reconcile_fn(
             // kube-runtime drops the requeue a reconcile returns when another run of the
             // same object is already pending. Returning await_change() here therefore ended
             // periodic reconciliation after the first success: schedule the periodic run.
-            return Ok(Action::requeue(time_until_next_reconcile(&obj)));
+            // A pending retry is sooner than the periodic run: wake for whichever is first.
+            let wake_in = retry::time_until(&namespace, &name).map_or_else(
+                || time_until_next_reconcile(&obj),
+                |retry_in| retry_in.min(time_until_next_reconcile(&obj)),
+            );
+            return Ok(Action::requeue(
+                wake_in.max(std::time::Duration::from_secs(1)),
+            ));
         }
+
+        // This run supersedes any retry still pending.
+        retry::clear(&namespace, &name);
+        info!(
+            resource.name = name.as_str(),
+            resource.namespace = namespace.as_str(),
+            reason = ?reason,
+            "Reconciling"
+        );
 
         if is_source_trigger {
             info!(
@@ -421,6 +443,49 @@ fn create_reconcile_fn(
 }
 
 /// The Flux `GitRepository` API resource. v1 is the only version served since Flux 2.8.
+/// Why an object is reconciled now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReconcileReason {
+    /// Never reconciled, or its spec changed since it last was.
+    SpecChanged,
+    /// Asked for with the reconcile annotation.
+    Manual,
+    /// Its source has a new artifact.
+    SourceChanged,
+    /// An earlier run failed or had to wait, and its delay is over.
+    Retry,
+    /// Its reconcile interval is due.
+    Periodic,
+}
+
+/// Decide whether a run of the reconcile function has work to do.
+///
+/// Every status update the controller writes comes back as a watch event, so most runs
+/// are echoes of its own writes. A run reconciles only when it has one of these reasons;
+/// otherwise it is skipped.
+fn reconcile_reason(
+    generation: i64,
+    observed_generation: i64,
+    manual: bool,
+    source_changed: bool,
+    retry_due: bool,
+    periodic_due: bool,
+) -> Option<ReconcileReason> {
+    if observed_generation == 0 || generation != observed_generation {
+        Some(ReconcileReason::SpecChanged)
+    } else if manual {
+        Some(ReconcileReason::Manual)
+    } else if source_changed {
+        Some(ReconcileReason::SourceChanged)
+    } else if retry_due {
+        Some(ReconcileReason::Retry)
+    } else if periodic_due {
+        Some(ReconcileReason::Periodic)
+    } else {
+        None
+    }
+}
+
 fn flux_git_repository_resource() -> ApiResource {
     ApiResource::from_gvk(&GroupVersionKind {
         group: "source.toolkit.fluxcd.io".to_string(),
@@ -557,6 +622,49 @@ mod tests {
             object.data = serde_json::json!({ "status": { "artifact": { "revision": revision } } });
         }
         object
+    }
+
+    #[test]
+    fn a_status_echo_is_not_reconciled() {
+        assert_eq!(reconcile_reason(3, 3, false, false, false, false), None);
+    }
+
+    #[test]
+    fn a_new_or_changed_spec_is_reconciled() {
+        assert_eq!(
+            reconcile_reason(1, 0, false, false, false, false),
+            Some(ReconcileReason::SpecChanged)
+        );
+        assert_eq!(
+            reconcile_reason(4, 3, false, false, false, false),
+            Some(ReconcileReason::SpecChanged)
+        );
+    }
+
+    /// The regression this guards: a failed sync records the generation as observed, so
+    /// its retry looked like a status echo and waited for the reconcile interval.
+    #[test]
+    fn a_due_retry_is_reconciled_although_the_generation_is_observed() {
+        assert_eq!(
+            reconcile_reason(3, 3, false, false, true, false),
+            Some(ReconcileReason::Retry)
+        );
+    }
+
+    #[test]
+    fn each_trigger_is_a_reason_on_its_own() {
+        assert_eq!(
+            reconcile_reason(3, 3, true, false, false, false),
+            Some(ReconcileReason::Manual)
+        );
+        assert_eq!(
+            reconcile_reason(3, 3, false, true, false, false),
+            Some(ReconcileReason::SourceChanged)
+        );
+        assert_eq!(
+            reconcile_reason(3, 3, false, false, false, true),
+            Some(ReconcileReason::Periodic)
+        );
     }
 
     #[test]

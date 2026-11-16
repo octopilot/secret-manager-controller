@@ -24,6 +24,7 @@ pub mod artifact;
 pub mod notifications;
 pub mod processing;
 pub mod reconcile;
+pub mod retry;
 pub mod sops;
 pub mod source;
 pub mod status;

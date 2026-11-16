@@ -164,6 +164,18 @@ pub async fn reconcile(
         .and_then(|ann| ann.get("secret-management.octopilot.io/reconcile"))
         .is_some();
 
+    // The annotation is a one-shot request: consume it now. Left in place until a
+    // successful sync, a failing resource would be reconciled again by every status
+    // update it writes, in a tight loop.
+    if is_manual_trigger {
+        if let Err(e) =
+            crate::controller::reconciler::status::clear_manual_trigger_annotation(&ctx, &config)
+                .await
+        {
+            warn!("Failed to clear manual trigger annotation: {}", e);
+        }
+    }
+
     // Determine trigger source for logging
     let trigger_source_str = if is_manual_trigger {
         "manual-cli"
@@ -274,7 +286,13 @@ pub async fn reconcile(
             // The source is not there yet. await_change() would wait for a change to this
             // resource, which never comes: check again later (the GitRepository watch
             // also triggers as soon as it appears).
-            return Ok(Action::requeue(std::time::Duration::from_secs(60)));
+            let delay = std::time::Duration::from_secs(60);
+            crate::controller::reconciler::retry::schedule(
+                config.metadata.namespace.as_deref().unwrap_or("default"),
+                name,
+                delay,
+            );
+            return Ok(Action::requeue(delay));
         }
         Ok(ArtifactPathResult::Error(e)) => return Err(e),
         Err(e) => return Err(e),
@@ -343,7 +361,22 @@ pub async fn reconcile(
                 &synced_properties,
             )
             .await;
-            return Ok(Action::requeue(std::time::Duration::from_secs(30)));
+            // Retry sooner than the interval, backing off while the error persists.
+            let namespace = config.metadata.namespace.as_deref().unwrap_or("default");
+            let attempt = ctx.backoff_states.lock().map_or(1, |mut states| {
+                let state = states.entry(format!("{namespace}/{name}")).or_default();
+                state.increment_error();
+                state.error_count
+            });
+            let delay = crate::controller::reconciler::retry::transient_delay(attempt);
+            warn!(
+                "Transient error syncing {}: retrying in {}s (attempt {})",
+                name,
+                delay.as_secs(),
+                attempt
+            );
+            crate::controller::reconciler::retry::schedule(namespace, name, delay);
+            return Ok(Action::requeue(delay));
         }
         Ok((SyncResult::Error(e), _synced_secrets, _synced_properties)) => {
             // update_status writes Ready; a failed sync is reported as Failed.

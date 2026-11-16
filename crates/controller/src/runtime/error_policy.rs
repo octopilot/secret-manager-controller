@@ -79,7 +79,11 @@ pub fn handle_reconciliation_error(
     );
 
     observability::metrics::increment_requeues_total("error-backoff");
-    Action::requeue(std::time::Duration::from_secs(backoff_seconds.0))
+    // The failed run left a Failed status with the object's generation observed: without
+    // this record the watch loop would take the retry for a status echo and skip it.
+    let delay = std::time::Duration::from_secs(backoff_seconds.0);
+    crate::controller::reconciler::retry::schedule(namespace, name, delay);
+    Action::requeue(delay)
 }
 
 /// Handle watch stream errors with appropriate classification and backoff
