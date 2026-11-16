@@ -8,6 +8,14 @@ use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 
+/// True when the SOPS private key is an age identity (`AGE-SECRET-KEY-1...`, with or
+/// without the comment lines of an age key file) rather than an armored GPG key.
+pub fn is_age_key(private_key: &str) -> bool {
+    private_key
+        .lines()
+        .any(|line| line.trim_start().starts_with("AGE-SECRET-KEY-"))
+}
+
 /// Import GPG private key into a temporary GPG home directory
 pub(crate) async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>> {
     let gpg_path = match which::which("gpg") {

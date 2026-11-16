@@ -609,3 +609,62 @@ fn test_transient_vs_permanent_errors() {
         assert!(reason.is_transient(), "{:?} should be transient", reason);
     }
 }
+
+/// A throwaway age key pair, generated for this test only: it protects nothing.
+const TEST_AGE_RECIPIENT: &str = "age1np3s994zj5eh3sazm95ayz0vmsnf68e9esljktvge53y3426ku7smjz68r";
+const TEST_AGE_IDENTITY: &str = "# public key: age1np3s994zj5eh3sazm95ayz0vmsnf68e9esljktvge53y3426ku7smjz68r\nAGE-SECRET-KEY-16UR67M8W4SJ5RNYW6KQ2HNFVH8J8KJ6FMJPUHLPEYPWVCVDXS9TS8J6UP7\n";
+
+/// Our SOPS files are encrypted to age recipients. The controller's key Secret then
+/// holds an age identity, which must decrypt without a GPG keyring.
+#[tokio::test]
+async fn test_decrypt_dotenv_with_age_key() {
+    if sops_missing() {
+        return;
+    }
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let plaintext = "DATABASE_PASSWORD=correct-horse\nAPI_KEY=battery-staple\n";
+    let mut child = Command::new("sops")
+        // Outside the repository: its .sops.yaml has no creation rule for stdin.
+        .current_dir(std::env::temp_dir())
+        .args(["-e", "--age", TEST_AGE_RECIPIENT])
+        .args([
+            "--input-type",
+            "dotenv",
+            "--output-type",
+            "dotenv",
+            "/dev/stdin",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sops");
+    child
+        .stdin
+        .take()
+        .expect("sops stdin")
+        .write_all(plaintext.as_bytes())
+        .expect("write plaintext");
+    let output = child.wait_with_output().expect("sops -e");
+    assert!(
+        output.status.success(),
+        "sops -e failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let encrypted = String::from_utf8(output.stdout).expect("utf-8");
+    assert!(is_sops_encrypted(&encrypted));
+    assert!(!encrypted.contains("correct-horse"));
+
+    let path = PathBuf::from("application.secrets.env");
+    let decrypted = decrypt_sops_content(&encrypted, Some(&path), Some(TEST_AGE_IDENTITY))
+        .await
+        .expect("decrypt with the age identity");
+    assert!(decrypted.contains("DATABASE_PASSWORD=correct-horse"));
+    assert!(decrypted.contains("API_KEY=battery-staple"));
+
+    // Without the identity sops has no key for the file.
+    let no_key = decrypt_sops_content(&encrypted, Some(&path), None).await;
+    assert!(no_key.is_err(), "decryption without a key must fail");
+}

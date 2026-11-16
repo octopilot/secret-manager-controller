@@ -5,7 +5,7 @@
 use crate::controller::parser::sops::error::{
     SopsDecryptionError, SopsDecryptionFailureReason, classify_sops_error,
 };
-use crate::controller::parser::sops::gpg::import_gpg_key;
+use crate::controller::parser::sops::gpg::{import_gpg_key, is_age_key};
 use crate::observability::metrics;
 use anyhow::Result;
 use std::path::Path;
@@ -35,7 +35,9 @@ pub async fn decrypt_sops_content(
     sops_private_key: Option<&str>,
 ) -> Result<String, SopsDecryptionError> {
     let content_size = content.len();
-    let encryption_method = if sops_private_key.is_some() {
+    let encryption_method = if sops_private_key.is_some_and(is_age_key) {
+        "age"
+    } else if sops_private_key.is_some() {
         "gpg"
     } else {
         "system_keyring"
@@ -143,8 +145,15 @@ async fn decrypt_with_sops_binary(
         }
     }
 
-    // Set up GPG keyring if private key is provided
-    let gpg_home = if let Some(private_key) = sops_private_key {
+    // An age identity is handed to sops in its environment (SOPS_AGE_KEY): no keyring,
+    // nothing on disk.
+    let age_key = sops_private_key.filter(|key| is_age_key(key));
+
+    // Set up GPG keyring if a GPG private key is provided
+    let gpg_home = if age_key.is_some() {
+        debug!("SOPS private key is an age identity");
+        None
+    } else if let Some(private_key) = sops_private_key {
         info!("Importing GPG private key into temporary keyring for SOPS decryption");
         let gpg_result = import_gpg_key(private_key).await.map_err(|e| {
             SopsDecryptionError::new(
@@ -191,6 +200,10 @@ async fn decrypt_with_sops_binary(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    if let Some(age_key) = age_key {
+        cmd.env("SOPS_AGE_KEY", age_key);
+    }
 
     if let Some(ref gpg_home_path) = gpg_home {
         cmd.env("GNUPGHOME", gpg_home_path);

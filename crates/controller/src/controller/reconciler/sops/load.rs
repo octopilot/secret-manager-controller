@@ -2,6 +2,7 @@
 //!
 //! Functions for loading and reloading SOPS private keys from Kubernetes secrets.
 
+use crate::controller::parser::sops::gpg::is_age_key;
 use crate::controller::reconciler::types::Reconciler;
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Secret;
@@ -46,9 +47,9 @@ pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
                             namespace, secret_name, key_size, has_pgp_header, has_pgp_footer
                         );
 
-                        if !has_pgp_header || !has_pgp_footer {
+                        if !is_age_key(&key) && (!has_pgp_header || !has_pgp_footer) {
                             warn!(
-                                "⚠️  SOPS private key from '{}/{}' may be malformed: missing PGP headers/footers",
+                                "⚠️  SOPS private key from '{}/{}' may be malformed: neither an age identity nor an armored GPG key",
                                 namespace, secret_name
                             );
                         }
@@ -139,9 +140,9 @@ pub async fn reload_sops_private_key_from_namespace(
                             namespace, secret_name, key_size, has_pgp_header, has_pgp_footer
                         );
 
-                        if !has_pgp_header || !has_pgp_footer {
+                        if !is_age_key(&key) && (!has_pgp_header || !has_pgp_footer) {
                             warn!(
-                                "⚠️  SOPS private key from '{}/{}' may be malformed: missing PGP headers/footers",
+                                "⚠️  SOPS private key from '{}/{}' may be malformed: neither an age identity nor an armored GPG key",
                                 namespace, secret_name
                             );
                         }
