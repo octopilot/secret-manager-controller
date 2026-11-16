@@ -6,6 +6,7 @@ mod application_files;
 mod diff_discovery;
 mod kustomize;
 mod properties;
+pub mod prune;
 mod secrets;
 
 pub use application_files::process_application_files;

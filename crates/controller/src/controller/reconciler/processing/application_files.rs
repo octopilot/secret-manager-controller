@@ -33,6 +33,7 @@ pub async fn process_application_files(
     i32,
     std::collections::HashMap<String, crate::crd::ResourceSyncState>,
     std::collections::HashMap<String, crate::crd::ResourceSyncState>,
+    std::collections::HashSet<String>,
 )> {
     let service_name = config
         .spec
@@ -313,7 +314,7 @@ pub async fn process_application_files(
         let publish_start = Instant::now();
 
         // Store secrets using extracted module
-        let (secret_count, _drift_detected, synced_secrets) = store_secrets(
+        let (secret_count, _drift_detected, synced_secrets, desired) = store_secrets(
             provider,
             config,
             &parsed_secrets,
@@ -344,13 +345,13 @@ pub async fn process_application_files(
 
         let total_count = secret_count + property_count;
         observability::metrics::increment_secrets_synced(i64::from(total_count));
-        Ok((total_count, synced_secrets, synced_properties))
+        Ok((total_count, synced_secrets, synced_properties, desired))
     }
     .instrument(span)
     .await;
 
     match &result {
-        Ok((count, _, _)) => {
+        Ok((count, _, _, _)) => {
             span_clone_for_match.record("files.count", *count as u64);
             span_clone_for_match
                 .record("operation.duration_ms", start.elapsed().as_millis() as u64);

@@ -45,6 +45,7 @@ pub async fn sync_secrets(
     // First permanent failure. The other services are still synced, then the reconcile
     // is reported as failed instead of Ready.
     let mut first_failure: Option<anyhow::Error> = None;
+    let mut desired_secrets = std::collections::HashSet::new();
     let mut all_synced_secrets = std::collections::HashMap::new();
     let mut all_synced_properties = std::collections::HashMap::new();
 
@@ -67,6 +68,13 @@ pub async fn sync_secrets(
                 match process_kustomize_secrets(provider, config, &secrets, secret_prefix).await {
                     Ok((count, kustomize_synced_secrets)) => {
                         secrets_synced += count as u32;
+                        desired_secrets.extend(secrets.keys().map(|key| {
+                            crate::controller::reconciler::construct_secret_name(
+                                Some(secret_prefix),
+                                key,
+                                config.spec.secrets.suffix.as_deref(),
+                            )
+                        }));
                         // Merge kustomize synced_secrets into overall map
                         for (secret_name, sync_state) in kustomize_synced_secrets {
                             let existing = all_synced_secrets
@@ -185,8 +193,9 @@ pub async fn sync_secrets(
         // Process each application file set
         for app_files in application_files {
             match process_application_files(ctx, provider, config, &app_files).await {
-                Ok((count, synced_secrets, synced_properties)) => {
+                Ok((count, synced_secrets, synced_properties, desired)) => {
                     secrets_synced += count as u32;
+                    desired_secrets.extend(desired);
                     // Merge synced_secrets from this service into the overall map
                     for (secret_name, sync_state) in synced_secrets {
                         // If secret already exists, merge the states (take max update_count, true if either exists)
@@ -267,6 +276,34 @@ pub async fn sync_secrets(
             all_synced_secrets,
             all_synced_properties,
         ));
+    }
+
+    // Every file was read and synced: with the prune annotation, delete what this
+    // resource synced earlier and its files no longer define.
+    if crate::controller::reconciler::processing::prune::prune_enabled(config) {
+        match crate::controller::reconciler::processing::prune::prune_secrets(
+            provider,
+            config,
+            &desired_secrets,
+            &mut all_synced_secrets,
+        )
+        .await
+        {
+            Ok(0) => {}
+            Ok(pruned) => info!(
+                "🗑️  Pruned {} secret(s) no longer in the secret files",
+                pruned
+            ),
+            Err(e) => {
+                error!("Pruning failed: {}", e);
+                observability::metrics::increment_reconciliation_errors();
+                return Ok((
+                    SyncResult::Error(ReconcilerError::ReconciliationFailed(e)),
+                    all_synced_secrets,
+                    all_synced_properties,
+                ));
+            }
+        }
     }
 
     Ok((

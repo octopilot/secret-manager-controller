@@ -24,6 +24,7 @@ pub async fn store_secrets(
     i32,
     bool,
     std::collections::HashMap<String, ResourceSyncState>,
+    std::collections::HashSet<String>,
 )> {
     let mut count = 0;
     let mut updated_count = 0;
@@ -32,6 +33,8 @@ pub async fn store_secrets(
     let mut enabled_count = 0;
     let mut drift_detected = false;
     let mut errors = Vec::new();
+    // Every secret these files define, enabled or not: what pruning must keep.
+    let mut desired = std::collections::HashSet::new();
 
     // Initialize synced_secrets map from existing status (preserve state across reconciliations)
     let mut synced_secrets = config
@@ -73,6 +76,7 @@ pub async fn store_secrets(
             key.as_str(),
             config.spec.secrets.suffix.as_deref(),
         );
+        desired.insert(secret_name.clone());
 
         if entry.enabled {
             // Diff discovery: Compare Git value with cloud provider value
@@ -295,5 +299,5 @@ pub async fn store_secrets(
         );
     }
 
-    Ok((count, drift_detected, synced_secrets))
+    Ok((count, drift_detected, synced_secrets, desired))
 }
