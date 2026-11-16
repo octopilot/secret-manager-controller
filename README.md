@@ -59,9 +59,12 @@ or in the controller's own namespace to share it with every namespace that has n
   lines and several identities are fine.
 - **GPG**: the ASCII-armored private key.
 
-A namespace's key is used only for the configs in that namespace. One key per namespace:
-files encrypted to an age recipient and files encrypted to a GPG key cannot be decrypted
-by the same namespace's configs.
+A namespace's key is used only for the configs in that namespace.
+
+A repository may keep files encrypted to an age recipient next to files encrypted to a
+GPG key. Give the controller both private keys and it decrypts either kind: put them in
+separate fields of the Secret (`private-key`, `key`, `age-key`, `gpg-key` and `pgp-key`
+are all read), or one after the other in a single field.
 
 Name the files to sync with `spec.secrets.files` when they are not
 `deployment-configuration/profiles/<env>/application.secrets.env`:
@@ -74,6 +77,24 @@ spec:
     files:
       - deployment-configuration/profiles/dev/myapp/runtime/application.secrets.env
 ```
+
+## Pruning
+
+Removing a key from a secret file leaves its secret in the provider. To have the
+controller delete secrets it synced earlier that its files no longer define, annotate the
+`SecretManagerConfig`:
+
+```yaml
+metadata:
+  annotations:
+    secret-management.octopilot.io/prune: "true"
+```
+
+Pruning is off unless the annotation is `"true"`. Only secrets recorded in that config's
+own status are deleted, never anything found by name in the provider; a commented-out
+key is disabled, not pruned; and nothing is pruned when the files define no secrets at
+all. The controller's identity needs permission to delete secrets. The annotation takes
+effect at the next reconcile.
 
 Kustomize mode (`kustomizePath`) does not decrypt SOPS files and fails if its output
 contains ciphertext; use `files` for encrypted secrets.
