@@ -271,6 +271,9 @@ pub fn verify_tar_gz_format(temp_file: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Longest unpacking an artifact may take.
+const EXTRACT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Extract tar.gz file to destination directory
 pub async fn extract_artifact(temp_file: &Path, destination: &Path) -> Result<()> {
     let extract_span = info_span!(
@@ -302,9 +305,18 @@ pub async fn extract_artifact(temp_file: &Path, destination: &Path) -> Result<()
         .arg(destination)
         .arg("--strip-components=0") // Preserve directory structure
         .arg("--warning=no-unknown-keyword") // Suppress warnings
-        .output()
-        .await
-        .context("Failed to execute tar command")?;
+        .kill_on_drop(true)
+        .output();
+    let Ok(extract_output) = tokio::time::timeout(EXTRACT_TIMEOUT, extract_output).await else {
+        crate::observability::metrics::increment_artifact_extraction_errors_total();
+        let _ = tokio::fs::remove_file(temp_file).await;
+        let _ = tokio::fs::remove_dir_all(destination).await;
+        return Err(anyhow::anyhow!(
+            "Extracting the artifact did not finish within {}s and was stopped",
+            EXTRACT_TIMEOUT.as_secs()
+        ));
+    };
+    let extract_output = extract_output.context("Failed to execute tar command")?;
 
     if !extract_output.status.success() {
         let stderr = String::from_utf8_lossy(&extract_output.stderr);

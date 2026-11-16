@@ -14,6 +14,9 @@ use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tracing::{Instrument, debug, error, info, info_span, warn};
 
+/// Longest a single `sops -d` may run.
+const SOPS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Decrypt SOPS-encrypted content using sops binary
 ///
 /// Returns a Result that can be classified as transient or permanent failure.
@@ -199,7 +202,9 @@ async fn decrypt_with_sops_binary(
         .arg("/dev/stdin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // Killed if the wait below times out and the child is dropped.
+        .kill_on_drop(true);
 
     if let Some(age_key) = age_key {
         cmd.env("SOPS_AGE_KEY", age_key);
@@ -233,12 +238,30 @@ async fn decrypt_with_sops_binary(
         })?;
     }
 
-    let output = child.wait_with_output().await.map_err(|e| {
-        SopsDecryptionError::new(
-            SopsDecryptionFailureReason::Unknown,
-            format!("Failed to wait for sops command: {}", e),
-        )
-    })?;
+    // sops can wait on the network (a KMS key group, a keyserver): bound it, so one
+    // file cannot hold a reconcile forever.
+    let waited = tokio::time::timeout(SOPS_TIMEOUT, child.wait_with_output()).await;
+    let output = match waited {
+        Ok(output) => output.map_err(|e| {
+            SopsDecryptionError::new(
+                SopsDecryptionFailureReason::Unknown,
+                format!("Failed to wait for sops command: {}", e),
+            )
+        }),
+        Err(_) => Err(SopsDecryptionError::new(
+            SopsDecryptionFailureReason::NetworkTimeout,
+            format!(
+                "sops did not finish within {}s and was stopped",
+                SOPS_TIMEOUT.as_secs()
+            ),
+        )),
+    };
+    if output.is_err() {
+        if let Some(ref gpg_home_path) = gpg_home {
+            let _ = tokio::fs::remove_dir_all(gpg_home_path).await;
+        }
+    }
+    let output = output?;
 
     if let Some(ref gpg_home_path) = gpg_home {
         let _ = tokio::fs::remove_dir_all(gpg_home_path).await;

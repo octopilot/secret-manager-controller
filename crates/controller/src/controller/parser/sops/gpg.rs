@@ -8,6 +8,9 @@ use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 
+/// Longest a gpg key import may run.
+const GPG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// True when the SOPS private key is an age identity (`AGE-SECRET-KEY-1...`, with or
 /// without the comment lines of an age key file) rather than an armored GPG key.
 pub fn is_age_key(private_key: &str) -> bool {
@@ -46,7 +49,8 @@ pub(crate) async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>>
         .arg("--import")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
     let mut child = cmd.spawn().context("Failed to spawn gpg import command")?;
 
@@ -58,10 +62,15 @@ pub(crate) async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>>
         stdin.shutdown().await.context("Failed to close stdin")?;
     }
 
-    let output = child
-        .wait_with_output()
-        .await
-        .context("Failed to wait for gpg import command")?;
+    let waited = tokio::time::timeout(GPG_TIMEOUT, child.wait_with_output()).await;
+    let Ok(output) = waited else {
+        let _ = tokio::fs::remove_dir_all(&gpg_home).await;
+        anyhow::bail!(
+            "gpg --import did not finish within {}s and was stopped",
+            GPG_TIMEOUT.as_secs()
+        );
+    };
+    let output = output.context("Failed to wait for gpg import command")?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
