@@ -5,7 +5,7 @@
 use crate::controller::parser::sops::error::{
     SopsDecryptionError, SopsDecryptionFailureReason, classify_sops_error,
 };
-use crate::controller::parser::sops::gpg::{import_gpg_key, is_age_key};
+use crate::controller::parser::sops::gpg::{import_gpg_key, split_sops_keys};
 use crate::observability::metrics;
 use anyhow::Result;
 use std::path::Path;
@@ -38,12 +38,12 @@ pub async fn decrypt_sops_content(
     sops_private_key: Option<&str>,
 ) -> Result<String, SopsDecryptionError> {
     let content_size = content.len();
-    let encryption_method = if sops_private_key.is_some_and(is_age_key) {
-        "age"
-    } else if sops_private_key.is_some() {
-        "gpg"
-    } else {
-        "system_keyring"
+    let key_kinds = sops_private_key.map(split_sops_keys).unwrap_or_default();
+    let encryption_method = match (key_kinds.age.is_some(), key_kinds.gpg.is_some()) {
+        (true, true) => "age+gpg",
+        (true, false) => "age",
+        (false, true) => "gpg",
+        (false, false) => "system_keyring",
     };
 
     let span = info_span!(
@@ -148,15 +148,19 @@ async fn decrypt_with_sops_binary(
         }
     }
 
+    // The key value may hold age identities, a GPG private key, or both: sops is given
+    // every key there is and uses whichever the file was encrypted to.
+    let key_material = sops_private_key.map(split_sops_keys).unwrap_or_default();
+
     // An age identity is handed to sops in its environment (SOPS_AGE_KEY): no keyring,
     // nothing on disk.
-    let age_key = sops_private_key.filter(|key| is_age_key(key));
+    let age_key = key_material.age.as_deref();
+    if age_key.is_some() {
+        debug!("SOPS private key holds an age identity");
+    }
 
-    // Set up GPG keyring if a GPG private key is provided
-    let gpg_home = if age_key.is_some() {
-        debug!("SOPS private key is an age identity");
-        None
-    } else if let Some(private_key) = sops_private_key {
+    // Set up a GPG keyring if a GPG private key is provided
+    let gpg_home = if let Some(private_key) = key_material.gpg.as_deref() {
         info!("Importing GPG private key into temporary keyring for SOPS decryption");
         let gpg_result = import_gpg_key(private_key).await.map_err(|e| {
             SopsDecryptionError::new(
@@ -178,9 +182,11 @@ async fn decrypt_with_sops_binary(
 
         gpg_result
     } else {
-        warn!(
-            "No SOPS private key provided - SOPS decryption may fail if key is not in system keyring"
-        );
+        if age_key.is_none() {
+            warn!(
+                "No SOPS private key provided - SOPS decryption may fail if key is not in system keyring"
+            );
+        }
         None
     };
 

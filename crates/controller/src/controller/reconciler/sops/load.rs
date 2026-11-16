@@ -1,97 +1,117 @@
 //! # SOPS Key Loading
 //!
 //! Functions for loading and reloading SOPS private keys from Kubernetes secrets.
+//!
+//! A namespace's key material is everything found in its key Secrets: an age identity,
+//! an armored GPG private key, or both. Holding both lets one controller decrypt a
+//! repository whose files are encrypted to age recipients and to GPG keys.
 
-use crate::controller::parser::sops::gpg::is_age_key;
+use crate::controller::parser::sops::gpg::split_sops_keys;
 use crate::controller::reconciler::types::Reconciler;
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Secret;
 use kube::{Api, Client};
 use tracing::{error, info, warn};
 
-/// Load SOPS private key from Kubernetes secret in controller namespace
-/// Defaults to octopilot-system namespace
-pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
-    // Use controller namespace (defaults to octopilot-system)
-    // Can be overridden via POD_NAMESPACE environment variable
-    let namespace =
-        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
+/// Names of the Secrets a SOPS private key is read from.
+pub const KEY_SECRET_NAMES: [&str; 3] = ["sops-private-key", "sops-gpg-key", "gpg-key"];
 
-    let secrets: Api<Secret> = Api::namespaced(client.clone(), &namespace);
+/// Fields of those Secrets that hold key material. Every one present is used.
+const KEY_FIELDS: [&str; 5] = ["private-key", "key", "age-key", "gpg-key", "pgp-key"];
 
-    // Try to get the SOPS private key secret
-    // Expected secret name: sops-private-key (or similar)
-    let secret_names = vec!["sops-private-key", "sops-gpg-key", "gpg-key"];
+/// All the SOPS key material of `namespace`: the values of every key field of every
+/// key Secret there, joined. `None` when the namespace has none.
+async fn read_namespace_keys(client: &Client, namespace: &str) -> Result<Option<String>> {
+    let secrets: Api<Secret> = Api::namespaced(client.clone(), namespace);
+    let mut values: Vec<String> = Vec::new();
+    let mut sources: Vec<String> = Vec::new();
 
-    for secret_name in secret_names {
+    for secret_name in KEY_SECRET_NAMES {
         match secrets.get(secret_name).await {
             Ok(secret) => {
-                // Extract private key from secret data
-                // The key might be in different fields: "private-key", "key", "gpg-key", etc.
-                if let Some(ref data_map) = secret.data {
-                    if let Some(data) = data_map
-                        .get("private-key")
-                        .or_else(|| data_map.get("key"))
-                        .or_else(|| data_map.get("gpg-key"))
-                    {
-                        let key = String::from_utf8(data.0.clone())
-                            .map_err(|e| anyhow::anyhow!("Failed to decode private key: {e}"))?;
-
-                        // Validate key format
-                        let key_size = key.len();
-                        let has_pgp_header = key.contains("-----BEGIN PGP PRIVATE KEY BLOCK-----");
-                        let has_pgp_footer = key.contains("-----END PGP PRIVATE KEY BLOCK-----");
-
-                        let key_kind = if is_age_key(&key) {
-                            "age identity"
-                        } else if has_pgp_header && has_pgp_footer {
-                            "armored GPG key"
-                        } else {
-                            "unrecognised"
-                        };
-                        info!(
-                            "✅ Loaded SOPS private key from secret '{}/{}': {} ({} bytes)",
-                            namespace, secret_name, key_kind, key_size
-                        );
-
-                        if !is_age_key(&key) && (!has_pgp_header || !has_pgp_footer) {
-                            warn!(
-                                "⚠️  SOPS private key from '{}/{}' may be malformed: neither an age identity nor an armored GPG key",
-                                namespace, secret_name
-                            );
-                        }
-
-                        return Ok(Some(key));
-                    } else {
-                        warn!(
-                            "Secret '{}/{}' found but missing expected keys ('private-key', 'key', or 'gpg-key')",
-                            namespace, secret_name
-                        );
+                let Some(data) = secret.data else { continue };
+                let mut found = false;
+                for field in KEY_FIELDS {
+                    let Some(value) = data.get(field) else {
+                        continue;
+                    };
+                    let value = String::from_utf8(value.0.clone()).map_err(|e| {
+                        anyhow::anyhow!(
+                            "SOPS private key '{namespace}/{secret_name}' field '{field}' is not text: {e}"
+                        )
+                    })?;
+                    found = true;
+                    sources.push(format!("{secret_name}/{field}"));
+                    if !values.contains(&value) {
+                        values.push(value);
                     }
                 }
+                if !found {
+                    warn!(
+                        "Secret '{}/{}' found but has none of the key fields ({})",
+                        namespace,
+                        secret_name,
+                        KEY_FIELDS.join(", ")
+                    );
+                }
             }
-            Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
-                // Try next secret name
-            }
-            Err(e) => {
-                warn!("Failed to get secret {}: {}", secret_name, e);
-            }
+            Err(kube::Error::Api(api_err)) if api_err.code == 404 => {}
+            Err(e) => warn!(
+                "Failed to get secret '{}/{}': {}",
+                namespace, secret_name, e
+            ),
         }
     }
 
-    warn!(
-        "SOPS private key not found in {} namespace, SOPS decryption will be disabled",
-        namespace
+    if values.is_empty() {
+        return Ok(None);
+    }
+    let key = values.join("\n");
+
+    let material = split_sops_keys(&key);
+    let has_gpg_block = key.contains("-----BEGIN PGP PRIVATE KEY BLOCK-----")
+        && key.contains("-----END PGP PRIVATE KEY BLOCK-----");
+    let kinds = match (material.age.is_some(), has_gpg_block) {
+        (true, true) => "age identity and armored GPG key",
+        (true, false) => "age identity",
+        (false, true) => "armored GPG key",
+        (false, false) => "unrecognised",
+    };
+    info!(
+        "✅ Loaded SOPS private key of namespace '{}' from {}: {} ({} bytes)",
+        namespace,
+        sources.join(", "),
+        kinds,
+        key.len()
     );
-    Ok(None)
+    if material.age.is_none() && !has_gpg_block {
+        warn!(
+            "⚠️  SOPS private key of namespace '{}' may be malformed: neither an age identity nor an armored GPG key",
+            namespace
+        );
+    }
+
+    Ok(Some(key))
 }
 
-/// Reload SOPS private key from Kubernetes secret
-/// Called when the secret changes to hot-reload the key without restarting
+/// Load the SOPS private key of the controller namespace (`POD_NAMESPACE`).
+pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
+    let namespace = crate::controller::reconciler::sops::controller_namespace();
+    let key = read_namespace_keys(client, &namespace).await?;
+    if key.is_none() {
+        warn!(
+            "SOPS private key not found in {} namespace, SOPS decryption will be disabled",
+            namespace
+        );
+    }
+    Ok(key)
+}
+
+/// Reload the controller namespace's SOPS private key.
 pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
     let new_key = load_sops_private_key(&reconciler.client).await?;
+    let controller_namespace = crate::controller::reconciler::sops::controller_namespace();
     {
-        let controller_namespace = crate::controller::reconciler::sops::controller_namespace();
         let mut keys = reconciler.sops_keys.lock().await;
         match &new_key {
             Some(key) => keys.set(&controller_namespace, key.clone()),
@@ -101,13 +121,9 @@ pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
         }
     }
 
-    // Update capability flag based on whether key was loaded
     reconciler
         .sops_capability_ready
         .store(new_key.is_some(), std::sync::atomic::Ordering::Relaxed);
-
-    let controller_namespace =
-        std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
 
     if new_key.is_some() {
         info!(
@@ -124,111 +140,35 @@ pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
     Ok(())
 }
 
-/// Reload SOPS private key from a specific namespace
-/// Falls back to controller namespace if not found
+/// Reload the SOPS private key of `namespace` from its key Secrets.
+///
+/// Only that namespace's key changes: resources elsewhere keep theirs. An error when the
+/// namespace has no key Secret, so the caller can tell "no key" from "key loaded".
 pub async fn reload_sops_private_key_from_namespace(
     reconciler: &Reconciler,
     namespace: &str,
 ) -> Result<()> {
-    let secrets: Api<Secret> = Api::namespaced(reconciler.client.clone(), namespace);
-    let secret_names = vec!["sops-private-key", "sops-gpg-key", "gpg-key"];
+    let Some(key) = read_namespace_keys(&reconciler.client, namespace).await? else {
+        error!(
+            "SOPS private key secret not found in namespace '{}': expected one of {} with a field among {}",
+            namespace,
+            KEY_SECRET_NAMES.join(", "),
+            KEY_FIELDS.join(", ")
+        );
+        return Err(anyhow::anyhow!(
+            "SOPS private key secret not found in namespace '{namespace}'. Expected one of: {} with a field among: {}.",
+            KEY_SECRET_NAMES.join(", "),
+            KEY_FIELDS.join(", ")
+        ));
+    };
 
-    for secret_name in secret_names {
-        match secrets.get(secret_name).await {
-            Ok(secret) => {
-                if let Some(ref data_map) = secret.data {
-                    if let Some(data) = data_map
-                        .get("private-key")
-                        .or_else(|| data_map.get("key"))
-                        .or_else(|| data_map.get("gpg-key"))
-                    {
-                        let key = String::from_utf8(data.0.clone())
-                            .map_err(|e| anyhow::anyhow!("Failed to decode private key: {e}"))?;
+    reconciler.sops_keys.lock().await.set(namespace, key);
 
-                        // Validate key format
-                        let key_size = key.len();
-                        let has_pgp_header = key.contains("-----BEGIN PGP PRIVATE KEY BLOCK-----");
-                        let has_pgp_footer = key.contains("-----END PGP PRIVATE KEY BLOCK-----");
-
-                        let key_kind = if is_age_key(&key) {
-                            "age identity"
-                        } else if has_pgp_header && has_pgp_footer {
-                            "armored GPG key"
-                        } else {
-                            "unrecognised"
-                        };
-                        info!(
-                            "✅ Loaded SOPS private key from secret '{}/{}': {} ({} bytes)",
-                            namespace, secret_name, key_kind, key_size
-                        );
-
-                        if !is_age_key(&key) && (!has_pgp_header || !has_pgp_footer) {
-                            warn!(
-                                "⚠️  SOPS private key from '{}/{}' may be malformed: neither an age identity nor an armored GPG key",
-                                namespace, secret_name
-                            );
-                        }
-
-                        // Only this namespace's key: resources elsewhere keep theirs.
-                        reconciler.sops_keys.lock().await.set(namespace, key);
-
-                        // Update capability flag if this is controller namespace
-                        let controller_namespace = std::env::var("POD_NAMESPACE")
-                            .unwrap_or_else(|_| "octopilot-system".to_string());
-                        if namespace == controller_namespace {
-                            reconciler
-                                .sops_capability_ready
-                                .store(true, std::sync::atomic::Ordering::Relaxed);
-                            info!(
-                                "✅ SOPS capability restored - key added back to controller namespace '{}'",
-                                namespace
-                            );
-                        }
-
-                        info!(
-                            "✅ Reloaded SOPS private key from secret '{}/{}'",
-                            namespace, secret_name
-                        );
-                        return Ok(());
-                    }
-                }
-            }
-            Err(kube::Error::Api(api_err)) if api_err.code == 404 => {
-                // Try next secret name
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to get secret '{}/{}': {}",
-                    namespace, secret_name, e
-                );
-            }
-        }
+    if namespace == crate::controller::reconciler::sops::controller_namespace() {
+        reconciler
+            .sops_capability_ready
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
-
-    // CRITICAL: SOPS key not found in the resource namespace
-    // This is a configuration error that SREs need to fix immediately
-    // DO NOT silently fall back - this masks configuration problems
-    error!(
-        "🚨 CRITICAL: SOPS private key secret NOT FOUND in namespace '{}'",
-        namespace
-    );
-    error!(
-        "🚨 Expected secret names: 'sops-private-key', 'sops-gpg-key', or 'gpg-key' in namespace '{}'",
-        namespace
-    );
-    error!(
-        "🚨 ACTION REQUIRED: Create the SOPS private key secret in namespace '{}' to enable SOPS decryption",
-        namespace
-    );
-    error!("🚨 Secret must contain one of these keys: 'private-key', 'key', or 'gpg-key'");
-    error!(
-        "🚨 This is a configuration error - SOPS decryption will FAIL for resources in namespace '{}'",
-        namespace
-    );
-
-    // Return error instead of falling back - this forces SREs to fix the configuration
-    Err(anyhow::anyhow!(
-        "SOPS private key secret not found in namespace '{}'. Expected one of: 'sops-private-key', 'sops-gpg-key', or 'gpg-key' with key 'private-key', 'key', or 'gpg-key'. This is a configuration error that must be fixed.",
-        namespace
-    ))
+    info!("✅ Reloaded SOPS private key of namespace '{}'", namespace);
+    Ok(())
 }

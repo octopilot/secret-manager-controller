@@ -8,6 +8,60 @@ use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 
+/// The private keys held in one SOPS key value, by kind.
+///
+/// A key value may hold an age identity, an armored GPG private key, or both: a
+/// repository in the middle of a move from PGP to age (or one that keeps both on
+/// purpose) has files encrypted either way, and one controller must decrypt them all.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct SopsKeyMaterial {
+    /// age identities (`AGE-SECRET-KEY-1...`), one per line.
+    pub age: Option<String>,
+    /// Armored GPG private key blocks.
+    pub gpg: Option<String>,
+}
+
+/// Separate the age identities from the GPG private key blocks in a SOPS key value.
+///
+/// Text that is neither (and is not blank or a comment) is handed to gpg as it always
+/// was, so a key in a form this does not recognise still gets its chance to import.
+#[must_use]
+pub fn split_sops_keys(private_key: &str) -> SopsKeyMaterial {
+    const BEGIN: &str = "-----BEGIN PGP PRIVATE KEY BLOCK-----";
+    const END: &str = "-----END PGP PRIVATE KEY BLOCK-----";
+
+    let mut age = Vec::new();
+    let mut gpg = Vec::new();
+    let mut other = Vec::new();
+    let mut in_block = false;
+    for line in private_key.lines() {
+        let trimmed = line.trim();
+        if in_block {
+            gpg.push(line.trim_end());
+            in_block = !trimmed.starts_with(END);
+        } else if trimmed.starts_with(BEGIN) {
+            gpg.push(line.trim_end());
+            in_block = true;
+        } else if trimmed.starts_with("AGE-SECRET-KEY-") {
+            age.push(trimmed);
+        } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            other.push(line.trim_end());
+        }
+    }
+
+    let gpg = if !gpg.is_empty() {
+        Some(gpg.join("\n") + "\n")
+    } else if age.is_empty() && !other.is_empty() {
+        Some(other.join("\n") + "\n")
+    } else {
+        None
+    };
+    SopsKeyMaterial {
+        age: (!age.is_empty()).then(|| age.join("\n")),
+        gpg,
+    }
+}
+
 /// Longest a gpg key import may run.
 const GPG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -155,5 +209,76 @@ pub(crate) async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>>
         Err(anyhow::anyhow!(
             "Failed to import GPG private key: {error_msg}"
         ))
+    }
+}
+
+#[cfg(test)]
+mod key_material_tests {
+    use super::{SopsKeyMaterial, split_sops_keys};
+
+    const AGE: &str = "AGE-SECRET-KEY-1EXAMPLEEXAMPLEEXAMPLE";
+    const GPG: &str = "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBGexample\n=abcd\n-----END PGP PRIVATE KEY BLOCK-----";
+
+    #[test]
+    fn an_age_key_file_yields_its_identities_only() {
+        let material = split_sops_keys(&format!("# created: today\n# public key: age1x\n{AGE}\n"));
+        assert_eq!(
+            material,
+            SopsKeyMaterial {
+                age: Some(AGE.to_string()),
+                gpg: None
+            }
+        );
+    }
+
+    #[test]
+    fn an_armored_gpg_key_yields_the_block_only() {
+        let material = split_sops_keys(GPG);
+        assert_eq!(material.age, None);
+        assert_eq!(material.gpg.as_deref(), Some(format!("{GPG}\n").as_str()));
+    }
+
+    /// The mixed case: both kinds in one value, in either order, with Windows line ends.
+    #[test]
+    fn both_kinds_in_one_value_are_separated() {
+        for value in [
+            format!("{AGE}\n{GPG}\n"),
+            format!("{GPG}\n# public key: age1x\n{AGE}"),
+            format!("{AGE}\r\n{}\r\n", GPG.replace('\n', "\r\n")),
+        ] {
+            let material = split_sops_keys(&value);
+            assert_eq!(material.age.as_deref(), Some(AGE), "{value:?}");
+            assert_eq!(
+                material.gpg.as_deref(),
+                Some(format!("{GPG}\n").as_str()),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn several_identities_and_several_blocks_are_all_kept() {
+        let second = "AGE-SECRET-KEY-1SECONDSECONDSECOND";
+        let material = split_sops_keys(&format!("{AGE}\n{GPG}\n{second}\n{GPG}\n"));
+        assert_eq!(material.age, Some(format!("{AGE}\n{second}")));
+        assert_eq!(material.gpg, Some(format!("{GPG}\n{GPG}\n")));
+    }
+
+    #[test]
+    fn unrecognised_text_alone_is_left_to_gpg() {
+        let material = split_sops_keys("not a key in any form we know\n");
+        assert_eq!(material.age, None);
+        assert_eq!(
+            material.gpg.as_deref(),
+            Some("not a key in any form we know\n")
+        );
+    }
+
+    #[test]
+    fn nothing_yields_nothing() {
+        assert_eq!(
+            split_sops_keys("\n  \n# only a comment\n"),
+            SopsKeyMaterial::default()
+        );
     }
 }

@@ -767,3 +767,131 @@ async fn test_decrypt_with_wrong_age_identity_fails() {
     );
     assert!(!error.to_string().contains("abc123"));
 }
+
+/// A throwaway GPG key in its own keyring: `(fingerprint, armored private key, keyring)`.
+/// `None` when gpg is not installed.
+fn throwaway_gpg_key(test: &str) -> Option<(String, String, PathBuf)> {
+    use std::process::Command;
+
+    if Command::new("gpg").arg("--version").output().is_err() {
+        if std::env::var_os("SMC_REQUIRE_SOPS").is_some() {
+            panic!("gpg is required (SMC_REQUIRE_SOPS is set) but is not installed");
+        }
+        eprintln!("skipping: gpg not installed");
+        return None;
+    }
+    // Short path: gpg-agent's socket path has a length limit.
+    let home = PathBuf::from(format!("/tmp/smc-gpg-{}-{test}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).expect("gpg home");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+    }
+    let gpg = |args: &[&str]| {
+        let output = Command::new("gpg")
+            .env("GNUPGHOME", &home)
+            .args(["--batch", "--pinentry-mode", "loopback", "--passphrase", ""])
+            .args(args)
+            .output()
+            .expect("run gpg");
+        assert!(
+            output.status.success(),
+            "gpg {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("utf-8")
+    };
+    gpg(&[
+        "--quick-generate-key",
+        "smc-test@example.invalid",
+        "default",
+        "default",
+        "never",
+    ]);
+    let listing = gpg(&["--list-secret-keys", "--with-colons"]);
+    let fingerprint = listing
+        .lines()
+        .find(|line| line.starts_with("fpr:"))
+        .and_then(|line| line.split(':').nth(9))
+        .expect("fingerprint")
+        .to_string();
+    let armored = gpg(&["--armor", "--export-secret-keys", &fingerprint]);
+    Some((fingerprint, armored, home))
+}
+
+/// Dog-fooding keeps both kinds of file in one repository: some encrypted to an age
+/// recipient, some to a GPG key. One key value holding both private keys decrypts both.
+#[tokio::test]
+async fn test_one_key_value_decrypts_age_and_pgp_files() {
+    if sops_missing() {
+        return;
+    }
+    let Some((fingerprint, armored_gpg_key, gpg_home)) = throwaway_gpg_key("mixed") else {
+        return;
+    };
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    // A file encrypted to the GPG key...
+    let mut child = Command::new("sops")
+        .current_dir(std::env::temp_dir())
+        .env("GNUPGHOME", &gpg_home)
+        .args(["-e", "--pgp", &fingerprint])
+        .args([
+            "--input-type",
+            "dotenv",
+            "--output-type",
+            "dotenv",
+            "/dev/stdin",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sops");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(b"LEGACY_TOKEN=from-pgp\n")
+        .expect("write");
+    let output = child.wait_with_output().expect("sops -e --pgp");
+    assert!(
+        output.status.success(),
+        "sops -e --pgp failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let pgp_file = String::from_utf8(output.stdout).expect("utf-8");
+    // ...and one encrypted to the age recipient.
+    let age_file = encrypt_to_test_age_recipient("NEW_TOKEN=from-age\n", "dotenv", &[]);
+    let _ = std::fs::remove_dir_all(&gpg_home);
+
+    let both_keys = format!("{TEST_AGE_IDENTITY}{armored_gpg_key}");
+    let path = PathBuf::from("application.secrets.env");
+
+    let from_pgp = decrypt_sops_content(&pgp_file, Some(&path), Some(&both_keys))
+        .await
+        .expect("the PGP file decrypts with the combined key");
+    assert!(from_pgp.contains("LEGACY_TOKEN=from-pgp"));
+
+    let from_age = decrypt_sops_content(&age_file, Some(&path), Some(&both_keys))
+        .await
+        .expect("the age file decrypts with the combined key");
+    assert!(from_age.contains("NEW_TOKEN=from-age"));
+
+    // Each key alone decrypts only its own kind.
+    assert!(
+        decrypt_sops_content(&pgp_file, Some(&path), Some(TEST_AGE_IDENTITY))
+            .await
+            .is_err(),
+        "the age identity alone cannot read the PGP file"
+    );
+    assert!(
+        decrypt_sops_content(&age_file, Some(&path), Some(&armored_gpg_key))
+            .await
+            .is_err(),
+        "the GPG key alone cannot read the age file"
+    );
+}
