@@ -54,6 +54,12 @@ pub struct BackoffState {
     pub error_count: u32,
 }
 
+impl Default for BackoffState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BackoffState {
     pub fn new() -> Self {
         Self {
@@ -77,8 +83,8 @@ pub struct Reconciler {
     pub client: Client,
     // Note: secret_manager is created per-reconciliation to support per-resource auth config
     // In the future, we might want to cache clients per auth config
-    // SOPS private key is wrapped in Arc<AsyncMutex> to allow hot-reloading when secret changes
-    pub sops_private_key: Arc<AsyncMutex<Option<String>>>,
+    // SOPS private keys by namespace, hot-reloaded when a key Secret changes
+    pub sops_keys: Arc<AsyncMutex<crate::controller::reconciler::sops::SopsKeyStore>>,
     // SOPS capability bootstrap flag - tracks if SOPS is configured globally (controller namespace)
     // Set to true once key is successfully loaded, updated by watch when key changes
     // This separates "system readiness" from "per-file decryption" concerns
@@ -96,7 +102,7 @@ impl std::fmt::Debug for Reconciler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Note: We can't lock the mutex in Debug, so we just indicate if it's set
         f.debug_struct("Reconciler")
-            .field("sops_private_key", &"***")
+            .field("sops_keys", &"***")
             .finish_non_exhaustive()
     }
 }
@@ -125,11 +131,27 @@ impl Reconciler {
 
         Ok(Self {
             client,
-            sops_private_key: Arc::new(AsyncMutex::new(sops_private_key)),
+            sops_keys: Arc::new(AsyncMutex::new(
+                crate::controller::reconciler::sops::SopsKeyStore::with_controller_key(
+                    &crate::controller::reconciler::sops::controller_namespace(),
+                    sops_private_key,
+                ),
+            )),
             sops_capability_ready,
             backoff_states: Arc::new(Mutex::new(HashMap::new())),
             git_operation_locks: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    /// The SOPS private key a resource in `namespace` decrypts with: the key of its own
+    /// namespace, else the controller namespace's.
+    pub async fn sops_key_for(&self, namespace: &str) -> Option<String> {
+        let keys = self.sops_keys.lock().await;
+        keys.key_for(
+            namespace,
+            &crate::controller::reconciler::sops::controller_namespace(),
+        )
+        .map(ToString::to_string)
     }
 
     /// Get or create a git operation lock for a resource

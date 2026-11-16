@@ -90,8 +90,16 @@ pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
 /// Called when the secret changes to hot-reload the key without restarting
 pub async fn reload_sops_private_key(reconciler: &Reconciler) -> Result<()> {
     let new_key = load_sops_private_key(&reconciler.client).await?;
-    let mut key_guard = reconciler.sops_private_key.lock().await;
-    *key_guard = new_key.clone();
+    {
+        let controller_namespace = crate::controller::reconciler::sops::controller_namespace();
+        let mut keys = reconciler.sops_keys.lock().await;
+        match &new_key {
+            Some(key) => keys.set(&controller_namespace, key.clone()),
+            None => {
+                keys.remove(&controller_namespace);
+            }
+        }
+    }
 
     // Update capability flag based on whether key was loaded
     reconciler
@@ -161,8 +169,8 @@ pub async fn reload_sops_private_key_from_namespace(
                             );
                         }
 
-                        let mut key_guard = reconciler.sops_private_key.lock().await;
-                        *key_guard = Some(key);
+                        // Only this namespace's key: resources elsewhere keep theirs.
+                        reconciler.sops_keys.lock().await.set(namespace, key);
 
                         // Update capability flag if this is controller namespace
                         let controller_namespace = std::env::var("POD_NAMESPACE")

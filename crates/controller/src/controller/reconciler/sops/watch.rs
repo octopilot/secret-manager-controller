@@ -70,11 +70,26 @@ pub fn start_sops_key_watch(reconciler: Arc<Reconciler>) {
                         watcher::Event::Delete(secret) => {
                             handle_secret_delete(&reconciler, &secret, &secret_names).await;
                         }
-                        watcher::Event::Init
-                        | watcher::Event::InitApply(_)
-                        | watcher::Event::InitDone => {
-                            // Initial watch events - ignore, we already loaded the key at startup
+                        watcher::Event::InitApply(secret) => {
+                            // Key Secrets that already exist when the watch (re)starts:
+                            // load the key of each namespace that has one. The controller
+                            // namespace's was loaded at startup.
+                            let name = secret.metadata.name.as_deref().unwrap_or_default();
+                            let namespace =
+                                secret.metadata.namespace.as_deref().unwrap_or_default();
+                            if secret_names.contains(&name) && !namespace.is_empty() {
+                                if let Err(e) =
+                                    reload_sops_private_key_from_namespace(&reconciler, namespace)
+                                        .await
+                                {
+                                    warn!(
+                                        "Failed to load SOPS private key of namespace {}: {}",
+                                        namespace, e
+                                    );
+                                }
+                            }
                         }
+                        watcher::Event::Init | watcher::Event::InitDone => {}
                     }
                 }
                 Err(e) => {
@@ -168,27 +183,22 @@ async fn handle_secret_delete(reconciler: &Reconciler, secret: &Secret, secret_n
             );
         }
 
-        // Try to reload from controller namespace as fallback
-        let controller_namespace_for_reload =
-            std::env::var("POD_NAMESPACE").unwrap_or_else(|_| "octopilot-system".to_string());
-        if let Err(e) =
-            crate::controller::reconciler::sops::load::reload_sops_private_key(reconciler).await
+        // Another of the recognised key Secrets may still exist in that namespace; if
+        // none does, the namespace has no key of its own any more. Keys of other
+        // namespaces are untouched.
+        if reload_sops_private_key_from_namespace(reconciler, secret_namespace)
+            .await
+            .is_err()
         {
+            reconciler.sops_keys.lock().await.remove(secret_namespace);
             warn!(
-                "Failed to reload SOPS private key from controller namespace '{}': {}",
-                controller_namespace_for_reload, e
+                "⚠️  Namespace '{}' no longer has a SOPS private key of its own",
+                secret_namespace
             );
-            // Clear the key if reload fails
-            let mut key_guard = reconciler.sops_private_key.lock().await;
-            *key_guard = None;
-            // Update capability flag
+        } else if secret_namespace == controller_namespace {
             reconciler
                 .sops_capability_ready
-                .store(false, std::sync::atomic::Ordering::Relaxed);
-            warn!(
-                "⚠️  SOPS capability disabled - key cleared from controller namespace '{}'",
-                controller_namespace_for_reload
-            );
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
 
         // Update status for all resources in this namespace

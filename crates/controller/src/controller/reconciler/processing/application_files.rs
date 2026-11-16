@@ -173,12 +173,10 @@ pub async fn process_application_files(
             }
         }
 
-        // Get SOPS private key from Arc<AsyncMutex> for this reconciliation
-        // Key is available (either from controller namespace or resource namespace)
-        let sops_private_key = {
-            let key_guard = reconciler.sops_private_key.lock().await;
-            key_guard.clone() // Clone the Option<String> to avoid lifetime issues
-        };
+        // The key of this resource's namespace, else the controller namespace's.
+        let sops_private_key = reconciler
+            .sops_key_for(config.metadata.namespace.as_deref().unwrap_or("default"))
+            .await;
 
         // Parse secrets with enabled/disabled state - handle SOPS decryption errors with proper classification
         let parsed_secrets = match parser::parse_secrets_with_state(app_files, sops_private_key.as_deref()).await {
