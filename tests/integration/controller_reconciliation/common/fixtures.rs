@@ -65,6 +65,7 @@ pub fn create_test_secret_manager_config_flux_with_options(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: environment.to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -123,6 +124,7 @@ pub fn create_test_secret_manager_config_argocd(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: environment.to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -181,6 +183,7 @@ pub fn create_test_secret_manager_config_aws_flux(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: environment.to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -238,6 +241,7 @@ pub fn create_test_secret_manager_config_aws_argocd(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: environment.to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -295,6 +299,7 @@ pub fn create_test_secret_manager_config_azure_flux(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: environment.to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -353,6 +358,7 @@ pub fn create_test_secret_manager_config_azure_argocd(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: environment.to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,

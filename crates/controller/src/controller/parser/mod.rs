@@ -29,7 +29,7 @@ pub mod sops;
 pub mod types;
 
 // Re-export public API
-pub use file_finder::find_application_files;
+pub use file_finder::{explicit_application_files, find_application_files};
 pub use parsers::{
     ParseSecretsError, ParsedSecrets, SecretEntry, parse_properties, parse_secrets,
     parse_secrets_with_state,

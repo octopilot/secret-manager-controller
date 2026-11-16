@@ -134,6 +134,7 @@ resources:
 
         // Set kustomize_path in config
         config.spec.secrets = SecretsConfig {
+            files: None,
             kustomize_path: Some(kustomize_path.to_string()),
             ..config.spec.secrets
         };
@@ -263,6 +264,8 @@ resources:
         );
 
         config.spec.secrets = SecretsConfig {
+
+            files: None,
             kustomize_path: Some(kustomize_path.to_string()),
             ..config.spec.secrets
         };

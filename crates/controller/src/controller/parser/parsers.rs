@@ -258,9 +258,62 @@ pub(crate) async fn parse_yaml_secrets_with_state(
     // All YAML secrets are considered enabled for now.
     // Future enhancement: Could support a special key prefix like `_disabled_` or use null values
     let mut parsed = ParsedSecrets::default();
-    flatten_yaml_value_with_state(&yaml, String::new(), &mut parsed.secrets);
+    if is_kubernetes_secret(&yaml) {
+        kubernetes_secret_entries(&yaml, &mut parsed.secrets).map_err(ParseSecretsError::Io)?;
+    } else {
+        flatten_yaml_value_with_state(&yaml, String::new(), &mut parsed.secrets);
+    }
 
     Ok(parsed)
+}
+
+/// A Kubernetes Secret manifest (`kind: Secret`), as SOPS encrypts with
+/// `encrypted_regex: ^(data|stringData)$`.
+fn is_kubernetes_secret(yaml: &serde_yaml::Value) -> bool {
+    yaml.get("kind").and_then(serde_yaml::Value::as_str) == Some("Secret")
+        && yaml.get("apiVersion").and_then(serde_yaml::Value::as_str) == Some("v1")
+}
+
+/// The entries of a Kubernetes Secret manifest: `stringData` as written and `data`
+/// base64-decoded, `stringData` winning as it does in Kubernetes. The manifest's
+/// metadata is not a secret and is left out.
+fn kubernetes_secret_entries(
+    yaml: &serde_yaml::Value,
+    result: &mut HashMap<String, SecretEntry>,
+) -> anyhow::Result<()> {
+    use base64::Engine as _;
+
+    let entries = |field: &str| {
+        yaml.get(field)
+            .and_then(serde_yaml::Value::as_mapping)
+            .into_iter()
+            .flatten()
+            .filter_map(|(key, value)| Some((key.as_str()?.to_string(), value.as_str()?)))
+    };
+    for (key, value) in entries("data") {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(value.trim())
+            .with_context(|| format!("Secret data '{key}' is not valid base64"))?;
+        let value = String::from_utf8(bytes)
+            .with_context(|| format!("Secret data '{key}' is not UTF-8 text"))?;
+        result.insert(
+            key,
+            SecretEntry {
+                value,
+                enabled: true,
+            },
+        );
+    }
+    for (key, value) in entries("stringData") {
+        result.insert(
+            key,
+            SecretEntry {
+                value: value.to_string(),
+                enabled: true,
+            },
+        );
+    }
+    Ok(())
 }
 
 #[allow(dead_code, reason = "Reserved for future use")]

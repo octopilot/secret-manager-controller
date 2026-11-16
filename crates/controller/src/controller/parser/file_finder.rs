@@ -151,6 +151,56 @@ pub async fn find_application_files(
     Ok(application_files)
 }
 
+/// Application files for an explicit list of secret files (`spec.secrets.files`).
+///
+/// Each path is relative to the source root and must name a file inside it. The file
+/// name decides how it is read: `.env` is dotenv, `.yaml`, `.yml` and `.json` are YAML.
+/// One `ApplicationFiles` is returned per file, so files of the same kind do not
+/// displace each other.
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "Error documentation is provided in doc comments"
+)]
+pub fn explicit_application_files(
+    artifact_path: &Path,
+    files: &[String],
+    service_name: &str,
+) -> Result<Vec<ApplicationFiles>> {
+    use std::path::Component;
+
+    let mut application_files = Vec::with_capacity(files.len());
+    for file in files {
+        let relative = Path::new(file);
+        let inside_source = !file.is_empty()
+            && relative
+                .components()
+                .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+        if !inside_source {
+            anyhow::bail!("Secret file '{file}' must be a path relative to the source root");
+        }
+        let path = artifact_path.join(relative);
+        if !path.is_file() {
+            anyhow::bail!("Secret file '{file}' not found in the source");
+        }
+        let mut app_files = ApplicationFiles {
+            service_name: service_name.to_string(),
+            base_path: path.parent().unwrap_or(artifact_path).to_path_buf(),
+            secrets_env: None,
+            secrets_yaml: None,
+            properties: None,
+        };
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("env") => app_files.secrets_env = Some(path),
+            Some("yaml" | "yml" | "json") => app_files.secrets_yaml = Some(path),
+            _ => anyhow::bail!(
+                "Secret file '{file}' has an unsupported type: expected .env, .yaml, .yml or .json"
+            ),
+        }
+        application_files.push(app_files);
+    }
+    Ok(application_files)
+}
+
 fn find_files_in_directory(service_name: &str, dir: &Path) -> Result<ApplicationFiles> {
     let mut app_files = ApplicationFiles {
         service_name: service_name.to_string(),

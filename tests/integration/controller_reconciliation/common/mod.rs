@@ -305,6 +305,7 @@ pub fn create_gcp_reconciliation_config(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: "test".to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -361,6 +362,7 @@ pub fn create_aws_reconciliation_config(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: "test".to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,
@@ -416,6 +418,7 @@ pub fn create_azure_reconciliation_config(
                 git_credentials: None,
             },
             secrets: SecretsConfig {
+                files: None,
                 environment: "test".to_string(),
                 prefix: Some("test-service".to_string()),
                 suffix: None,

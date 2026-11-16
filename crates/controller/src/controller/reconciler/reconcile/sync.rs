@@ -131,14 +131,29 @@ pub async fn sync_secrets(
         // - {basePath}/{service}/profiles/{environment}/application.secrets.env
         // Pass secret_prefix as default_service_name for single service deployments
         let default_service_name = config.spec.secrets.prefix.as_deref();
-        let application_files = match parser::find_application_files(
-            artifact_path,
-            config.spec.secrets.base_path.as_deref(),
-            &config.spec.secrets.environment,
-            default_service_name,
-        )
-        .await
-        {
+        // spec.secrets.files names the files outright; otherwise they are discovered.
+        let explicit_files = config
+            .spec
+            .secrets
+            .files
+            .as_deref()
+            .filter(|files| !files.is_empty());
+        let found = if let Some(files) = explicit_files {
+            let service_name = default_service_name
+                .map(ToString::to_string)
+                .or_else(|| config.metadata.name.clone())
+                .unwrap_or_else(|| "default-service".to_string());
+            parser::explicit_application_files(artifact_path, files, &service_name)
+        } else {
+            parser::find_application_files(
+                artifact_path,
+                config.spec.secrets.base_path.as_deref(),
+                &config.spec.secrets.environment,
+                default_service_name,
+            )
+            .await
+        };
+        let application_files = match found {
             Ok(files) => files,
             Err(e) => {
                 error!(

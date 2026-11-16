@@ -67,6 +67,15 @@ pub struct SecretsConfig {
     /// Examples: "microservices", "services", "apps", or "." for root
     #[serde(default)]
     pub base_path: Option<String>,
+    /// Explicit secret files to sync, as paths relative to the source root, for example
+    /// "deployment-configuration/profiles/dev/app/runtime/application.secrets.env".
+    /// When set, only these files are read: basePath/environment discovery is skipped and
+    /// an application.properties next to them is ignored. `.env` files are dotenv;
+    /// `.yaml`, `.yml` and `.json` files are YAML, where a Kubernetes Secret manifest
+    /// contributes its data and stringData. `environment` still labels the secrets.
+    /// Ignored when kustomizePath is set.
+    #[serde(default)]
+    pub files: Option<Vec<String>>,
     /// Secret name prefix (default: repository name)
     /// Matches kustomize-google-secret-manager prefix behavior
     #[serde(default)]

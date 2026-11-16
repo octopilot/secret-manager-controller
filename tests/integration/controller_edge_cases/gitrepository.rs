@@ -49,6 +49,7 @@ mod tests {
                     auth: None,
                 }),
                 secrets: SecretsConfig {
+                    files: None,
                     environment: "test".to_string(),
                     prefix: None,
                     suffix: None,
