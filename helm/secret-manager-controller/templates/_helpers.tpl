@@ -37,6 +37,8 @@ secret-manager-controller-config
 {{- if .Values.image.digest -}}
 {{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
 {{- else -}}
-{{- printf "%s:%s" .Values.image.repository (default (printf "v%s" .Chart.AppVersion) .Values.image.tag) -}}
+{{- /* Image tags are vX.Y.Z. appVersion is X.Y.Z in the repository, and the release
+     pipeline (op) rewrites it to the tag, vX.Y.Z, in the published chart: accept both. */ -}}
+{{- printf "%s:%s" .Values.image.repository (default (printf "v%s" (trimPrefix "v" .Chart.AppVersion)) .Values.image.tag) -}}
 {{- end -}}
 {{- end -}}

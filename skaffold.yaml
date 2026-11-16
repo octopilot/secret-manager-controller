@@ -24,8 +24,8 @@ build:
           # pipeline's test leg for a docker artifact. hack/test.sh installs the
           # pinned sops, which the sops tests need, then runs the tests.
           BP_TEST_COMMAND: ./hack/test.sh
-    # The Helm chart (helm buildpack), pushed as an OCI chart:
-    #   oci://ghcr.io/octopilot/secret-manager-controller-chart/secret-manager-controller
+    # The Helm chart (helm buildpack), released as an OCI chart:
+    #   oci://ghcr.io/octopilot/secret-manager-controller-chart, tag vX.Y.Z
     # Chart.yaml carries the release version, so chart X.Y.Z deploys image vX.Y.Z.
     - image: ghcr.io/octopilot/secret-manager-controller-chart
       context: helm/secret-manager-controller

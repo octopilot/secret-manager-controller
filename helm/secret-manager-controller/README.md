@@ -2,9 +2,14 @@
 
 Published by the Octopilot pipeline with every release, as an OCI chart:
 
-    oci://ghcr.io/octopilot/secret-manager-controller-chart/secret-manager-controller
+    oci://ghcr.io/octopilot/secret-manager-controller-chart    (tag vX.Y.Z)
+
+    helm install smc oci://ghcr.io/octopilot/secret-manager-controller-chart --version vX.Y.Z
 
 Chart `X.Y.Z` deploys image `ghcr.io/octopilot/secret-manager-controller:vX.Y.Z`.
+With Flux, an OCIRepository with `ref.tag: vX.Y.Z` and
+`layerSelector.mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip`
+(`operation: copy`).
 
 The CRD ships in `crds/`. Helm installs it once and never upgrades it; with Flux set
 `install.crds` and `upgrade.crds` to `CreateReplace` on the HelmRelease.
