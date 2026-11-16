@@ -115,7 +115,9 @@ impl Reconciler {
         let sops_capability_ready = Arc::new(AtomicBool::new(sops_private_key.is_some()));
 
         if sops_private_key.is_some() {
-            tracing::info!("✅ SOPS capability ready - GPG key loaded from controller namespace");
+            tracing::info!(
+                "✅ SOPS capability ready - private key loaded from controller namespace"
+            );
         } else {
             tracing::warn!("⚠️  SOPS capability not ready - no key in controller namespace");
             tracing::warn!("   SOPS decryption will be disabled until key is added");

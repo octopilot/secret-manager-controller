@@ -42,9 +42,16 @@ pub async fn load_sops_private_key(client: &Client) -> Result<Option<String>> {
                         let has_pgp_header = key.contains("-----BEGIN PGP PRIVATE KEY BLOCK-----");
                         let has_pgp_footer = key.contains("-----END PGP PRIVATE KEY BLOCK-----");
 
+                        let key_kind = if is_age_key(&key) {
+                            "age identity"
+                        } else if has_pgp_header && has_pgp_footer {
+                            "armored GPG key"
+                        } else {
+                            "unrecognised"
+                        };
                         info!(
-                            "✅ Loaded SOPS private key from secret '{}/{}': size={} bytes, has_header={}, has_footer={}",
-                            namespace, secret_name, key_size, has_pgp_header, has_pgp_footer
+                            "✅ Loaded SOPS private key from secret '{}/{}': {} ({} bytes)",
+                            namespace, secret_name, key_kind, key_size
                         );
 
                         if !is_age_key(&key) && (!has_pgp_header || !has_pgp_footer) {
@@ -135,9 +142,16 @@ pub async fn reload_sops_private_key_from_namespace(
                         let has_pgp_header = key.contains("-----BEGIN PGP PRIVATE KEY BLOCK-----");
                         let has_pgp_footer = key.contains("-----END PGP PRIVATE KEY BLOCK-----");
 
+                        let key_kind = if is_age_key(&key) {
+                            "age identity"
+                        } else if has_pgp_header && has_pgp_footer {
+                            "armored GPG key"
+                        } else {
+                            "unrecognised"
+                        };
                         info!(
-                            "✅ Loaded SOPS private key from secret '{}/{}': size={} bytes, has_header={}, has_footer={}",
-                            namespace, secret_name, key_size, has_pgp_header, has_pgp_footer
+                            "✅ Loaded SOPS private key from secret '{}/{}': {} ({} bytes)",
+                            namespace, secret_name, key_kind, key_size
                         );
 
                         if !is_age_key(&key) && (!has_pgp_header || !has_pgp_footer) {

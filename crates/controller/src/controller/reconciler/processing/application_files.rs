@@ -72,7 +72,7 @@ pub async fn process_application_files(
             if !reconciler.sops_capability_ready.load(std::sync::atomic::Ordering::Relaxed) {
                 // SOPS is not configured globally - this is a permanent failure
                 let error_msg = format!(
-                    "SOPS decryption not available: No GPG key found in controller namespace. \
+                    "SOPS decryption not available: No SOPS private key (age or GPG) found in controller namespace. \
                      Add 'sops-private-key' secret to enable SOPS decryption."
                 );
                 error!("{}", error_msg);
@@ -127,7 +127,7 @@ pub async fn process_application_files(
 
                     if !key_available {
                         let error_msg = format!(
-                            "SOPS decryption not available: No GPG key found in namespace '{}'. \
+                            "SOPS decryption not available: No SOPS private key (age or GPG) found in namespace '{}'. \
                              Status shows sops_key_available=false. Add 'sops-private-key' secret to enable SOPS decryption.",
                             resource_namespace
                         );
@@ -150,7 +150,7 @@ pub async fn process_application_files(
                 } else {
                     // Status shows key is not available - permanent failure
                     let error_msg = format!(
-                        "SOPS decryption not available: No GPG key found in namespace '{}'. \
+                        "SOPS decryption not available: No SOPS private key (age or GPG) found in namespace '{}'. \
                          Status shows sops_key_available=false. Add 'sops-private-key' secret to enable SOPS decryption.",
                         resource_namespace
                     );

@@ -668,3 +668,102 @@ async fn test_decrypt_dotenv_with_age_key() {
     let no_key = decrypt_sops_content(&encrypted, Some(&path), None).await;
     assert!(no_key.is_err(), "decryption without a key must fail");
 }
+
+/// Another throwaway identity: not a recipient of anything encrypted in these tests.
+const OTHER_AGE_IDENTITY: &str =
+    "AGE-SECRET-KEY-1YLP3G3GATZLPV7RTRU3EMUXMGMMLHLTA9L5PDHLYPZYV0XZGGRYQQ05VWU";
+
+/// Encrypt `plaintext` to the test age recipient with the sops binary.
+fn encrypt_to_test_age_recipient(plaintext: &str, file_type: &str, extra: &[&str]) -> String {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("sops")
+        // Outside the repository: its .sops.yaml has no creation rule for stdin.
+        .current_dir(std::env::temp_dir())
+        .args(["-e", "--age", TEST_AGE_RECIPIENT])
+        .args(extra)
+        .args([
+            "--input-type",
+            file_type,
+            "--output-type",
+            file_type,
+            "/dev/stdin",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sops");
+    child
+        .stdin
+        .take()
+        .expect("sops stdin")
+        .write_all(plaintext.as_bytes())
+        .expect("write plaintext");
+    let output = child.wait_with_output().expect("sops -e");
+    assert!(
+        output.status.success(),
+        "sops -e failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("utf-8")
+}
+
+/// A Kubernetes Secret manifest encrypted the way our repositories do it
+/// (`encrypted_regex: ^(data|stringData)$`) decrypts with the age identity.
+#[tokio::test]
+async fn test_decrypt_secret_manifest_with_age_key() {
+    if sops_missing() {
+        return;
+    }
+    let manifest = "apiVersion: v1\nkind: Secret\nmetadata:\n  name: gate\ntype: Opaque\nstringData:\n  key: open-sesame\n";
+    let encrypted = encrypt_to_test_age_recipient(
+        manifest,
+        "yaml",
+        &["--encrypted-regex", "^(data|stringData)$"],
+    );
+    assert!(is_sops_encrypted(&encrypted));
+    assert!(!encrypted.contains("open-sesame"));
+    assert!(encrypted.contains("name: gate"), "metadata stays readable");
+
+    let path = PathBuf::from("gate.secret.yaml");
+    let decrypted = decrypt_sops_content(&encrypted, Some(&path), Some(TEST_AGE_IDENTITY))
+        .await
+        .expect("decrypt with the age identity");
+    assert!(decrypted.contains("key: open-sesame"));
+}
+
+/// The key Secret may hold several identities (a key file with more than one line):
+/// any of them that is a recipient decrypts.
+#[tokio::test]
+async fn test_decrypt_with_several_age_identities() {
+    if sops_missing() {
+        return;
+    }
+    let encrypted = encrypt_to_test_age_recipient("TOKEN=abc123\n", "dotenv", &[]);
+    let identities = format!("{OTHER_AGE_IDENTITY}\n{TEST_AGE_IDENTITY}");
+    let path = PathBuf::from("application.secrets.env");
+    let decrypted = decrypt_sops_content(&encrypted, Some(&path), Some(&identities))
+        .await
+        .expect("the second identity is a recipient");
+    assert!(decrypted.contains("TOKEN=abc123"));
+}
+
+/// An identity that is not a recipient fails, permanently, and says nothing of the content.
+#[tokio::test]
+async fn test_decrypt_with_wrong_age_identity_fails() {
+    if sops_missing() {
+        return;
+    }
+    let encrypted = encrypt_to_test_age_recipient("TOKEN=abc123\n", "dotenv", &[]);
+    let path = PathBuf::from("application.secrets.env");
+    let error = decrypt_sops_content(&encrypted, Some(&path), Some(OTHER_AGE_IDENTITY))
+        .await
+        .expect_err("not a recipient");
+    assert!(
+        !error.is_transient,
+        "a wrong key is not worth retrying: {error}"
+    );
+    assert!(!error.to_string().contains("abc123"));
+}

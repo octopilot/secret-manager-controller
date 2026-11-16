@@ -277,15 +277,6 @@ async fn decrypt_with_sops_binary(
             }
         }
 
-        if let Some(ref required_fps) = required_fingerprints {
-            if !required_fps.is_empty() {
-                error!(
-                    "🔑 SOPS file requires GPG key fingerprints: {}. Verify the imported key matches one of these.",
-                    required_fps.join(", ")
-                );
-            }
-        }
-
         if gpg_home.is_some() {
             warn!(
                 "GPG keyring was set - verify the key matches the encryption key used in .sops.yaml"
