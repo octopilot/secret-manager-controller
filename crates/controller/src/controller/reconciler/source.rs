@@ -22,6 +22,9 @@ pub fn start_source_watch(
     );
 }
 
+/// Marks a GitRepository whose pulls this controller suspended (`suspendGitPulls`).
+const SUSPENDED_BY_ANNOTATION: &str = "secret-management.octopilot.io/git-pulls-suspended-by";
+
 /// Suspend or resume GitRepository pulls
 /// Patches the FluxCD GitRepository resource to control Git pulls independently from reconciliation
 /// When suspended, FluxCD stops fetching new commits but the last artifact remains available
@@ -66,12 +69,33 @@ pub async fn suspend_git_repository(
         return Ok(());
     }
 
-    // Patch GitRepository to set suspend status
-    let patch = serde_json::json!({
-        "spec": {
-            "suspend": suspend
-        }
-    });
+    // A source suspended by anyone else (in Git, or by hand with `flux suspend`) is theirs
+    // to resume: the controller only resumes what it suspended, which it marks with an
+    // annotation.
+    let suspended_by_controller = git_repo
+        .metadata
+        .annotations
+        .as_ref()
+        .is_some_and(|annotations| annotations.contains_key(SUSPENDED_BY_ANNOTATION));
+    if !suspend && !suspended_by_controller {
+        debug!(
+            "GitRepository {}/{} is suspended, but not by this controller: leaving it",
+            source_ref.namespace, source_ref.name
+        );
+        return Ok(());
+    }
+
+    let patch = if suspend {
+        serde_json::json!({
+            "metadata": { "annotations": { SUSPENDED_BY_ANNOTATION: "secret-manager-controller" } },
+            "spec": { "suspend": true }
+        })
+    } else {
+        serde_json::json!({
+            "metadata": { "annotations": { SUSPENDED_BY_ANNOTATION: null } },
+            "spec": { "suspend": false }
+        })
+    };
 
     let patch_params = PatchParams::apply("secret-manager-controller").force();
 
