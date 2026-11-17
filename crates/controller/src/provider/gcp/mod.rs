@@ -17,7 +17,7 @@ pub use parameter_manager::ParameterManagerREST;
 
 use crate::provider::{ConfigStoreProvider, SecretManagerProvider};
 use anyhow::Result;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Create a GCP Secret Manager provider
 ///
@@ -35,7 +35,7 @@ pub async fn create_gcp_provider(
     auth_type: Option<&str>,
     service_account_email: Option<&str>,
 ) -> Result<Box<dyn SecretManagerProvider>> {
-    info!("Using GCP REST client (native implementation)");
+    debug!("Using GCP REST client (native implementation)");
     Ok(Box::new(
         SecretManagerREST::new(project_id, auth_type, service_account_email).await?,
     ))

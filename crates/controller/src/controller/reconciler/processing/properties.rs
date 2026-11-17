@@ -165,7 +165,7 @@ pub async fn store_properties(
                                         config_name, sync_state.update_count
                                     );
                                 } else {
-                                    info!(
+                                    debug!(
                                         "✅ Config '{}' unchanged (no update needed) - exists={}, update_count={}",
                                         config_name, sync_state.exists, sync_state.update_count
                                     );
@@ -321,7 +321,7 @@ pub async fn store_properties(
                                     key, sync_state.update_count
                                 );
                             } else {
-                                info!(
+                                debug!(
                                     "✅ Config '{}' unchanged (no update needed) - exists={}, update_count={}",
                                     key, sync_state.exists, sync_state.update_count
                                 );
@@ -384,7 +384,7 @@ pub async fn store_properties(
                         secret_name, sync_state.update_count
                     );
                 } else {
-                    info!(
+                    debug!(
                         "✅ Properties secret '{}' unchanged (no update needed) - exists={}, update_count={}",
                         secret_name, sync_state.exists, sync_state.update_count
                     );

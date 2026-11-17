@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// The private keys held in one SOPS key value, by kind.
 ///
@@ -130,7 +130,7 @@ pub(crate) async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>>
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        info!("✅ GPG key import command succeeded");
+        debug!("✅ GPG key import command succeeded");
         debug!("GPG import stdout: {}", stdout);
         if !stderr.is_empty() {
             debug!("GPG import stderr: {}", stderr);
@@ -187,7 +187,7 @@ pub(crate) async fn import_gpg_key(private_key: &str) -> Result<Option<PathBuf>>
         }
 
         if let Some(ref fingerprint) = imported_fingerprint {
-            info!(
+            debug!(
                 "✅ Successfully imported GPG private key (fingerprint: {}) into temporary keyring: {:?}",
                 fingerprint, gpg_home
             );

@@ -161,7 +161,7 @@ async fn decrypt_with_sops_binary(
 
     // Set up a GPG keyring if a GPG private key is provided
     let gpg_home = if let Some(private_key) = key_material.gpg.as_deref() {
-        info!("Importing GPG private key into temporary keyring for SOPS decryption");
+        debug!("Importing GPG private key into temporary keyring for SOPS decryption");
         let gpg_result = import_gpg_key(private_key).await.map_err(|e| {
             SopsDecryptionError::new(
                 SopsDecryptionFailureReason::InvalidKeyFormat,
@@ -281,7 +281,7 @@ async fn decrypt_with_sops_binary(
             )
         })?;
 
-        info!(
+        debug!(
             "✅ SOPS decryption succeeded - decrypted {} bytes",
             decrypted.len()
         );

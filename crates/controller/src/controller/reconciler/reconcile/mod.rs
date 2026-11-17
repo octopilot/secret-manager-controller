@@ -39,7 +39,7 @@ pub async fn reconcile(
     let name = config.metadata.name.as_deref().unwrap_or("unknown");
 
     // Log trigger source at start of reconciliation
-    info!(
+    debug!(
         "🔄 Reconciling SecretManagerConfig: {} (trigger source: {})",
         name,
         trigger_source.as_str()
@@ -202,7 +202,7 @@ pub async fn reconcile(
         }
     };
 
-    info!(
+    debug!(
         "🔄 Reconciling SecretManagerConfig: {} (trigger source: {})",
         name, trigger_source_str
     );

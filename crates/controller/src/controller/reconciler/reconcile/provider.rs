@@ -10,7 +10,7 @@ use crate::provider::azure::AzureKeyVault;
 use crate::provider::gcp::create_gcp_provider;
 use anyhow::Context;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Create provider client based on provider configuration
 ///
@@ -72,7 +72,7 @@ pub async fn create_provider(
                 }
             } else {
                 // Default to Workload Identity when auth is not specified
-                info!("No auth configuration specified, defaulting to Workload Identity");
+                debug!("No auth configuration specified, defaulting to Workload Identity");
                 (Some("WorkloadIdentity"), None)
             };
 

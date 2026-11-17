@@ -9,7 +9,7 @@ use crate::crd::SourceRef;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::time::Instant;
-use tracing::{Instrument, info, info_span, warn};
+use tracing::{Instrument, debug, info, info_span, warn};
 
 use super::download::{
     cleanup_old_revisions, download_artifact, extract_artifact, verify_checksum,
@@ -169,7 +169,7 @@ pub async fn get_flux_artifact_path(
     let _fetching = lock.lock().await;
 
     if is_complete_cache(&cache_path) {
-        info!(
+        debug!(
             "Using cached FluxCD artifact at {} (revision: {}, dir: {})",
             cache_path.display(),
             revision,

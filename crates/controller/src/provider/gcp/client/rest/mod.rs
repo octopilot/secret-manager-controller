@@ -85,7 +85,7 @@ impl SecretManagerREST {
         };
 
         if let Some(email) = service_account_email {
-            info!(
+            debug!(
                 "Using Workload Identity authentication with service account: {}",
                 email
             );
@@ -94,10 +94,10 @@ impl SecretManagerREST {
                 email
             );
         } else {
-            info!("Using Workload Identity authentication (service account from pod annotation)");
+            debug!("Using Workload Identity authentication (service account from pod annotation)");
         }
 
-        info!("Initializing GCP REST client for project: {}", project_id);
+        debug!("Initializing GCP REST client for project: {}", project_id);
         // Log endpoint if in Pact mode (check without holding guard)
         if std::env::var("PACT_MODE").is_ok() {
             info!("PACT_MODE: Using endpoint {}", base_url);
@@ -152,7 +152,7 @@ impl SecretManagerREST {
                     .json()
                     .await
                     .context("Failed to parse token response from metadata server")?;
-                info!("Retrieved access token from metadata server (Workload Identity)");
+                debug!("Retrieved access token from metadata server (Workload Identity)");
                 return Ok(format!("Bearer {}", token_response.access_token));
             }
             Ok(response) => {

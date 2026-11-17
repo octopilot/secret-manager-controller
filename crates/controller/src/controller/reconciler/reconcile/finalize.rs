@@ -108,7 +108,7 @@ pub async fn finalize_reconciliation(
                 );
             }
 
-            info!(
+            debug!(
                 "📅 Next scheduled reconciliation: {} (in {}s, trigger source: timer-based)",
                 next_trigger_time.to_rfc3339(),
                 duration.as_secs()

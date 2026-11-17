@@ -12,7 +12,7 @@ use crate::crd::SecretManagerConfig;
 use crate::observability;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Result type for artifact path resolution
 /// Can return a path, indicate waiting for resource, or an error
@@ -31,7 +31,7 @@ pub async fn resolve_artifact_path(
     config: &Arc<SecretManagerConfig>,
     ctx: &Arc<Reconciler>,
 ) -> Result<ArtifactPathResult, ReconcilerError> {
-    info!(
+    debug!(
         "🔍 Checking source: {} '{}' in namespace '{}'",
         config.spec.source_ref.kind, config.spec.source_ref.name, config.spec.source_ref.namespace
     );
@@ -77,14 +77,14 @@ pub async fn resolve_artifact_path(
 
             // Fetch GitRepository resource from Kubernetes API
             // This gives us access to the cloned repository path
-            info!(
+            debug!(
                 "📦 Fetching FluxCD GitRepository: {}/{}",
                 config.spec.source_ref.namespace, config.spec.source_ref.name
             );
 
             let git_repo = match get_flux_git_repository(ctx, &config.spec.source_ref).await {
                 Ok(repo) => {
-                    info!(
+                    debug!(
                         "✅ Successfully retrieved GitRepository: {}/{}",
                         config.spec.source_ref.namespace, config.spec.source_ref.name
                     );
@@ -146,7 +146,7 @@ pub async fn resolve_artifact_path(
             // Returns path to extracted directory
             match get_flux_artifact_path(ctx, &git_repo).await {
                 Ok(path) => {
-                    info!(
+                    debug!(
                         "Found FluxCD artifact path: {} for GitRepository: {}",
                         path.display(),
                         config.spec.source_ref.name

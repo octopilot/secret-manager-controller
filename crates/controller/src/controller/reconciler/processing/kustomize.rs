@@ -9,7 +9,7 @@ use crate::provider::SecretManagerProvider;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::Instant;
-use tracing::{error, info, info_span, warn};
+use tracing::{debug, error, info, info_span, warn};
 
 /// Process Kustomize secrets
 /// Extracts secrets from kustomize-generated Secret resources and stores them in cloud provider
@@ -105,7 +105,7 @@ pub async fn process_kustomize_secrets(
                         secret_name, sync_state.update_count
                     );
                 } else {
-                    info!(
+                    debug!(
                         "✅ Secret '{}' unchanged (no update needed) - exists={}, update_count={}",
                         secret_name, sync_state.exists, sync_state.update_count
                     );

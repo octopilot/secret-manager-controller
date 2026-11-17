@@ -13,7 +13,7 @@ use crate::observability;
 use crate::provider::SecretManagerProvider;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Result type for secret syncing
 #[derive(Debug)]
@@ -131,7 +131,7 @@ pub async fn sync_secrets(
         // Directly parses application.secrets.env, application.secrets.yaml, and application.properties files
         // Simpler than kustomize mode but doesn't support overlays or generators
         // Suitable for simple deployments or when kustomize isn't needed
-        info!("Using raw file mode");
+        debug!("Using raw file mode");
 
         // Find application files for the specified environment
         // Searches for files matching patterns like:
@@ -185,7 +185,7 @@ pub async fn sync_secrets(
             }
         };
 
-        info!(
+        debug!(
             "📋 Found {} application file set(s) to process",
             application_files.len()
         );
@@ -219,7 +219,7 @@ pub async fn sync_secrets(
                         existing.exists = existing.exists || sync_state.exists;
                         existing.update_count = existing.update_count.max(sync_state.update_count);
                     }
-                    info!(
+                    debug!(
                         "✅ Synced {} secrets for service: {}",
                         count, app_files.service_name
                     );

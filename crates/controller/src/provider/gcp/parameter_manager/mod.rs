@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose};
 use reqwest::Client;
-use tracing::{Instrument, info, info_span};
+use tracing::{Instrument, debug, info, info_span};
 
 use requests::{
     CreateParameterRequest, CreateParameterVersionRequest, UpdateParameterRequest,
@@ -102,7 +102,7 @@ impl ParameterManagerREST {
         let location = location.unwrap_or_else(|| "global".to_string());
 
         if let Some(email) = service_account_email {
-            info!(
+            debug!(
                 "Using Workload Identity authentication with service account: {}",
                 email
             );
@@ -111,7 +111,7 @@ impl ParameterManagerREST {
                 email
             );
         } else {
-            info!("Using Workload Identity authentication (service account from pod annotation)");
+            debug!("Using Workload Identity authentication (service account from pod annotation)");
         }
 
         info!(
