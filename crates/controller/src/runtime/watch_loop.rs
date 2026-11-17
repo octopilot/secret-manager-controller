@@ -272,7 +272,7 @@ fn create_reconcile_fn(
                         // If current time >= next_reconcile_time (with 2s tolerance), this is a periodic reconciliation
                         let is_periodic = now >= next_time_utc - chrono::Duration::seconds(2);
                         if is_periodic {
-                            info!(
+                            debug!(
                                 resource.name = name.as_str(),
                                 resource.namespace = namespace.as_str(),
                                 next_reconcile_time = next_reconcile_time.as_str(),
@@ -303,6 +303,16 @@ fn create_reconcile_fn(
         // 2. Always reconcile if manual trigger annotation is present (msmctl reconcile)
         // 3. Always reconcile if this is a periodic reconciliation (requeue-triggered)
         // A new artifact on the referenced GitRepository (see configs_for_new_artifact).
+        // The status is read from the watch cache, which trails this controller's own
+        // writes: only believe "due" when this process has not just reconciled the object.
+        let is_periodic_reconcile = is_periodic_reconcile
+            && retry::periodic_due(
+                &namespace,
+                &name,
+                parse_kubernetes_duration(&obj.spec.reconcile_interval)
+                    .unwrap_or(std::time::Duration::from_secs(60)),
+            );
+
         let is_source_trigger = take_source_trigger(&namespace, &name);
         // A retry asked for by an earlier run that failed or had to wait.
         let is_retry = retry::take_if_due(&namespace, &name);
@@ -316,7 +326,7 @@ fn create_reconcile_fn(
             is_periodic_reconcile,
         );
 
-        if reason.is_none() {
+        let Some(reason) = reason else {
             debug!(
                 resource.name = name.as_str(),
                 resource.namespace = namespace.as_str(),
@@ -336,7 +346,7 @@ fn create_reconcile_fn(
             return Ok(Action::requeue(
                 wake_in.max(std::time::Duration::from_secs(1)),
             ));
-        }
+        };
 
         // This run supersedes any retry still pending.
         retry::clear(&namespace, &name);
@@ -356,7 +366,7 @@ fn create_reconcile_fn(
         }
 
         if is_periodic_reconcile {
-            info!(
+            debug!(
                 resource.name = name.as_str(),
                 resource.namespace = namespace.as_str(),
                 "Periodic reconciliation triggered - proceeding despite generation match"
@@ -422,6 +432,8 @@ fn create_reconcile_fn(
             controller_config_for_reconcile.clone(),
         )
         .await;
+        // Whatever the outcome, this object has just been reconciled by this process.
+        retry::mark_ran(&namespace, &name);
 
         match &result {
             Ok(action) => {

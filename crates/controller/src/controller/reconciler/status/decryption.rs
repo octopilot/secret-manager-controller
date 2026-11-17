@@ -21,58 +21,21 @@ pub async fn update_decryption_status(
         config.metadata.namespace.as_deref().unwrap_or("default"),
     );
 
-    // Get existing status to preserve other fields
+    // Nothing to write when the outcome is the one already recorded: a write per
+    // reconcile only to move a timestamp wakes the controller for nothing.
     let existing_status = config.status.as_ref();
-    let mut new_status = existing_status.cloned().unwrap_or_default();
-
-    // Update decryption fields
-    new_status.decryption_status = Some(status.to_string());
-    new_status.last_decryption_attempt = Some(chrono::Utc::now().to_rfc3339());
-    new_status.last_decryption_error = error_message.map(|s| s.to_string());
-
-    // Preserve other fields
-    if new_status.phase.is_none() {
-        new_status.phase = existing_status.and_then(|s| s.phase.clone());
-    }
-    if new_status.description.is_none() {
-        new_status.description = existing_status.and_then(|s| s.description.clone());
-    }
-    if new_status.conditions.is_empty() {
-        new_status.conditions = existing_status
-            .map(|s| s.conditions.clone())
-            .unwrap_or_default();
-    }
-    if new_status.observed_generation.is_none() {
-        new_status.observed_generation = config.metadata.generation;
-    }
-    if new_status.last_reconcile_time.is_none() {
-        new_status.last_reconcile_time = Some(chrono::Utc::now().to_rfc3339());
-    }
-    if new_status.next_reconcile_time.is_none() {
-        new_status.next_reconcile_time =
-            existing_status.and_then(|s| s.next_reconcile_time.clone());
-    }
-    if new_status.secrets_synced.is_none() {
-        new_status.secrets_synced = existing_status.and_then(|s| s.secrets_synced);
-    }
-    if new_status.sops_key_available.is_none() {
-        new_status.sops_key_available = existing_status.and_then(|s| s.sops_key_available);
-    }
-    if new_status.sops_key_secret_name.is_none() {
-        new_status.sops_key_secret_name =
-            existing_status.and_then(|s| s.sops_key_secret_name.clone());
-    }
-    if new_status.sops_key_namespace.is_none() {
-        new_status.sops_key_namespace = existing_status.and_then(|s| s.sops_key_namespace.clone());
-    }
-    if new_status.sops_key_last_checked.is_none() {
-        new_status.sops_key_last_checked =
-            existing_status.and_then(|s| s.sops_key_last_checked.clone());
-    }
-
-    let patch = serde_json::json!({
-        "status": new_status
+    let unchanged = existing_status.is_some_and(|existing| {
+        existing.decryption_status.as_deref() == Some(status)
+            && existing.last_decryption_error.as_deref() == error_message
     });
+    if unchanged {
+        return Ok(());
+    }
+
+    // Only the decryption fields. `config` is the snapshot this reconcile started from:
+    // writing the whole status back from it would undo what was written since, the next
+    // reconcile time included, and with that keep the resource permanently due.
+    let patch = decryption_status_patch(status, error_message, &chrono::Utc::now().to_rfc3339());
 
     let resource_name = config.metadata.name.as_deref().unwrap_or("unknown");
     let resource_namespace = config.metadata.namespace.as_deref().unwrap_or("default");
@@ -112,4 +75,53 @@ pub async fn update_decryption_status(
     );
 
     Ok(())
+}
+
+/// Merge patch that sets the decryption fields of the status and nothing else.
+fn decryption_status_patch(
+    status: &str,
+    error_message: Option<&str>,
+    attempted_at: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": {
+            "decryptionStatus": status,
+            "lastDecryptionAttempt": attempted_at,
+            "lastDecryptionError": error_message,
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decryption_status_patch;
+
+    /// The regression this guards: the patch used to carry the whole status of a stale
+    /// snapshot, which put an already-passed nextReconcileTime back and made the
+    /// resource reconcile in a loop.
+    #[test]
+    fn the_patch_touches_only_the_decryption_fields() {
+        let patch = decryption_status_patch("Success", None, "2026-11-17T20:00:00Z");
+        let status = patch["status"].as_object().expect("status object");
+        let mut fields: Vec<&str> = status.keys().map(String::as_str).collect();
+        fields.sort_unstable();
+        assert_eq!(
+            fields,
+            vec![
+                "decryptionStatus",
+                "lastDecryptionAttempt",
+                "lastDecryptionError"
+            ]
+        );
+        assert!(
+            status["lastDecryptionError"].is_null(),
+            "a past error is cleared"
+        );
+    }
+
+    #[test]
+    fn a_failure_records_its_error() {
+        let patch = decryption_status_patch("PermanentFailure", Some("wrong key"), "t");
+        assert_eq!(patch["status"]["lastDecryptionError"], "wrong key");
+    }
 }

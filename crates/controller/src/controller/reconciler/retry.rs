@@ -63,6 +63,37 @@ pub fn clear(namespace: &str, name: &str) {
     }
 }
 
+fn last_runs() -> &'static Mutex<HashMap<String, Instant>> {
+    static LAST_RUNS: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+    LAST_RUNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record that a reconcile of `namespace/name` has just finished.
+pub fn mark_ran(namespace: &str, name: &str) {
+    if let Ok(mut last_runs) = last_runs().lock() {
+        last_runs.insert(key(namespace, name), Instant::now());
+    }
+}
+
+/// Whether a periodic reconcile of `namespace/name` is due as far as this process knows:
+/// it has not reconciled the object, or did so at least `interval` ago.
+///
+/// The status field `nextReconcileTime` says when the next periodic run is due, but the
+/// controller reads it from its watch cache, which trails its own writes: a run that
+/// starts right after another finishes still sees the old, already-passed time. Trusting
+/// that alone reconciles the object again at once, and again, for as long as each run
+/// starts before the previous one's status write has come back. What this process did
+/// itself is not subject to that lag.
+#[must_use]
+pub fn periodic_due(namespace: &str, name: &str, interval: Duration) -> bool {
+    let Ok(last_runs) = last_runs().lock() else {
+        return true;
+    };
+    last_runs
+        .get(&key(namespace, name))
+        .is_none_or(|ran_at| ran_at.elapsed() + TOLERANCE >= interval)
+}
+
 /// Delay before retrying after the `attempt`th consecutive transient failure:
 /// 30s, 1m, 2m, 4m, 8m, then 10m.
 #[must_use]
@@ -103,6 +134,43 @@ mod tests {
         schedule("retry-ns", "replaced", Duration::from_secs(600));
         schedule("retry-ns", "replaced", Duration::from_secs(1));
         assert!(take_if_due("retry-ns", "replaced"));
+    }
+
+    #[test]
+    fn an_object_this_process_never_reconciled_is_due() {
+        assert!(periodic_due(
+            "retry-ns",
+            "never-ran",
+            Duration::from_secs(3600)
+        ));
+    }
+
+    /// The regression this guards: a run starting right after another, with the stale
+    /// status still saying "due", reconciled again in a loop.
+    #[test]
+    fn an_object_just_reconciled_is_not_due_again() {
+        mark_ran("retry-ns", "just-ran");
+        assert!(!periodic_due(
+            "retry-ns",
+            "just-ran",
+            Duration::from_secs(3600)
+        ));
+        assert!(!periodic_due(
+            "retry-ns",
+            "just-ran",
+            Duration::from_secs(60)
+        ));
+    }
+
+    #[test]
+    fn an_object_is_due_again_once_its_interval_has_passed() {
+        mark_ran("retry-ns", "ran-a-while-ago");
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(periodic_due(
+            "retry-ns",
+            "ran-a-while-ago",
+            Duration::from_millis(10)
+        ));
     }
 
     #[test]

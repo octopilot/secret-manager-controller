@@ -63,54 +63,23 @@ pub async fn update_sops_key_status(
 
     // Get existing status to preserve other fields
     let existing_status = config.status.as_ref();
-    let mut new_status = existing_status.cloned().unwrap_or_default();
-
-    // Update SOPS key fields
-    new_status.sops_key_available = Some(key_available);
-    new_status.sops_key_secret_name = secret_name;
-    new_status.sops_key_namespace = config.metadata.namespace.clone();
-    new_status.sops_key_last_checked = Some(chrono::Utc::now().to_rfc3339());
-
-    // Preserve other fields
-    if new_status.phase.is_none() {
-        new_status.phase = existing_status.and_then(|s| s.phase.clone());
+    // Only the SOPS key fields: `config` may be a stale snapshot, and writing the whole
+    // status back from it would undo newer writes (phase, next reconcile time, ...).
+    let unchanged = existing_status.is_some_and(|existing| {
+        existing.sops_key_available == Some(key_available)
+            && existing.sops_key_secret_name == secret_name
+            && existing.sops_key_namespace == config.metadata.namespace
+    });
+    if unchanged {
+        return Ok(());
     }
-    if new_status.description.is_none() {
-        new_status.description = existing_status.and_then(|s| s.description.clone());
-    }
-    if new_status.conditions.is_empty() {
-        new_status.conditions = existing_status
-            .map(|s| s.conditions.clone())
-            .unwrap_or_default();
-    }
-    if new_status.observed_generation.is_none() {
-        new_status.observed_generation = config.metadata.generation;
-    }
-    if new_status.last_reconcile_time.is_none() {
-        new_status.last_reconcile_time =
-            existing_status.and_then(|s| s.last_reconcile_time.clone());
-    }
-    if new_status.next_reconcile_time.is_none() {
-        new_status.next_reconcile_time =
-            existing_status.and_then(|s| s.next_reconcile_time.clone());
-    }
-    if new_status.secrets_synced.is_none() {
-        new_status.secrets_synced = existing_status.and_then(|s| s.secrets_synced);
-    }
-    if new_status.decryption_status.is_none() {
-        new_status.decryption_status = existing_status.and_then(|s| s.decryption_status.clone());
-    }
-    if new_status.last_decryption_attempt.is_none() {
-        new_status.last_decryption_attempt =
-            existing_status.and_then(|s| s.last_decryption_attempt.clone());
-    }
-    if new_status.last_decryption_error.is_none() {
-        new_status.last_decryption_error =
-            existing_status.and_then(|s| s.last_decryption_error.clone());
-    }
-
     let patch = serde_json::json!({
-        "status": new_status
+        "status": {
+            "sopsKeyAvailable": key_available,
+            "sopsKeySecretName": secret_name,
+            "sopsKeyNamespace": config.metadata.namespace,
+            "sopsKeyLastChecked": chrono::Utc::now().to_rfc3339(),
+        }
     });
 
     let resource_name = config.metadata.name.as_deref().unwrap_or("unknown");
