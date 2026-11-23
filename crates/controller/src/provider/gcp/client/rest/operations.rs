@@ -11,10 +11,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose};
 use std::time::Instant;
-use tracing::{Instrument, debug, info, info_span};
+use tracing::{Instrument, debug, info, info_span, warn};
 
 use super::requests::{AddVersionRequest, CreateSecretRequest};
-use super::responses::{AccessSecretVersionResponse, SecretVersionMetadata};
+use super::responses::{
+    AccessSecretVersionResponse, ListSecretVersionsResponse, SecretVersionMetadata,
+};
 use crate::provider::gcp::client::common::{OperationTracker, determine_operation_type};
 use crate::provider::gcp::client::rest::SecretManagerREST;
 use smc_paths::prelude::{GcpOperation, PathBuilder};
@@ -119,6 +121,7 @@ impl SecretManagerProvider for SecretManagerREST {
             let operation_type = match determine_operation_type(&existing_secret, secret_value) {
                 Some("no_change") => {
                     tracker.record_no_change();
+                    self_ref.prune_versions_logged(secret_name).await;
                     return Ok(false);
                 }
                 Some(op_type) => {
@@ -205,6 +208,7 @@ impl SecretManagerProvider for SecretManagerREST {
             }
 
             tracker.record_success(operation_type);
+            self_ref.prune_versions_logged(secret_name).await;
             Ok(true)
         }
         .instrument(span)
@@ -339,7 +343,126 @@ impl SecretManagerProvider for SecretManagerREST {
     }
 }
 
+/// How many versions of each secret to keep: `GCP_SECRET_VERSIONS_TO_KEEP`, default 2 (the
+/// current value and the previous one, which covers a rollover still in flight). Every
+/// enabled or disabled version is billed as active; the values come from Git, which keeps
+/// their history. 0 keeps every version.
+fn versions_to_keep() -> usize {
+    std::env::var("GCP_SECRET_VERSIONS_TO_KEEP")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(2)
+}
+
 impl SecretManagerREST {
+    /// [`Self::prune_versions`] with [`versions_to_keep`], logging rather than failing: a
+    /// version left behind costs a few cents and is pruned on the next reconcile.
+    async fn prune_versions_logged(&self, secret_name: &str) {
+        let keep = versions_to_keep();
+        if keep == 0 {
+            return;
+        }
+        if let Err(e) = self.prune_versions(secret_name, keep).await {
+            warn!(
+                "GCP secret {}: could not prune old versions: {:#}",
+                secret_name, e
+            );
+        }
+    }
+
+    /// Destroy all but the newest `keep` versions of a secret that are not destroyed already.
+    /// Destroying is irreversible. Returns how many versions were destroyed.
+    pub(crate) async fn prune_versions(&self, secret_name: &str, keep: usize) -> Result<usize> {
+        let list_path = PathBuilder::new()
+            .gcp_operation(GcpOperation::ListVersions)
+            .project(self.project_id())
+            .secret(secret_name)
+            .build_http_path()
+            .context("Failed to build list versions path")?;
+
+        let mut live: Vec<(u64, String)> = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let mut path = format!("{list_path}?pageSize=100");
+            if let Some(token) = &page_token {
+                path.push_str(&format!("&pageToken={token}"));
+            }
+            let response = self
+                .make_request("GET", &path, None)
+                .send()
+                .await
+                .context("Failed to list secret versions")?;
+            let status = response.status();
+            if status == reqwest::StatusCode::NOT_FOUND {
+                return Ok(0);
+            }
+            if !status.is_success() {
+                let error_text = response.text().await.unwrap_or_default();
+                self.handle_error_response(status, error_text)
+                    .context(format!(
+                        "Failed to list versions of GCP secret: {secret_name}"
+                    ))?;
+                unreachable!()
+            }
+            let page: ListSecretVersionsResponse = response
+                .json()
+                .await
+                .context("Failed to parse secret versions list")?;
+            for version in page.versions {
+                if version.state == "DESTROYED" {
+                    continue;
+                }
+                if let Some(id) = version.version_id().and_then(|id| id.parse::<u64>().ok()) {
+                    live.push((id, version.state));
+                }
+            }
+            match page.next_page_token.filter(|t| !t.is_empty()) {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
+        }
+
+        // Version ids only grow: the newest are the highest.
+        live.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        let mut destroyed = 0;
+        for (id, state) in live.into_iter().skip(keep) {
+            let id = id.to_string();
+            let path = PathBuilder::new()
+                .gcp_operation(GcpOperation::DestroyVersion)
+                .project(self.project_id())
+                .secret(secret_name)
+                .version(&id)
+                .build_http_path()
+                .context("Failed to build destroy version path")?;
+            let response = self
+                .make_request("POST", &path, Some(serde_json::json!({})))
+                .send()
+                .await
+                .context("Failed to destroy secret version")?;
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().await.unwrap_or_default();
+                self.handle_error_response(status, error_text)
+                    .context(format!(
+                        "Failed to destroy version {id} of GCP secret: {secret_name}"
+                    ))?;
+                unreachable!()
+            }
+            debug!(
+                "GCP secret {}: destroyed version {} ({})",
+                secret_name, id, state
+            );
+            destroyed += 1;
+        }
+        if destroyed > 0 {
+            info!(
+                "GCP secret {}: destroyed {} old version(s), kept the newest {}",
+                secret_name, destroyed, keep
+            );
+        }
+        Ok(destroyed)
+    }
+
     /// Metadata of the latest version of a secret; `None` when the secret or a version
     /// does not exist.
     async fn latest_version(&self, secret_name: &str) -> Result<Option<SecretVersionMetadata>> {

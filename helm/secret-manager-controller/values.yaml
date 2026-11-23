@@ -43,6 +43,12 @@ config: {}
 # name/valueFrom), for example OTEL_EXPORTER_OTLP_ENDPOINT.
 extraEnv: []
 
+gcp:
+  # Versions of each Secret Manager secret to keep: the current one and the previous one (a
+  # rollover still in flight). Older ones are destroyed on every reconcile - irreversibly; Git
+  # holds the history of the values. Every enabled or disabled version is billed. 0 keeps all.
+  secretVersionsToKeep: 2
+
 # Requests are what Autopilot bills; the controller is idle between reconciles.
 resources:
   requests:

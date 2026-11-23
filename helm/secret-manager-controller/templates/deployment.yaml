@@ -55,6 +55,8 @@ spec:
                   fieldPath: metadata.namespace
             - name: METRICS_PORT
               value: {{ .Values.service.port | quote }}
+            - name: GCP_SECRET_VERSIONS_TO_KEEP
+              value: {{ .Values.gcp.secretVersionsToKeep | quote }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

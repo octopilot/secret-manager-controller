@@ -167,6 +167,17 @@ pub struct SecretVersionMetadata {
     pub state: String,
 }
 
+/// A page of `GET /v1/projects/{project}/secrets/{secret}/versions`.
+#[derive(Debug, Deserialize)]
+pub struct ListSecretVersionsResponse {
+    /// The versions on this page (absent when there are none)
+    #[serde(default)]
+    pub versions: Vec<SecretVersionMetadata>,
+    /// Token for the next page; absent on the last one
+    #[serde(rename = "nextPageToken", default)]
+    pub next_page_token: Option<String>,
+}
+
 impl SecretVersionMetadata {
     /// The numeric version id, taken from the end of the resource name.
     #[must_use]

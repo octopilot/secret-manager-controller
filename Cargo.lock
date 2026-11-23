@@ -1447,7 +1447,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "smc-paths",
+ "smc-paths 0.1.0 (git+https://github.com/octopilot/smc-paths?rev=f8da50f)",
  "tempfile",
  "thiserror 2.0.17",
  "tikv-jemallocator",
@@ -4416,7 +4416,7 @@ dependencies = [
  "sea-query 0.12.12",
  "serde",
  "serde_json",
- "smc-paths",
+ "smc-paths 0.1.0 (git+https://github.com/octopilot/smc-paths?rev=00e9d84)",
  "tokio",
  "tower",
  "tower-http",
@@ -6006,7 +6006,7 @@ dependencies = [
  "rustls 0.23.35",
  "serde_json",
  "serde_yaml",
- "smc-paths",
+ "smc-paths 0.1.0 (git+https://github.com/octopilot/smc-paths?rev=f8da50f)",
  "tokio",
  "tracing",
 ]
@@ -6319,6 +6319,11 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 name = "smc-paths"
 version = "0.1.0"
 source = "git+https://github.com/octopilot/smc-paths?rev=00e9d84#00e9d8460c6954d2e91e03691b4238e507d2f726"
+
+[[package]]
+name = "smc-paths"
+version = "0.1.0"
+source = "git+https://github.com/octopilot/smc-paths?rev=f8da50f#f8da50fa6319924cb040d63513574da736de6db6"
 
 [[package]]
 name = "socket2"

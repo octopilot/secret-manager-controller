@@ -156,6 +156,13 @@ impl GcpSecretStore {
         self.store.disable_version(&key, version_id).await
     }
 
+    /// Destroy a specific version. The mock forgets it; the real API keeps it in DESTROYED
+    /// state, which clients skip either way.
+    pub async fn destroy_version(&self, project: &str, secret: &str, version_id: &str) -> bool {
+        let key = Self::format_key(project, secret);
+        self.store.delete_version(&key, version_id).await
+    }
+
     /// Enable a specific version
     pub async fn enable_version(&self, project: &str, secret: &str, version_id: &str) -> bool {
         let key = Self::format_key(project, secret);

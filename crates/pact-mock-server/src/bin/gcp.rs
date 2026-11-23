@@ -522,6 +522,41 @@ async fn handle_colon_routes(State(app_state): State<GcpAppState>, request: Requ
         }
     }
 
+    // Handle POST /v1/projects/{project}/secrets/{secret}/versions/{version}:destroy
+    if method == Method::POST && path.contains("/versions/") && path.ends_with(":destroy") {
+        let parts: Vec<&str> = path.split('/').collect();
+        let project = parts.get(3).unwrap_or(&"unknown").to_string();
+        let secret = parts.get(5).unwrap_or(&"unknown").to_string();
+        let version_id = parts
+            .get(7)
+            .and_then(|p| p.split(':').next())
+            .unwrap_or("unknown")
+            .to_string();
+        info!(
+            "  DESTROY VERSION: project={}, secret={}, version={}",
+            project, secret, version_id
+        );
+        if app_state
+            .secrets
+            .destroy_version(&project, &secret, &version_id)
+            .await
+        {
+            return Json(json!({
+                "name": format!("projects/{}/secrets/{}/versions/{}", project, secret, version_id),
+                "state": "DESTROYED"
+            }))
+            .into_response();
+        }
+        return gcp_error_response(
+            StatusCode::NOT_FOUND,
+            format!(
+                "Version not found: projects/{}/secrets/{}/versions/{}",
+                project, secret, version_id
+            ),
+            Some("NOT_FOUND"),
+        );
+    }
+
     // Handle POST request to path ending with :disable (secret or version)
     if method == Method::POST && path.contains(":disable") {
         // Parse path: /v1/projects/{project}/secrets/{secret}:disable

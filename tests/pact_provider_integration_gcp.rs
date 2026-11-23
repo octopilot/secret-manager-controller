@@ -268,6 +268,23 @@ async fn test_gcp_provider_create_secret_with_pact() {
         i
     });
 
+    pact_builder.interaction("list versions after create - one version", "", |mut i| {
+        i.given("the secret has one version");
+        i.request
+            .method("GET")
+            .path("/v1/projects/test-project/secrets/test-secret-name/versions")
+            .query_param("pageSize", "100")
+            .header("authorization", "Bearer test-token");
+        i.response
+            .status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "versions": [
+                    { "name": "projects/test-project/secrets/test-secret-name/versions/1", "state": "ENABLED" }
+                ]
+            }));
+        i
+    });
     let _mock_server = pact_builder.start_mock_server(None, None);
     let mut base_url = _mock_server.url().to_string();
     if base_url.ends_with('/') {
@@ -347,7 +364,7 @@ async fn test_gcp_provider_update_secret_with_pact() {
             .status(200)
             .header("content-type", "application/json")
             .json_body(json!({
-                "name": "projects/test-project/secrets/test-secret-name/versions/2",
+                "name": "projects/test-project/secrets/test-secret-name/versions/3",
                 "payload": {
                     "data": encoded_new
                 },
@@ -357,6 +374,45 @@ async fn test_gcp_provider_update_secret_with_pact() {
         i
     });
 
+    pact_builder.interaction("list versions after update - three live and one destroyed", "", |mut i| {
+        i.given("the secret has versions 1 to 3 and a destroyed 0");
+        i.request
+            .method("GET")
+            .path("/v1/projects/test-project/secrets/test-secret-name/versions")
+            .query_param("pageSize", "100")
+            .header("authorization", "Bearer test-token");
+        i.response
+            .status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "versions": [
+                    { "name": "projects/test-project/secrets/test-secret-name/versions/3", "state": "ENABLED" },
+                    { "name": "projects/test-project/secrets/test-secret-name/versions/2", "state": "ENABLED" },
+                    { "name": "projects/test-project/secrets/test-secret-name/versions/1", "state": "ENABLED" },
+                    { "name": "projects/test-project/secrets/test-secret-name/versions/0", "state": "DESTROYED" }
+                ]
+            }));
+        i
+    });
+
+    // Only the newest two (current and previous) are kept: version 1 is destroyed
+    pact_builder.interaction("destroy the oldest live version", "", |mut i| {
+        i.given("the secret has versions 1 to 3");
+        i.request
+            .method("POST")
+            .path("/v1/projects/test-project/secrets/test-secret-name/versions/1:destroy")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .json_body(json!({}));
+        i.response
+            .status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "name": "projects/test-project/secrets/test-secret-name/versions/1",
+                "state": "DESTROYED"
+            }));
+        i
+    });
     let _mock_server = pact_builder.start_mock_server(None, None);
     let mut base_url = _mock_server.url().to_string();
     if base_url.ends_with('/') {
@@ -413,6 +469,23 @@ async fn test_gcp_provider_no_change_with_pact() {
         i
     });
 
+    pact_builder.interaction("list versions - no change", "", |mut i| {
+        i.given("the secret has one version");
+        i.request
+            .method("GET")
+            .path("/v1/projects/test-project/secrets/test-secret-name/versions")
+            .query_param("pageSize", "100")
+            .header("authorization", "Bearer test-token");
+        i.response
+            .status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "versions": [
+                    { "name": "projects/test-project/secrets/test-secret-name/versions/1", "state": "ENABLED" }
+                ]
+            }));
+        i
+    });
     let _mock_server = pact_builder.start_mock_server(None, None);
     let mut base_url = _mock_server.url().to_string();
     if base_url.ends_with('/') {
