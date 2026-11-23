@@ -4,8 +4,8 @@ description: Syncs SOPS-encrypted secrets from a GitOps source (Flux, ArgoCD) to
 type: application
 # version and appVersion are the release version: Trigger Release (release.yml) sets
 # both with VERSION, so chart X.Y.Z deploys image vX.Y.Z unless image.tag says otherwise.
-version: 0.1.9
-appVersion: "0.1.9"
+version: 0.1.10
+appVersion: "0.1.10"
 home: https://github.com/octopilot/secret-manager-controller
 sources:
   - https://github.com/octopilot/secret-manager-controller
